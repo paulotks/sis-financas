@@ -95,6 +95,9 @@ code { font-size: 12px; color: #b9b9c6; }
 .com-logo { display: flex; gap: 10px; align-items: center; }
 .com-logo img, .conta-topo img { width: 28px; height: 28px; border-radius: 6px; }
 .acoes-linha { display: flex; gap: 6px; justify-content: flex-end; }
+.oferta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+.oferta .campo { flex: 1 1 200px; max-width: 320px; }
+.oferta .botao { padding: 6px 10px; }
 
 /* resumo */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }

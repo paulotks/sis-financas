@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, GRUPOS, mesAtual, type Categoria, type Lancamento } from "../lib/api";
+import { api, dataCurta, dinheiro, mesAtual, type Categoria, type Lancamento } from "../lib/api";
+import OferecerRegra from "../components/OferecerRegra";
+import SelectCategoria from "../components/SelectCategoria";
 import SeletorMes from "../components/SeletorMes";
 
 export default function Lancamentos() {
@@ -28,7 +30,7 @@ export default function Lancamentos() {
     if (campoBusca.current) campoBusca.current.value = filtros.busca ?? "";
   }, [filtros.busca]);
 
-  const [aplicarIguais, setAplicarIguais] = useState(true);
+  const [oferta, setOferta] = useState<Lancamento | null>(null); // acabou de ter a categoria corrigida: oferece a regra
   const [aviso, setAviso] = useState<string | null>(null);
   useEffect(() => {
     if (!aviso) return;
@@ -44,15 +46,14 @@ export default function Lancamentos() {
 
   const editar = useMutation({
     mutationFn: ({ id, d }: { id: string; d: Parameters<typeof api.editarLancamento>[1] }) => api.editarLancamento(id, d),
-    onSuccess: ({ lancamento, afetados }) => {
+    onSuccess: (lancamento, { d }) => {
       qc.setQueryData<{ itens: Lancamento[]; total: number }>(chave, (old) =>
         old ? { ...old, itens: old.itens.map((l) => (l.id === lancamento.id ? lancamento : l)) } : old,
       );
-      if (afetados > 0) setAviso(`Regra criada: mais ${afetados} lançamento(s) iguais foram categorizados.`);
-      // outros filtros em cache ficam velhos; a lista aberta só recarrega se outras linhas mudaram (para não pular da tela)
-      qc.invalidateQueries({ queryKey: ["lancamentos"], refetchType: afetados > 0 ? "active" : "none" });
-      qc.invalidateQueries({ queryKey: ["resumo"] });
-      qc.invalidateQueries({ queryKey: ["regras"] });
+      if (d.categoria_id !== undefined) setOferta(d.categoria_id && lancamento.descricao_original ? lancamento : null);
+      // outros filtros em cache ficam velhos; a lista aberta não recarrega (para a linha não pular da tela)
+      qc.invalidateQueries({ queryKey: ["lancamentos"], refetchType: "none" });
+      qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "lancamentos" });
     },
     onError: (e) => setAviso(`Erro ao salvar: ${e.message}`),
   });
@@ -109,10 +110,6 @@ export default function Lancamentos() {
           <input type="checkbox" checked={!!params.get("todos")} onChange={(e) => set("todos", e.target.checked ? "1" : null)} />
           Todos os meses
         </label>
-        <label className="check" title="Ao mudar a categoria, cria uma regra e aplica aos lançamentos com a mesma descrição original">
-          <input type="checkbox" checked={aplicarIguais} onChange={(e) => setAplicarIguais(e.target.checked)} />
-          Aplicar a iguais
-        </label>
       </div>
 
       {aviso && <div className="aviso">{aviso}</div>}
@@ -138,12 +135,23 @@ export default function Lancamentos() {
               <tr><td colSpan={6} className="vazio">Nenhum lançamento com esses filtros.</td></tr>
             )}
             {itens.map((l) => (
-              <Linha
-                key={l.id}
-                l={l}
-                categorias={categorias.data ?? []}
-                onSalvar={(d) => editar.mutate({ id: l.id, d: { ...d, aplicar_iguais: d.categoria_id ? aplicarIguais : undefined } })}
-              />
+              <Fragment key={l.id}>
+                <Linha l={l} categorias={categorias.data ?? []} onSalvar={(d) => editar.mutate({ id: l.id, d })} />
+                {oferta?.id === l.id && (
+                  <tr>
+                    <td colSpan={6}>
+                      <OferecerRegra
+                        key={oferta.categoria_id}
+                        l={oferta}
+                        onFechar={(texto) => {
+                          setOferta(null);
+                          if (texto) setAviso(texto);
+                        }}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
           <tfoot>
@@ -218,32 +226,5 @@ function Linha({ l, categorias, onSalvar }: {
         </button>
       </td>
     </tr>
-  );
-}
-
-function SelectCategoria({ categorias, valor, vazio, cor, onChange }: {
-  categorias: Categoria[];
-  valor: number | null;
-  vazio: string;
-  cor?: string | null;
-  onChange: (id: number | null) => void;
-}) {
-  const grupos = Object.keys(GRUPOS) as Categoria["grupo"][];
-  return (
-    <select
-      className="campo categoria"
-      style={cor ? { borderLeftColor: cor } : undefined}
-      value={valor ?? ""}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-    >
-      <option value="">{vazio}</option>
-      {grupos.map((g) => (
-        <optgroup key={g} label={GRUPOS[g]}>
-          {categorias.filter((c) => c.grupo === g).map((c) => (
-            <option key={c.id} value={c.id}>{c.nome}</option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
   );
 }

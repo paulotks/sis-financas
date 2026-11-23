@@ -51,6 +51,7 @@ const { app } = await import("../src/server.js");
 const { db } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
+const { sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
   await app.close();
@@ -68,7 +69,7 @@ const sync = async () => {
 };
 const chamar = (metodo: string, url: string, corpo?: unknown, headers: Record<string, string> = {}) =>
   new Promise<{ status: number; d: any }>((ok, falha) => {
-    const r = http.request({ host: "127.0.0.1", port: PORTA, method: metodo, path: url, headers: { "content-type": "application/json", ...headers } }, (res) => {
+    const r = http.request({ host: "127.0.0.1", port: PORTA, method: metodo, path: url, headers: { ...(corpo === undefined ? {} : { "content-type": "application/json" }), ...headers } }, (res) => {
       let t = "";
       res.on("data", (c) => (t += c)).on("end", () => ok({ status: res.statusCode!, d: t ? JSON.parse(t) : null }));
     });
@@ -209,6 +210,47 @@ test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza
   assert.deepEqual([lanc("trial").categoria_pluggy, lanc("trial").categoria_id], ["Groceries", mercado]);
   paginas = [base];
   await sync();
+});
+
+test("regra aprende: a prévia bate com o aplicado, repetir o texto troca a categoria e o editado à mão não muda", async () => {
+  const base = paginas[0];
+  const uber = (id: string, extra = "") => tx(id, -6, { description: `UBER *TRIP ${id}${extra}` });
+  paginas = [[...base, uber("u1"), uber("u2"), uber("u3", " 2/3"), tx("mao", -6, { description: "Uber *Trip mao" })]];
+  await sync();
+  const pat = await chamar("PATCH", "/api/lancamentos/mao", { categoria_id: 14 });
+  assert.deepEqual([pat.status, pat.d.categoria_id, pat.d.categoria_manual], [200, 14, true]);
+
+  const padrao = sugerirPadrao("UBER *TRIP 123 2/3");
+  assert.equal(padrao, "UBER *TRIP");
+  const previa = await chamar("GET", `/api/regras/previa?padrao=${encodeURIComponent(padrao)}`);
+  assert.deepEqual(previa.d, { total: 3, pendentes: 3 }); // o editado à mão não entra na conta
+  const criada = await chamar("POST", "/api/regras", { padrao, categoria_id: 4 });
+  assert.equal(criada.d.recategorizados, 3);
+  assert.deepEqual(["u1", "u2", "u3", "mao"].map((i) => lanc(i).categoria_id), [4, 4, 4, 14]);
+
+  const outra = await chamar("POST", "/api/regras", { padrao: "uber *trip", categoria_id: 13 });
+  assert.equal(outra.d.regra.id, criada.d.regra.id);
+  assert.deepEqual(["u1", "mao"].map((i) => lanc(i).categoria_id), [13, 14]);
+
+  assert.equal((await chamar("POST", "/api/regras", { padrao: "ab", categoria_id: 4 })).status, 400);
+  assert.equal((await chamar("DELETE", `/api/regras/${criada.d.regra.id}`)).status, 200);
+  assert.equal(lanc("u1").categoria_id, null);
+  db.prepare("DELETE FROM lancamentos WHERE id = 'mao'").run();
+  paginas = [base];
+  await sync();
+});
+
+test("texto sugerido para a regra é sempre um trecho do original", () => {
+  for (const [original, esperado] of [
+    ["Netflix.com", "Netflix.com"],
+    ["SHOPEE *LOJA 3/10", "SHOPEE *LOJA"],
+    ["PG *TON 12345678", "PG *TON"],
+    ["99 *99", "99 *99"], // sobraria nada: fica o original
+    ["  Pix enviado Fulano  ", "Pix enviado Fulano"],
+  ]) {
+    assert.equal(sugerirPadrao(original), esperado);
+    assert.ok(original.includes(sugerirPadrao(original)));
+  }
 });
 
 test("API: host e origem de fora são recusados; erro de dados não vira 500", async () => {

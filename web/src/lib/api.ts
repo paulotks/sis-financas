@@ -133,15 +133,23 @@ export const api = {
     ),
   editarLancamento: (
     id: string,
-    d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean; aplicar_iguais?: boolean },
-  ) => req<{ lancamento: Lancamento; afetados: number }>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
+    d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean },
+  ) => req<Lancamento>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
 
   categorias: () => req<Categoria[]>("GET", "/api/categorias"),
   criarCategoria: (d: { nome: string; grupo: Categoria["grupo"]; cor?: string }) => req<Categoria>("POST", "/api/categorias", d),
   regras: () => req<Regra[]>("GET", "/api/regras"),
+  previaRegra: (padrao: string) => req<{ total: number; pendentes: number }>("GET", `/api/regras/previa${qs({ padrao })}`),
+  criarRegra: (d: { padrao: string; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
   apagarRegra: (id: number) => req<{ ok: boolean; recategorizados: number }>("DELETE", `/api/regras/${id}`),
+};
+
+/** Texto inicial de uma regra: a descrição sem a parcela nem os números do fim. Precisa ser um trecho contínuo do original. */
+export const sugerirPadrao = (original: string) => {
+  const limpo = original.replace(/\s*\d{1,2}\/\d{1,2}\s*$/, "").replace(/[\s\d*#.,:/|-]+$/, "").trim();
+  return (limpo.length >= 3 ? limpo : original.trim()).slice(0, 120);
 };
 
 // ---- formatação ----

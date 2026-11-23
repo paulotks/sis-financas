@@ -32,6 +32,7 @@ api/src/
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
+  components/           SeletorMes, SelectCategoria, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
   pages/                Resumo, Lancamentos, Contas, Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
@@ -51,7 +52,7 @@ web/src/
 - Nomes de tabelas, colunas, rotas e variáveis em português (`lancamentos`, `valor_centavos`, `/api/contas`).
 - **Migrações:** só acrescente um novo item ao fim de `MIGRACOES` em `db.ts`. Nunca edite uma migração que já existe — a base do Paulo já rodou.
 - `lancamentos.id` = id da transação na Pluggy (chave do dedupe). A sincronização **atualiza** dados do banco mas **preserva** o que é do usuário: `descricao`, categoria com `categoria_manual = 1`, `notas`, `tags`, `ignorado`.
-- Categoria: regra (texto *contido* na `descricao_original`, sem diferenciar maiúsculas) > movimento interno (`INTERNOS`) > categoria da Pluggy mapeada em `MAPA_PLUGGY` > `NULL` (pendente). Edição manual nunca é sobrescrita. A API reaplica tudo ao subir.
+- Categoria: regra (texto *contido* na `descricao_original`, sem diferenciar maiúsculas) > movimento interno (`INTERNOS`) > categoria da Pluggy mapeada em `MAPA_PLUGGY` > `NULL` (pendente). Edição manual nunca é sobrescrita. A API reaplica tudo ao subir. Regra é sempre por texto *contido* (nunca igualdade) e repetir um texto troca a categoria da regra.
 - Movimento interno vem em **par** (+X e −X) e a Pluggy dá categoria diferente a cada perna (cofrinho do MP, débito automático de fatura). Só tirar do resumo quando as **duas** pernas saem juntas: tirar uma só distorce o mês. Pix no crédito do Nubank tem três pernas e fica de fora de propósito.
 - Fora do trial a Pluggy pode mandar `category: null`; o sync guarda a última categoria conhecida.
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura) fica **fora do resumo**, para não contar o mesmo gasto duas vezes.

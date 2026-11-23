@@ -58,8 +58,8 @@ export default function Categorias() {
         <div className="painel">
           <h2>Regras</h2>
           <p className="mudo pequeno">
-            Criadas quando você categoriza um lançamento com “Aplicar a iguais” ligado. Valem para lançamentos novos cuja descrição
-            original contenha o texto.
+            Nascem quando você corrige a categoria de um lançamento e aceita criar a regra. Valem para todo lançamento, antigo ou novo,
+            cuja descrição original contenha o texto, menos os que você editou à mão.
           </p>
           {(regras.error ?? apagar.error) && <div className="aviso erro">{(regras.error ?? apagar.error)!.message}</div>}
           <table className="tabela compacta">

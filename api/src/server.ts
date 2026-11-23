@@ -6,7 +6,7 @@ import { db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { salvarConexao, sincronizar } from "./sync.js";
-import { limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
+import { contarParecidos, limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
 
 migrar();
 reaplicarRegras(); // mudança no mapa de categorias passa a valer também para o que já está na base
@@ -169,42 +169,21 @@ app.patch("/api/lancamentos/:id", async (req) => {
       notas: z.string().max(1000).nullable().optional(),
       tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
       ignorado: z.boolean().optional(),
-      aplicar_iguais: z.boolean().optional(), // cria regra e aplica a lançamentos com a mesma descrição original
     })
     .parse(req.body);
 
-  const atual = ouNaoEncontrado(db.prepare("SELECT descricao_original FROM lancamentos WHERE id = ?").get(id), "lançamento") as { descricao_original: string };
-
-  let afetados = 0;
-  transacao(() => {
-    const sets: string[] = ["atualizado_em = datetime('now','localtime')"];
-    const vals: (string | number | null)[] = [];
-    if (d.descricao !== undefined) (sets.push("descricao = ?"), vals.push(d.descricao));
-    if (d.categoria_id !== undefined) {
-      sets.push("categoria_id = ?", "categoria_manual = ?", "regra_id = NULL");
-      vals.push(d.categoria_id, d.categoria_id === null ? 0 : 1);
-    }
-    if (d.notas !== undefined) (sets.push("notas = ?"), vals.push(d.notas));
-    if (d.tags !== undefined) (sets.push("tags = ?"), vals.push(JSON.stringify(d.tags)));
-    if (d.ignorado !== undefined) (sets.push("ignorado = ?"), vals.push(d.ignorado ? 1 : 0));
-    db.prepare(`UPDATE lancamentos SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
-
-    if (d.aplicar_iguais && d.categoria_id && atual.descricao_original) {
-      const regra = db.prepare(
-        `INSERT INTO regras (padrao, categoria_id, descricao) VALUES (?,?,?)
-         ON CONFLICT(padrao) DO UPDATE SET categoria_id = excluded.categoria_id, descricao = COALESCE(excluded.descricao, regras.descricao)
-         RETURNING id`,
-      ).get(atual.descricao_original, d.categoria_id, d.descricao ?? null) as { id: number };
-      afetados = Number(
-        db.prepare(
-          `UPDATE lancamentos SET categoria_id = ?, regra_id = ?, descricao = COALESCE(?, descricao),
-             atualizado_em = datetime('now','localtime')
-           WHERE id <> ? AND categoria_manual = 0 AND descricao_original = ? COLLATE NOCASE`,
-        ).run(d.categoria_id, regra.id, d.descricao ?? null, id, atual.descricao_original).changes,
-      );
-    }
-  });
-  return { lancamento: formatarLanc(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id) as Record<string, unknown>), afetados };
+  const sets: string[] = ["atualizado_em = datetime('now','localtime')"];
+  const vals: (string | number | null)[] = [];
+  if (d.descricao !== undefined) (sets.push("descricao = ?"), vals.push(d.descricao));
+  if (d.categoria_id !== undefined) {
+    sets.push("categoria_id = ?", "categoria_manual = ?", "regra_id = NULL");
+    vals.push(d.categoria_id, d.categoria_id === null ? 0 : 1);
+  }
+  if (d.notas !== undefined) (sets.push("notas = ?"), vals.push(d.notas));
+  if (d.tags !== undefined) (sets.push("tags = ?"), vals.push(JSON.stringify(d.tags)));
+  if (d.ignorado !== undefined) (sets.push("ignorado = ?"), vals.push(d.ignorado ? 1 : 0));
+  db.prepare(`UPDATE lancamentos SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+  return formatarLanc(ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as Record<string, unknown>);
 });
 
 app.get("/api/meses", async () =>
@@ -265,11 +244,18 @@ app.get("/api/regras", async () =>
      FROM regras r JOIN categorias c ON c.id = r.categoria_id ORDER BY r.prioridade DESC, r.padrao`,
   ).all(),
 );
+const padraoRegra = z.string().trim().min(3).max(120); // texto curto demais pegaria quase tudo
+app.get("/api/regras/previa", async (req) => contarParecidos(z.object({ padrao: padraoRegra }).parse(req.query).padrao));
+/** Cria a regra; se o texto já tem regra (maiúsculas não contam), troca a categoria dela: é o Paulo corrigindo. */
 app.post("/api/regras", async (req) => {
-  const d = z.object({ padrao: z.string().trim().min(2).max(120), categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
+  const d = z.object({ padrao: padraoRegra, categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
   return transacao(() => {
-    const r = db.prepare("INSERT INTO regras (padrao, categoria_id, descricao, prioridade) VALUES (?,?,?,?) RETURNING *")
-      .get(d.padrao, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
+    const atual = db.prepare("SELECT id FROM regras WHERE padrao = ? COLLATE NOCASE").get(d.padrao) as { id: number } | undefined;
+    const r = atual
+      ? db.prepare("UPDATE regras SET categoria_id = ?, descricao = COALESCE(?, descricao), prioridade = COALESCE(?, prioridade) WHERE id = ? RETURNING *")
+        .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)
+      : db.prepare("INSERT INTO regras (padrao, categoria_id, descricao, prioridade) VALUES (?,?,?,?) RETURNING *")
+        .get(d.padrao, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
     return { regra: r, recategorizados: reaplicarRegras() };
   });
 });

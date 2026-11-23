@@ -50,7 +50,7 @@ npm test           # Pluggy falsa e base temporária; não usa credenciais nem a
 | Sincronização | Item → contas → lançamentos (`GET /v2/transactions`, por cursor) → faturas (cartões) → investimentos. Relê os últimos 365 dias (`SYNC_DIAS_INICIAIS`) e as parcelas futuras, porque a Pluggy cria lançamentos com data passada. Nos últimos 60 dias, remove o que a Pluggy apagou e recriou com outro id (a sua edição passa para o substituto; sem substituto, o lançamento editado fica marcado como “removido pelo banco” e não soma). |
 | Valores | Em centavos; saída é negativa (definida pelo `type` DEBIT/CREDIT da Pluggy). |
 | Categorias | Ordem de decisão: regra sua > categoria da Pluggy (mapeada) > sem categoria. Uma edição manual nunca é sobrescrita pela sincronização. |
-| Regras | Criadas ao categorizar um lançamento com **Aplicar a iguais** ligado. Valem para lançamentos cuja descrição original *contém* o texto. |
+| Regras | Ao corrigir a categoria de um lançamento, a tela oferece criar a regra (texto editável e contagem de parecidos). Valem para lançamentos cuja descrição original *contém* o texto, menos os editados à mão. |
 | PF / PJ | Cada conta é marcada como PF ou PJ (Inter Empresas → PJ). O resumo separa as duas. |
 | Resumo | Ignora transferências entre contas e pagamento de fatura, para não contar o mesmo gasto duas vezes. |
 

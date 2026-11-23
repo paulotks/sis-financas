@@ -116,6 +116,18 @@ export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: str
   return { categoria_id: null, regra_id: null, descricao: null };
 }
 
+/** Quantos lançamentos uma regra com esse texto pegaria (fora os editados à mão): mesma comparação de sugerirCategoria. */
+export function contarParecidos(padrao: string) {
+  const texto = padrao.toLowerCase();
+  const parecidos = (
+    db.prepare("SELECT descricao_original, categoria_id FROM lancamentos WHERE categoria_manual = 0").all() as {
+      descricao_original: string | null;
+      categoria_id: number | null;
+    }[]
+  ).filter((l) => (l.descricao_original ?? "").toLowerCase().includes(texto));
+  return { total: parecidos.length, pendentes: parecidos.filter((l) => l.categoria_id === null).length };
+}
+
 /** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
 export function reaplicarRegras(): number {
   const regras = carregarRegras();
