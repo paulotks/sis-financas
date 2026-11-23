@@ -67,6 +67,7 @@ export interface Conexao {
   ultimo_sync: string | null;
   erro: string | null;
   contas: number;
+  nomes_contas: string | null;
 }
 
 export interface ResultadoSync {

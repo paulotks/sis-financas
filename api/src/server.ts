@@ -58,7 +58,8 @@ app.post("/api/pluggy/connect-token", async (req) => {
 
 app.get("/api/conexoes", async () =>
   db.prepare(
-    `SELECT c.*, (SELECT COUNT(*) FROM contas WHERE item_id = c.item_id) AS contas
+    `SELECT c.*, (SELECT COUNT(*) FROM contas WHERE item_id = c.item_id) AS contas,
+       (SELECT group_concat(COALESCE(apelido, nome), ' · ') FROM contas WHERE item_id = c.item_id) AS nomes_contas
      FROM conexoes c ORDER BY c.criado_em`,
   ).all(),
 );

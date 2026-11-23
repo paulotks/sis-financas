@@ -65,7 +65,7 @@ export default function Conexoes() {
       <table className="tabela">
         <thead>
           <tr>
-            <th>Conector</th>
+            <th>Banco / contas</th>
             <th>Contas</th>
             <th>Status</th>
             <th>Última sincronização</th>
@@ -82,8 +82,8 @@ export default function Conexoes() {
                 <div className="com-logo">
                   {c.imagem_url && <img src={c.imagem_url} alt="" onError={(e) => (e.currentTarget.style.display = "none")} />}
                   <div>
-                    {c.conector ?? "—"}
-                    <div className="sub"><code>{c.item_id}</code></div>
+                    {c.nomes_contas ?? c.conector ?? "—"}
+                    <div className="sub">{c.conector} · <code>{c.item_id}</code></div>
                   </div>
                 </div>
               </td>
