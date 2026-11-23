@@ -87,6 +87,20 @@ export interface Resumo {
   porCategoria: { categoria_id: number | null; categoria: string; cor: string | null; total: number; qtd: number }[];
 }
 
+export interface Recorrente {
+  chave: string;
+  descricao: string;
+  categoria: string | null;
+  cor: string | null;
+  conta: string | null;
+  valor: number; // positivo: o da última cobrança
+  vezes: number;
+  ultima: string;
+  proxima: string;
+  situacao: "prevista" | "atrasada" | "parada";
+  status: "confirmada" | "ignorada" | null;
+}
+
 export interface Bem {
   id: number;
   nome: string;
@@ -165,6 +179,9 @@ export const api = {
   ) => req<Lancamento>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
+
+  recorrentes: (pessoa: string) => req<Recorrente[]>("GET", `/api/recorrentes${qs({ pessoa })}`),
+  decidirRecorrente: (d: { chave: string; status: Recorrente["status"] }) => req<{ ok: true }>("PUT", "/api/recorrentes", d),
 
   patrimonio: (pessoa: string) => req<Patrimonio>("GET", `/api/patrimonio${qs({ pessoa })}`),
   criarBem: (d: { nome: string; valor_centavos: number; pessoa: "PF" | "PJ" }) => req<Bem>("POST", "/api/bens", d),

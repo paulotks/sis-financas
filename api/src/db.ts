@@ -166,6 +166,13 @@ const MIGRACOES: string[] = [
     criado_em      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
   );
   `,
+  `
+  CREATE TABLE recorrencias (                              -- só a decisão do Paulo; a detecção é refeita a cada leitura
+    chave     TEXT PRIMARY KEY,                            -- descrição original sem acento, número e símbolo
+    status    TEXT NOT NULL CHECK (status IN ('confirmada','ignorada')),
+    criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  );
+  `,
 ];
 
 export function migrar() {

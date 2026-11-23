@@ -28,13 +28,14 @@ api/src/
   pluggy.ts       cliente Pluggy: /auth (apiKey em cache ~110 min), /connect_token, items, accounts, bills, investments, /v2/transactions
   sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
+  recorrentes.ts  detecta cobranças mensais (função pura)
   patrimonio.ts   soma das posições e foto diária dos saldos
   server.ts       rotas Fastify + zod; serve web/dist se existir
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
   components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
-  pages/                Resumo, Lancamentos, Orcamento, Contas, Categorias, Conexoes
+  pages/                Resumo, Lancamentos, Orcamento, Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -60,6 +61,7 @@ web/src/
 - **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Crédito em cartão com categoria de gasto é **estorno e abate** a categoria; sem categoria não abate (pode ser fatura paga).
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
+- **Recorrentes** (`recorrentes.ts`): detecção refeita a cada leitura; a tabela `recorrencias` guarda só a decisão (confirmada/ignorada) por `chave` (descrição original sem acento, número e símbolo).
 - Contas têm `pessoa` PF/PJ. Inter Empresas = PJ (TRKS Studio, empresa do Paulo) e não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe
@@ -100,7 +102,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)
 3. Faturas e parcelas futuras (projeção)
-4. Assinaturas recorrentes
+4. ~~Assinaturas recorrentes~~ (feito em 2026-11-23, com patrimônio líquido e Resumo novo)
 5. Lançamentos manuais (cartões sem Open Finance, dinheiro)
 6. Importar regras e assinaturas do sistema antigo
 
@@ -111,6 +113,7 @@ O Paulo não gostou do front antigo por **navegação** e **pouca edição na te
 - Antes de commitar: `npm run typecheck`, `npm test` e `npm run build` sem erro.
 - **Mudou o front? Valide no navegador com o MCP `chrome-devtools`** antes de commitar (os testes automáticos não cobrem a tela):
   1. `npm run dev` (se as portas 5173/3333 já estiverem ocupadas, o servidor já roda: só use-o; o Vite recarrega sozinho).
+     **Vai mexer em `db.ts`?** O `npm run dev` é `tsx watch` sobre a base real: salvar uma migração a aplica na hora, e ela não pode mais ser editada. Trabalhe num worktree (sem `.env`), com uma cópia da base (`VACUUM INTO`) e `npm run build` + `PORT=3344 npm start`; antes do merge, backup em `data/`.
   2. `navigate_page` na rota alterada, `take_snapshot` e `take_screenshot` (tela cheia).
   3. `list_console_messages`: nenhum erro ou aviso novo.
   4. Estados difíceis de provocar (limite, erro, lista cheia): simule a resposta da API com `initScript` no `navigate_page` (sobrescrevendo `fetch`), sem tocar na base nem na Pluggy.

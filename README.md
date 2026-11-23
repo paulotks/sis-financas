@@ -52,18 +52,22 @@ npm test           # Pluggy falsa e base temporária; não usa credenciais nem a
 | Categorias | Ordem de decisão: regra sua > categoria da Pluggy (mapeada) > sem categoria. Uma edição manual nunca é sobrescrita pela sincronização. |
 | Regras | Ao corrigir a categoria de um lançamento, a tela oferece criar a regra (texto editável e contagem de parecidos). Valem para lançamentos cuja descrição original *contém* o texto, menos os editados à mão. |
 | PF / PJ | Cada conta é marcada como PF ou PJ (Inter Empresas → PJ). O resumo separa as duas. |
-| Resumo | Ignora transferências entre contas e pagamento de fatura, para não contar o mesmo gasto duas vezes. |
+| Resumo | Ignora transferências entre contas e pagamento de fatura, para não contar o mesmo gasto duas vezes. Estorno no cartão abate a categoria. |
+| Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. |
+| Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos. Você confirma ou ignora. |
+| Patrimônio | Contas + investimentos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
 
 ### Rotas principais
 
 `POST /api/pluggy/connect-token` · `GET|POST /api/conexoes` · `POST /api/sync` · `GET /api/contas` · `PATCH /api/contas/:id` ·
 `GET /api/lancamentos?mes=&conta=&categoria=&busca=&pendentes=1&pessoa=` · `PATCH /api/lancamentos/:id` · `GET /api/resumo?mes=&pessoa=` ·
-`GET|POST /api/categorias` · `GET|POST|DELETE /api/regras`
+`GET|POST /api/categorias` · `GET|POST|DELETE /api/regras` · `GET /api/regras/previa` · `GET|PUT /api/orcamento` ·
+`GET|PUT /api/recorrentes` · `GET /api/patrimonio` · `POST|PATCH|DELETE /api/bens`
 
 ## Próximos passos
 
-- [ ] Orçamento mensal (planejado × realizado)
+- [x] Orçamento mensal (planejado × realizado)
 - [ ] Faturas e parcelas futuras
-- [ ] Assinaturas recorrentes
+- [x] Assinaturas recorrentes
 - [ ] Lançamentos manuais (cartões fora do Open Finance: Bradescard, C&A, Pefisa, Midway)
 - [ ] Importar regras e assinaturas do sistema antigo (`financeiro.db`)

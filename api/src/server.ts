@@ -6,6 +6,7 @@ import { db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
+import { detectarRecorrentes, type Gasto } from "./recorrentes.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
 
@@ -40,6 +41,7 @@ app.setErrorHandler((err: Error, _req, reply) => {
 });
 
 const uuid = z.string().uuid();
+const pessoaPFPJ = z.enum(["PF", "PJ"]);
 const mesRe = /^\d{4}-(0[1-9]|1[0-2])$/;
 const fimDoMes = (mes: string) => {
   const [a, m] = mes.split("-").map(Number);
@@ -250,9 +252,34 @@ app.put("/api/orcamento", async (req) => {
   return { ok: true };
 });
 
+// ---------------- recorrentes ----------------
+
+app.get("/api/recorrentes", async (req) => {
+  const { pessoa } = z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query);
+  const { hoje } = db.prepare("SELECT date('now','localtime') AS hoje").get() as { hoje: string };
+  const gastos = db.prepare(
+    `SELECT l.data, l.descricao, l.descricao_original, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
+     ${BASE_RESUMO} AND l.valor_centavos < 0 AND COALESCE(l.total_parcelas, 0) <= 1 ORDER BY l.data`,
+  ).all("0000-01-01", hoje, pessoa) as unknown as Gasto[];
+  const status = new Map(
+    (db.prepare("SELECT chave, status FROM recorrencias").all() as { chave: string; status: string }[]).map((r) => [r.chave, r.status]),
+  );
+  return detectarRecorrentes(gastos, hoje)
+    .map((r) => ({ ...r, status: status.get(r.chave) ?? null }))
+    .filter((r) => r.status || r.situacao !== "parada"); // o que já acabou só aparece se o Paulo decidiu algo sobre ele
+});
+
+app.put("/api/recorrentes", async (req) => {
+  const d = z.object({ chave: z.string().min(1).max(300), status: z.enum(["confirmada", "ignorada"]).nullable() }).parse(req.body);
+  if (d.status === null) db.prepare("DELETE FROM recorrencias WHERE chave = ?").run(d.chave);
+  else
+    db.prepare("INSERT INTO recorrencias (chave, status) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET status = excluded.status")
+      .run(d.chave, d.status);
+  return { ok: true };
+});
+
 // ---------------- patrimônio ----------------
 
-const pessoaPFPJ = z.enum(["PF", "PJ"]);
 app.get("/api/patrimonio", async (req) => patrimonio(z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query).pessoa));
 
 const bem = z.object({ nome: z.string().trim().min(1).max(60), valor_centavos: z.number().int().min(-1e12).max(1e12) });

@@ -4,6 +4,7 @@ import { api, quando } from "./lib/api";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
 import Orcamento from "./pages/Orcamento";
+import Recorrentes from "./pages/Recorrentes";
 import Contas from "./pages/Contas";
 import Conexoes from "./pages/Conexoes";
 import Categorias from "./pages/Categorias";
@@ -12,6 +13,7 @@ const MENU = [
   { to: "/resumo", rotulo: "Resumo", icone: "◎" },
   { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡" },
   { to: "/orcamento", rotulo: "Orçamento", icone: "◔" },
+  { to: "/recorrentes", rotulo: "Recorrentes", icone: "∞" },
   { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
   { to: "/categorias", rotulo: "Categorias e regras", icone: "◇" },
   { to: "/conexoes", rotulo: "Conexões", icone: "⇄" },
@@ -64,7 +66,8 @@ export default function App() {
           <Route path="/resumo" element={<Resumo />} />
           <Route path="/lancamentos" element={<Lancamentos />} />
           <Route path="/orcamento" element={<Orcamento />} />
-          <Route path="/contas"element={<Contas />} />
+          <Route path="/recorrentes" element={<Recorrentes />} />
+          <Route path="/contas" element={<Contas />} />
           <Route path="/categorias" element={<Categorias />} />
           <Route path="/conexoes" element={<Conexoes />} />
           <Route path="*" element={<Navigate to="/" replace />} />

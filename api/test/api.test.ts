@@ -51,6 +51,7 @@ const { app } = await import("../src/server.js");
 const { db } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
+const { detectarRecorrentes, mesSeguinte } = await import("../src/recorrentes.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
@@ -367,6 +368,45 @@ test("patrimônio: contas + investimentos + bens − cartões e dívidas, sem oc
   await chamar("DELETE", `/api/bens/${carro.id}`);
   assert.equal((await ver()).lista_bens.length, 1);
   assert.equal(fotos(String(carro.id)).length, 0);
+});
+
+test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o que não se repete, não", () => {
+  const g = (descricao_original: string, data: string, valor: number) =>
+    ({ data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta: null });
+  const netflix = [g("Netflix.com 01", "2026-01-10", 3990), g("NETFLIX.COM", "2026-02-10", 3990), g("Netflix.com", "2026-03-10", 4490), g("Netflix.com", "2026-04-11", 4490)];
+  const outros = [
+    ...["2026-01-05", "2026-02-05", "2026-03-05", "2026-04-05"].map((d, i) => g(`Loja ${i + 1}/4`, d, 10000)),
+    ...["2026-03-01", "2026-03-08", "2026-03-15", "2026-03-22", "2026-03-29"].map((d) => g("Padaria", d, 2000)),
+    ...["2026-01-02", "2026-02-02", "2026-03-02"].map((d, i) => g("Pix Fulano", d, 1000 * 3 ** i)), // valores bem diferentes
+    g("Uma vez", "2026-04-01", 500),
+  ];
+  const ver = (hoje: string) => detectarRecorrentes([...netflix, ...outros].sort((a, b) => (a.data < b.data ? -1 : 1)), hoje);
+  const [n, ...resto] = ver("2026-04-20");
+  assert.equal(resto.length, 0);
+  assert.deepEqual([n.chave, n.valor, n.vezes, n.ultima, n.proxima, n.situacao], ["netflix com", 4490, 4, "2026-04-11", "2026-05-11", "prevista"]);
+  assert.equal(ver("2026-05-15")[0].situacao, "atrasada");
+  assert.equal(ver("2026-07-01")[0].situacao, "parada");
+  assert.deepEqual(["2026-01-31", "2026-12-15", "2028-01-30"].map(mesSeguinte), ["2026-02-28", "2027-01-15", "2028-02-29"]);
+});
+
+test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a decisão", async () => {
+  const conta = novaConta("CREDIT");
+  const serie = (nome: string, categoria: number | null, extra: Record<string, string | number> = {}) =>
+    [95, 65, 35, 5].forEach((d) => novoLanc(conta, dia(-d), -1990, categoria, { descricao_original: nome, descricao: nome, ...extra }));
+  serie("Spotify", 12);
+  serie("Fatura", TRANSFERENCIA);
+  serie("Sofa", 11, { total_parcelas: 10 });
+  serie("Apagado", 12, { status: "REMOVIDO" });
+  serie("Ignorado", 12, { ignorado: 1 });
+  [10, 40, 70].forEach((d) => novoLanc(conta, dia(d), -500, 12, { descricao_original: "Futuro" }));
+  const ver = async () => (await chamar("GET", "/api/recorrentes")).d as { chave: string; status: string | null; valor: number }[];
+  assert.deepEqual((await ver()).map((r) => [r.chave, r.valor, r.status]), [["spotify", 1990, null]]);
+  for (const status of ["confirmada", "ignorada", null]) {
+    assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", status })).status, 200);
+    assert.equal((await ver())[0].status, status);
+  }
+  assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", status: "x" })).status, 400);
+  assert.equal((await chamar("GET", "/api/recorrentes?pessoa=PJ")).d.length, 0);
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

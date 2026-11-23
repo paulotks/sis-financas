@@ -170,6 +170,14 @@ code { font-size: 12px; color: #b9b9c6; }
 .editavel[aria-invalid="true"] { border-color: var(--neg); }
 .so-leitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
+/* recorrentes */
+.discreto { text-decoration: none; }
+.discreto:hover { text-decoration: underline; }
+.ignoradas { margin-top: 20px; }
+.ignoradas summary { cursor: pointer; padding: 6px 0; }
+.ignoradas summary + .tabela-wrap { margin-top: 8px; }
+.acoes-linha .botao { cursor: pointer; border-radius: 8px; font: inherit; font-size: 13px; }
+
 /* contas */
 .grade-contas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 .conta { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
