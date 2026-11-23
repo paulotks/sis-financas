@@ -30,7 +30,7 @@ export default function Orcamento() {
 
       {(q.error ?? salvar.error) && <div className="aviso erro">{(q.error ?? salvar.error)!.message}</div>}
 
-      <div className="cards tres">
+      <div className="cards">
         <div className="card"><small>Planejado</small><strong>{dinheiro(q.data ? planejado : null)}</strong></div>
         <div className="card"><small>Gasto</small><strong>{dinheiro(q.data ? gasto : null)}</strong></div>
         <div className="card"><small>Resta</small><strong className={resta < 0 ? "neg" : ""}>{dinheiro(q.data ? resta : null)}</strong></div>

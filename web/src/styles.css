@@ -100,27 +100,43 @@ code { font-size: 12px; color: #b9b9c6; }
 .oferta .botao { padding: 6px 10px; }
 
 /* resumo */
-.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
 .card { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; text-decoration: none; }
-.card small { color: var(--mudo); text-transform: uppercase; font-size: 11px; letter-spacing: .05em; }
-.card strong { font-size: 22px; font-variant-numeric: tabular-nums; }
-.card em { color: var(--mudo); font-style: normal; font-size: 12px; }
-.card.link:hover { border-color: #3a3a44; }
+.card small { color: var(--mudo); font-size: 13px; }
+.card strong { font-size: 24px; letter-spacing: -.01em; }
+.destaques { display: grid; grid-template-columns: 1.6fr 1fr; grid-template-rows: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.destaques .card { padding: 22px 24px; justify-content: center; border-color: transparent; border-radius: 16px; }
+.destaques .destaque { grid-row: 1 / -1; }
+.destaques .destaque strong { font-size: 52px; line-height: 1.1; letter-spacing: -.03em; }
+.planejado { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; text-decoration: none; }
+.planejado:hover .mudo, .card a.mudo:hover { color: var(--texto); }
+.faixa { display: flex; justify-content: space-between; gap: 12px; padding: 12px 24px; margin-bottom: 14px; background: var(--painel); border-radius: 16px; text-decoration: none; }
+.faixa:hover { background: var(--painel-2); }
+.faixa .alerta { margin-right: 6px; font-size: 10px; }
 .duas-colunas { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
-.painel { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 18px; }
-.barras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.barras a { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; text-decoration: none; }
-.barras .rotulo em { color: var(--mudo); font-style: normal; font-size: 12px; }
+.painel { background: var(--painel); border: 1px solid transparent; border-radius: 16px; padding: 22px 24px; }
+.painel-topo { display: flex; justify-content: space-between; align-items: baseline; }
+.painel-topo a { text-decoration: none; font-size: 13px; }
+.barras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.barras a { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 7px 8px; margin: 0 -8px; border-radius: 8px; text-decoration: none; }
+.barras a:hover, .barras a:focus-visible { background: var(--painel-2); }
+.barras a:hover .barra > span, .barras a:focus-visible .barra > span { background: var(--texto); }
 .barras .valor { font-variant-numeric: tabular-nums; }
-.barras .barra, .conta .barra { grid-column: 1 / -1; height: 6px; background: var(--painel-2); border-radius: 999px; overflow: hidden; }
-.barras .barra span, .conta .barra span { display: block; height: 100%; border-radius: 999px; }
-.conta .barra span { background: var(--destaque); }
+.barras .valor em { display: inline-block; min-width: 38px; text-align: right; color: var(--mudo); font-style: normal; font-size: 12px; }
+.barras .barra { grid-column: 1 / -1; }
+.ver-todas { margin-top: 12px; cursor: pointer; border-radius: 8px; font: inherit; font-size: 13px; }
+.recentes { margin-top: 14px; }
+.recentes ul { list-style: none; margin: 0; padding: 0; }
+.recentes li + li { border-top: 1px solid var(--borda); }
+.recente { display: grid; grid-template-columns: 52px minmax(0, 1fr) 200px 120px; gap: 12px; align-items: center; padding: 9px 0; }
+.recente .nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recente .nome small { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.recentes + p { margin: 14px 8px 0; }
 .saldos { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 0 0 16px; }
 .saldos dt { color: var(--mudo); }
 .saldos dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* orçamento */
-.cards.tres { grid-template-columns: repeat(3, 1fr); }
 .orcamento td a { text-decoration: none; }
 .orcamento td a:hover { text-decoration: underline; }
 .orcamento th.num, .tabela th.num { text-align: right; }
@@ -152,7 +168,7 @@ code { font-size: 12px; color: #b9b9c6; }
 @media (max-width: 980px) {
   .app { grid-template-columns: minmax(0, 1fr); } /* 1fr puro cresce com a tabela e a página rola de lado */
   .lateral { position: static; height: auto; flex-direction: row; flex-wrap: wrap; }
-  .cards, .duas-colunas { grid-template-columns: 1fr 1fr; }
+  .duas-colunas { grid-template-columns: 1fr 1fr; }
   .conteudo { padding: 20px; }
   .lateral { padding: 10px 12px; gap: 6px; align-items: center; }
   .marca { padding: 0 8px 0 0; }
@@ -162,10 +178,13 @@ code { font-size: 12px; color: #b9b9c6; }
 }
 @media (max-width: 640px) {
   .conteudo { padding: 14px 12px 40px; }
-  .cards, .cards.tres, .duas-colunas { grid-template-columns: minmax(0, 1fr); }
+  .cards, .duas-colunas, .destaques { grid-template-columns: minmax(0, 1fr); }
+  .destaques { grid-template-rows: none; }
+  .destaques .destaque strong { font-size: 40px; }
+  .recente { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .recente .campo { grid-column: 2 / -1; grid-row: 2; }
   .topo { flex-wrap: wrap; }
   .filtros input.campo, .filtros .campo.categoria { min-width: 0; flex: 1 1 100%; }
   .seletor-mes span { min-width: 110px; }
-  .card strong { font-size: 19px; }
 }
 .filtros .campo.categoria { width: auto; min-width: 200px; }

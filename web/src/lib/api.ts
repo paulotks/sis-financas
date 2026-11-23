@@ -195,7 +195,8 @@ export const somarMes = (mes: string, delta: number) => {
   const d = new Date(a, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
-export const mesAtual = () => new Date().toLocaleDateString("sv").slice(0, 7); // "sv" = AAAA-MM-DD local; em UTC o mês virava às 21h
+export const hoje = () => new Date().toLocaleDateString("sv"); // "sv" = AAAA-MM-DD local; em UTC o dia virava às 21h
+export const mesAtual = () => hoje().slice(0, 7);
 export const GRUPOS: Record<Categoria["grupo"], string> = {
   essencial: "Essencial",
   estilo_de_vida: "Estilo de vida",
