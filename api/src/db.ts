@@ -150,6 +150,22 @@ const MIGRACOES: string[] = [
     PRIMARY KEY (categoria_id, mes)
   );
   `,
+  `
+  CREATE TABLE saldos_diarios (                            -- o saldo é sobrescrito a cada sincronização; sem isto não há evolução
+    data           TEXT NOT NULL,                          -- AAAA-MM-DD local
+    origem         TEXT NOT NULL CHECK (origem IN ('conta','investimento','bem')),
+    ref_id         TEXT NOT NULL,
+    saldo_centavos INTEGER NOT NULL,
+    PRIMARY KEY (data, origem, ref_id)
+  );
+  CREATE TABLE bens (                                      -- linhas manuais do patrimônio; valor negativo = dívida
+    id             INTEGER PRIMARY KEY,
+    nome           TEXT NOT NULL,
+    valor_centavos INTEGER NOT NULL,
+    pessoa         TEXT NOT NULL DEFAULT 'PF' CHECK (pessoa IN ('PF','PJ')),
+    criado_em      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  );
+  `,
 ];
 
 export function migrar() {

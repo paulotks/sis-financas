@@ -321,6 +321,54 @@ test("planejado vale dali em diante e não mexe no passado", async () => {
   assert.equal((await por("2020-04", 1, 9999)).status, 400);
 });
 
+test("patrimônio: contas + investimentos + bens − cartões e dívidas, sem oculta, resgatado nem a outra pessoa", async () => {
+  const ver = async (pessoa = "PF") => (await chamar("GET", `/api/patrimonio?pessoa=${pessoa}`)).d;
+  const ITEM3 = "44444444-4444-4444-8444-444444444444";
+  db.prepare("INSERT INTO conexoes (item_id) VALUES (?)").run(ITEM3);
+  const investir = (id: string, item: string, saldo: number, status: string) =>
+    db.prepare("INSERT INTO investimentos (id, item_id, saldo_centavos, bruto) VALUES (?,?,?,?)").run(id, item, saldo, JSON.stringify({ status }));
+  const corrente = novaConta("BANK", { saldo: 100000 });
+  novaConta("BANK", { saldo: -20000 }); // cheque especial
+  novaConta("CREDIT", { saldo: 30000 }); // limite usado: dívida
+  const oculta = novaConta("BANK", { saldo: 999, oculta: 1 });
+  novaConta("BANK", { saldo: 5000, pessoa: "PJ", item: ITEM3 });
+  investir("cdb", ITEM, 70000, "ACTIVE");
+  investir("resgatado", ITEM, 999, "TOTAL_WITHDRAWAL");
+  investir("cdb-pj", ITEM3, 1000, "ACTIVE"); // banco só com conta PJ
+  const carro = (await chamar("POST", "/api/bens", { nome: "Carro", valor_centavos: 500000, pessoa: "PF" })).d;
+  await chamar("POST", "/api/bens", { nome: "Financiamento", valor_centavos: -200000, pessoa: "PF" });
+
+  const p = await ver();
+  assert.deepEqual([p.contas, p.investimentos, p.bens, p.dividas, p.total], [80000, 70000, 500000, 230000, 420000]);
+  assert.equal((await ver("PJ")).total, 6000);
+
+  const ed = await chamar("PATCH", `/api/bens/${carro.id}`, { valor_centavos: 450000 });
+  assert.deepEqual([ed.d.nome, ed.d.valor_centavos], ["Carro", 450000]);
+  assert.equal((await ver()).total, 370000);
+  assert.equal((await chamar("PATCH", "/api/bens/9999", { nome: "x" })).status, 404);
+  assert.equal((await chamar("POST", "/api/bens", { nome: " ", valor_centavos: 1, pessoa: "PF" })).status, 400);
+
+  // uma foto por dia, a última vale; conta oculta é fotografada mas não soma
+  await sincronizar(ITEM2);
+  db.prepare("UPDATE contas SET saldo_centavos = 110000 WHERE id = ?").run(corrente);
+  await sincronizar(ITEM2);
+  const fotos = (ref: string) => db.prepare("SELECT saldo_centavos FROM saldos_diarios WHERE ref_id = ?").all(ref) as { saldo_centavos: number }[];
+  assert.deepEqual(fotos(corrente).map((f) => f.saldo_centavos), [110000]);
+  assert.equal(fotos(oculta).length, 1);
+  assert.equal(fotos("resgatado").length, 0);
+
+  const foto = db.prepare("INSERT INTO saldos_diarios (data, origem, ref_id, saldo_centavos) VALUES ('2020-01-01', ?, ?, ?)");
+  foto.run("conta", corrente, 90000);
+  foto.run("conta", oculta, 999);
+  foto.run("investimento", "resgatado", 5000); // já valeu: continua no passado
+  const { historico, total } = await ver();
+  assert.deepEqual([historico.length, historico[0], historico[1].total], [2, { data: "2020-01-01", total: 95000 }, total]);
+
+  await chamar("DELETE", `/api/bens/${carro.id}`);
+  assert.equal((await ver()).lista_bens.length, 1);
+  assert.equal(fotos(String(carro.id)).length, 0);
+});
+
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {
   for (const [texto, centavos] of [
     ["1.234,56", 123456], ["R$ 1.234,56", 123456], ["1234", 123400], ["1.234", 123400], ["12,5", 1250], ["12.50", 1250],

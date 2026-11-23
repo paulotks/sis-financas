@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, hoje, mesAtual, nomeMes, type Lancamento } from "../lib/api";
+import LinhaPatrimonio from "../components/LinhaPatrimonio";
 import OferecerRegra from "../components/OferecerRegra";
 import SelectCategoria from "../components/SelectCategoria";
 import SeletorMes from "../components/SeletorMes";
@@ -20,6 +21,7 @@ export default function Resumo() {
   };
   const r = useQuery({ queryKey: ["resumo", mes, pessoa], queryFn: () => api.resumo(mes, pessoa) });
   const orc = useQuery({ queryKey: ["orcamento", mes], queryFn: () => api.orcamento(mes), enabled: pessoa === "PF" });
+  const pat = useQuery({ queryKey: ["patrimonio", pessoa], queryFn: () => api.patrimonio(pessoa) });
   const d = r.data;
   const planejado = pessoa === "PF" ? (orc.data?.linhas.reduce((s, l) => s + (l.planejado ?? 0), 0) ?? 0) : 0;
   const filtro = (extra: string) => `/lancamentos?mes=${mes}${pessoa === "PJ" ? "&pessoa=PJ" : ""}${extra}`;
@@ -68,12 +70,17 @@ export default function Resumo() {
           {d && <Categorias key={mes + pessoa} lista={d.porCategoria} total={d.saidas} link={filtro} />}
         </div>
         <div className="painel">
-          <h2>Agora</h2>
+          <div className="painel-topo">
+            <h2>Patrimônio hoje</h2>
+            <Link className="mudo" to={`/contas${pessoa === "PJ" ? "?pessoa=PJ" : ""}`}>Ver contas →</Link>
+          </div>
+          {pat.error && <div className="aviso erro">{pat.error.message}</div>}
+          <strong className={`grande ${pat.data && pat.data.total < 0 ? "neg" : ""}`}>{dinheiro(pat.data?.total)}</strong>
+          {pat.data && <LinhaPatrimonio key={pessoa} pontos={pat.data.historico} />}
           <dl className="saldos">
-            <dt>Saldo nas contas</dt>
-            <dd>{dinheiro(d?.saldos.contas)}</dd>
-            <dt>Usado nos cartões</dt>
-            <dd>{dinheiro(d?.saldos.cartoes)}</dd>
+            <dt>Contas</dt><dd>{dinheiro(pat.data?.contas)}</dd>
+            <dt>Investimentos e bens</dt><dd>{dinheiro(pat.data ? pat.data.investimentos + pat.data.bens : null)}</dd>
+            <dt>Cartões e dívidas</dt><dd>{dinheiro(pat.data ? -pat.data.dividas : null)}</dd>
           </dl>
         </div>
       </div>

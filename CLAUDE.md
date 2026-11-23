@@ -28,11 +28,12 @@ api/src/
   pluggy.ts       cliente Pluggy: /auth (apiKey em cache ~110 min), /connect_token, items, accounts, bills, investments, /v2/transactions
   sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
+  patrimonio.ts   soma das posições e foto diária dos saldos
   server.ts       rotas Fastify + zod; serve web/dist se existir
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, CampoDinheiro, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
   pages/                Resumo, Lancamentos, Orcamento, Contas, Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
@@ -58,6 +59,7 @@ web/src/
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura) fica **fora do resumo**, para não contar o mesmo gasto duas vezes.
 - **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Crédito em cartão com categoria de gasto é **estorno e abate** a categoria; sem categoria não abate (pode ser fatura paga).
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
+- **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
 - Contas têm `pessoa` PF/PJ. Inter Empresas = PJ (TRKS Studio, empresa do Paulo) e não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe
@@ -69,7 +71,7 @@ web/src/
 - `date` vem em UTC (a documentação manda converter para GMT-3). Hoje usamos só a parte da data: conferir com dados reais se lançamento feito depois das 21h cai no dia seguinte.
 - Itens do MeuPluggy **não** aceitam refresh pela API; a Pluggy atualiza 1x/dia. Nem o widget (`updateItem`) atualiza o item proxy: reautorizar banco = refazer no meu.pluggy.ai (atualiza sozinho a cada 24h). Limite gratuito: 5 conexões ativas do mesmo titular (a tela Conexões mostra n/5). Widget fixado em v2.7.0.
 - Faturas (`/bills`) e investimentos (`/investments`) podem não existir para alguns bancos: tratar `ErroPluggy` e seguir.
-- Cofrinhos do Mercado Pago não aparecem como conta; se vierem, é por `/investments`. Ainda não confirmado com dados reais.
+- Cofrinhos do Mercado Pago não aparecem como conta nem em `/investments` (vazio nos 5 bancos em 2026-11-23). No extrato vêm em par (+X/−X). Até virem, entram como linha manual em `bens`.
 - O ambiente de nuvem do Claude (Cowork) **não alcança** api.pluggy.ai. Teste real só no PC do Paulo. Para testes automatizados, use um servidor falso via `PLUGGY_API_URL`.
 - Cartões **fora** do Open Finance (Bradescard, C&A Pay, Pefisa, Midway) precisarão de lançamento manual (próxima fase).
 

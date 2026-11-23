@@ -132,9 +132,27 @@ code { font-size: 12px; color: #b9b9c6; }
 .recente .nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recente .nome small { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .recentes + p { margin: 14px 8px 0; }
-.saldos { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 0 0 16px; }
+.saldos { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 16px 0 0; }
 .saldos dt { color: var(--mudo); }
-.saldos dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.saldos dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* patrimônio */
+.grande { display: block; font-size: 34px; line-height: 1.2; letter-spacing: -.02em; }
+.evolucao { margin: 34px 0 0; } /* folga para a dica não cobrir o total */
+.evolucao .grafico { position: relative; height: 96px; margin: 6px 5px; cursor: crosshair; touch-action: pan-y; }
+.evolucao svg { width: 100%; height: 100%; overflow: visible; }
+.evolucao polyline { fill: none; stroke: #a1a1ad; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.evolucao .mira { position: absolute; inset-block: 0; width: 1px; background: var(--borda); }
+.evolucao .marcador { position: absolute; width: 9px; height: 9px; margin: -4.5px; border-radius: 50%; background: var(--texto); box-shadow: 0 0 0 2px var(--painel); }
+.evolucao .dica { position: absolute; bottom: 100%; padding: 4px 8px; border-radius: 6px; background: var(--painel-2); color: var(--mudo); font-size: 12px; white-space: nowrap; pointer-events: none; }
+.evolucao .dica strong { color: var(--texto); }
+.evolucao figcaption { display: flex; justify-content: space-between; font-size: 11px; }
+.patrimonio details { margin-top: 14px; }
+.patrimonio details .tabela { min-width: 0; }
+.bens { list-style: none; margin: 10px 0; padding: 0; }
+.bens li { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto; gap: 6px; align-items: center; border-bottom: 1px solid var(--borda); padding: 4px 0; }
+.patrimonio .linha-form .campo { min-width: 0; flex: 1; }
+.campo[aria-invalid="true"] { border-color: var(--neg); }
 
 /* orçamento */
 .orcamento td a { text-decoration: none; }

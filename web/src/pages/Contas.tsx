@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, type Conta } from "../lib/api";
+import Patrimonio from "../components/Patrimonio";
 
 export default function Contas() {
   const qc = useQueryClient();
@@ -31,6 +32,8 @@ export default function Contas() {
       </header>
 
       {(q.error ?? editar.error) && <div className="aviso erro">{(q.error ?? editar.error)!.message}</div>}
+
+      <Patrimonio />
 
       {(["PF", "PJ"] as const).map((pessoa) => {
         const doGrupo = contas.filter((c) => c.pessoa === pessoa);

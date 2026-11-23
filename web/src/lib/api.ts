@@ -85,7 +85,21 @@ export interface Resumo {
   saidas: number;
   pendentes: number;
   porCategoria: { categoria_id: number | null; categoria: string; cor: string | null; total: number; qtd: number }[];
-  saldos: { contas: number; cartoes: number };
+}
+
+export interface Bem {
+  id: number;
+  nome: string;
+  valor_centavos: number;
+}
+export interface Patrimonio {
+  contas: number;
+  investimentos: number;
+  bens: number;
+  dividas: number;
+  total: number;
+  historico: { data: string; total: number }[];
+  lista_bens: Bem[];
 }
 
 export interface LinhaOrcamento {
@@ -151,6 +165,11 @@ export const api = {
   ) => req<Lancamento>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
+
+  patrimonio: (pessoa: string) => req<Patrimonio>("GET", `/api/patrimonio${qs({ pessoa })}`),
+  criarBem: (d: { nome: string; valor_centavos: number; pessoa: "PF" | "PJ" }) => req<Bem>("POST", "/api/bens", d),
+  editarBem: (id: number, d: { nome?: string; valor_centavos?: number }) => req<Bem>("PATCH", `/api/bens/${id}`, d),
+  apagarBem: (id: number) => req<{ ok: true }>("DELETE", `/api/bens/${id}`),
 
   orcamento: (mes: string) => req<Orcamento>("GET", `/api/orcamento${qs({ mes })}`),
   salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<{ ok: true }>("PUT", "/api/orcamento", d),

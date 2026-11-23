@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
 import { db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
+import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
@@ -219,13 +220,7 @@ app.get("/api/resumo", async (req) => {
             COALESCE(SUM(${GASTO}),0) AS saidas,
             SUM(l.categoria_id IS NULL) AS pendentes ${BASE_RESUMO}`,
   ).get(...periodo(mes, pessoa)) as { entradas: number; saidas: number; pendentes: number | null };
-  const porCategoria = gastosPorCategoria(mes, pessoa);
-  const saldos = db.prepare(
-    `SELECT COALESCE(SUM(CASE WHEN tipo='BANK' THEN saldo_centavos END),0) AS contas,
-            COALESCE(SUM(CASE WHEN tipo='CREDIT' THEN saldo_centavos END),0) AS cartoes
-     FROM contas WHERE pessoa = ? AND oculta = 0`,
-  ).get(pessoa);
-  return { mes, pessoa, ...tot, pendentes: tot.pendentes ?? 0, porCategoria, saldos };
+  return { mes, pessoa, ...tot, pendentes: tot.pendentes ?? 0, porCategoria: gastosPorCategoria(mes, pessoa) };
 });
 
 // ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
@@ -253,6 +248,35 @@ app.put("/api/orcamento", async (req) => {
      ON CONFLICT(categoria_id, mes) DO UPDATE SET valor_centavos = excluded.valor_centavos`,
   ).run(d.categoria_id, d.mes, d.valor_centavos);
   return { ok: true };
+});
+
+// ---------------- patrimônio ----------------
+
+const pessoaPFPJ = z.enum(["PF", "PJ"]);
+app.get("/api/patrimonio", async (req) => patrimonio(z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query).pessoa));
+
+const bem = z.object({ nome: z.string().trim().min(1).max(60), valor_centavos: z.number().int().min(-1e12).max(1e12) });
+app.post("/api/bens", async (req) => {
+  const d = bem.extend({ pessoa: pessoaPFPJ }).parse(req.body);
+  const r = db.prepare("INSERT INTO bens (nome, valor_centavos, pessoa) VALUES (?,?,?) RETURNING *").get(d.nome, d.valor_centavos, d.pessoa);
+  registrarSaldos();
+  return r;
+});
+app.patch("/api/bens/:id", async (req) => {
+  const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
+  const d = bem.partial().parse(req.body);
+  const r = db.prepare("UPDATE bens SET nome = COALESCE(?, nome), valor_centavos = COALESCE(?, valor_centavos) WHERE id = ? RETURNING *")
+    .get(d.nome ?? null, d.valor_centavos ?? null, id);
+  registrarSaldos();
+  return ouNaoEncontrado(r, "bem");
+});
+app.delete("/api/bens/:id", async (req) => {
+  const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
+  return transacao(() => {
+    db.prepare("DELETE FROM saldos_diarios WHERE origem = 'bem' AND ref_id = ?").run(String(id)); // o id pode ser reaproveitado
+    db.prepare("DELETE FROM bens WHERE id = ?").run(id);
+    return { ok: true };
+  });
 });
 
 // ---------------- categorias e regras ----------------
