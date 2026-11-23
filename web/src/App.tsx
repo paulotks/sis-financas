@@ -55,8 +55,10 @@ export default function App() {
         </div>
       </aside>
       <main className="conteudo">
+        {conexoes.error && <div className="aviso erro">A API local não respondeu: {conexoes.error.message}</div>}
         <Routes>
-          <Route path="/" element={<Navigate to={conexoes.data?.length === 0 ? "/conexoes" : "/resumo"} replace />} />
+          {/* espera as conexões chegarem: sem nenhuma, a primeira tela é a de conectar banco */}
+          <Route path="/" element={conexoes.isPending ? null : <Navigate to={conexoes.data?.length === 0 ? "/conexoes" : "/resumo"} replace />} />
           <Route path="/resumo" element={<Resumo />} />
           <Route path="/lancamentos" element={<Lancamentos />} />
           <Route path="/contas" element={<Contas />} />

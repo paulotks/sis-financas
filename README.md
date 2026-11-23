@@ -30,10 +30,16 @@ npm run build
 npm start          # tudo em http://127.0.0.1:3333
 ```
 
+### Testes
+
+```powershell
+npm test           # Pluggy falsa e base temporária; não usa credenciais nem a base real
+```
+
 ## Segurança
 
 - `PLUGGY_CLIENT_ID` e `PLUGGY_CLIENT_SECRET` ficam só no `.env`, que está no `.gitignore`. O navegador recebe apenas o Connect Token, que vale 30 minutos.
-- A API escuta só em `127.0.0.1` e recusa escrita (POST/PATCH/DELETE) vinda de outra origem.
+- A API escuta só em `127.0.0.1` e recusa escrita (POST/PATCH/DELETE) vinda de outra origem e qualquer pedido com `Host` de fora (DNS rebinding).
 - `data/` (a base) e `.env` **nunca** vão para o GitHub.
 
 ## Como funciona
@@ -41,7 +47,7 @@ npm start          # tudo em http://127.0.0.1:3333
 | Conceito | Detalhe |
 |---|---|
 | Conexão | Um *item* da Pluggy (um banco autorizado). |
-| Sincronização | Item → contas → lançamentos (`GET /v2/transactions`, por cursor) → faturas (cartões) → investimentos. É incremental: volta 15 dias a partir do último lançamento de cada conta. |
+| Sincronização | Item → contas → lançamentos (`GET /v2/transactions`, por cursor) → faturas (cartões) → investimentos. Relê os últimos 365 dias (`SYNC_DIAS_INICIAIS`) e as parcelas futuras, porque a Pluggy cria lançamentos com data passada. Nos últimos 60 dias, remove o que a Pluggy apagou e recriou com outro id (a sua edição passa para o substituto; sem substituto, o lançamento editado fica marcado como “removido pelo banco” e não soma). |
 | Valores | Em centavos; saída é negativa (definida pelo `type` DEBIT/CREDIT da Pluggy). |
 | Categorias | Ordem de decisão: regra sua > categoria da Pluggy (mapeada) > sem categoria. Uma edição manual nunca é sobrescrita pela sincronização. |
 | Regras | Criadas ao categorizar um lançamento com **Aplicar a iguais** ligado. Valem para lançamentos cuja descrição original *contém* o texto. |

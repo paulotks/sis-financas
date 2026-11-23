@@ -11,10 +11,11 @@ try {
 }
 
 export const env = {
-  porta: Number(process.env.PORT ?? 3333),
-  dbPath: path.resolve(RAIZ, process.env.DB_PATH ?? "data/financas.db"),
-  pluggyUrl: process.env.PLUGGY_API_URL ?? "https://api.pluggy.ai",
-  syncDiasIniciais: Number(process.env.SYNC_DIAS_INICIAIS ?? 365),
+  // || e não ??: variável vazia ("PORT=") no .env também cai no padrão
+  porta: Number(process.env.PORT) || 3333,
+  dbPath: path.resolve(RAIZ, process.env.DB_PATH || "data/financas.db"),
+  pluggyUrl: process.env.PLUGGY_API_URL || "https://api.pluggy.ai",
+  syncDiasIniciais: Number(process.env.SYNC_DIAS_INICIAIS) || 365,
   webDist: path.join(RAIZ, "web", "dist"),
 };
 

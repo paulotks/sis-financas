@@ -13,6 +13,9 @@ export interface ResultadoSync {
   erro?: string;
 }
 
+/** Janela em que lançamentos que sumiram da Pluggy são removidos daqui (menor que a da busca: o que sumir por engano volta). */
+const DIAS_CONFERENCIA = 60;
+
 const diasAtras = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 export function salvarConexao(item: PItem) {
@@ -76,9 +79,9 @@ const valorComSinal = (t: PTransacao) => {
 };
 
 function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carregarRegras>) {
-  let novos = 0;
+  const novos: string[] = [];
   let atualizados = 0;
-  const existe = db.prepare("SELECT 1 FROM lancamentos WHERE id = ?");
+  const existe = db.prepare("SELECT bruto FROM lancamentos WHERE id = ?");
   const inserir = db.prepare(
     `INSERT INTO lancamentos (id, conta_id, data, descricao_original, descricao, valor_centavos, tipo, status,
        categoria_pluggy, categoria_id, regra_id, comerciante, parcela, total_parcelas, fatura_id, bruto, atualizado_em)
@@ -101,19 +104,64 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
       total: cc.totalInstallments ?? null,
       fatura: cc.billId ?? null,
     };
-    if (existe.get(t.id)) {
+    const bruto = JSON.stringify(t);
+    const antes = existe.get(t.id) as { bruto: string } | undefined;
+    if (antes) {
       atualizar.run(comum.data, original, comum.valor, t.type, t.status ?? null, t.category ?? null, comerciante,
-        comum.parcela, comum.total, comum.fatura, JSON.stringify(t), t.id);
-      atualizados++;
+        comum.parcela, comum.total, comum.fatura, bruto, t.id);
+      if (antes.bruto !== bruto) atualizados++; // relido sem mudança não conta
     } else {
       const s = sugerirCategoria(original, t.category, regras);
       inserir.run(t.id, t.accountId, comum.data, original, s.descricao || t.description || original, comum.valor,
         t.type, t.status ?? null, t.category ?? null, s.categoria_id, s.regra_id, comerciante, comum.parcela,
-        comum.total, comum.fatura, JSON.stringify(t));
-      novos++;
+        comum.total, comum.fatura, bruto);
+      novos.push(t.id);
     }
   }
   return { novos, atualizados };
+}
+
+/**
+ * Quando a fatura fecha, a Pluggy pode apagar um lançamento e recriá-lo com outro id; sem isto, o antigo ficaria e
+ * contaria em dobro. O que o Paulo editou passa para o substituto; sem substituto, o editado fica como REMOVIDO:
+ * aparece na lista, não soma, e volta ao normal se o banco o devolver (o status vem do banco a cada sincronização).
+ * ponytail: substituto = mesma parcela e 2 de 3 entre valor, data e descrição; usar o providerId se isso errar com dados reais.
+ */
+function removerSumidos(contaId: string, de: string, lista: PTransacao[], novos: string[]) {
+  if (!lista.length) return; // resposta vazia costuma ser falha do banco: não apaga nada
+  const maisAntigo = lista.reduce((m, t) => (t.date < m ? t.date : m), lista[0].date).slice(0, 10);
+  const limite = [de, diasAtras(DIAS_CONFERENCIA), maisAntigo].sort()[2];
+  const sumidos = db.prepare(
+    `SELECT id, data, descricao, descricao_original, valor_centavos, parcela, categoria_id, categoria_manual, notas, tags, ignorado,
+       COALESCE(descricao,'') NOT IN (COALESCE(descricao_original,''), COALESCE(json_extract(bruto,'$.description'),'')) AS descricao_editada
+     FROM lancamentos
+     WHERE conta_id = ? AND data > ? AND bruto IS NOT NULL AND id NOT IN (SELECT value FROM json_each(?))`,
+  ).all(contaId, limite, JSON.stringify(lista.map((t) => t.id))) as {
+    id: string; data: string; descricao: string; descricao_original: string; valor_centavos: number; parcela: number | null;
+    categoria_id: number | null; categoria_manual: number; notas: string | null; tags: string; ignorado: number; descricao_editada: number;
+  }[];
+  const livres = new Set(novos);
+  const buscar = db.prepare(
+    `SELECT id FROM lancamentos
+     WHERE id IN (SELECT value FROM json_each(?)) AND parcela IS ? AND (valor_centavos = ?) + (data = ?) + (descricao_original = ?) >= 2
+     ORDER BY (valor_centavos = ?) + (descricao_original = ?) DESC, abs(julianday(data) - julianday(?)) LIMIT 1`,
+  );
+  for (const s of sumidos) {
+    if (s.categoria_manual || s.ignorado || s.notas || s.tags !== "[]" || s.descricao_editada) {
+      const par = buscar.get(JSON.stringify([...livres]), s.parcela, s.valor_centavos, s.data, s.descricao_original,
+        s.valor_centavos, s.descricao_original, s.data) as { id: string } | undefined;
+      if (!par) {
+        db.prepare("UPDATE lancamentos SET status = 'REMOVIDO' WHERE id = ?").run(s.id);
+        continue;
+      }
+      livres.delete(par.id);
+      db.prepare("UPDATE lancamentos SET notas = ?, tags = ?, ignorado = ? WHERE id = ?").run(s.notas, s.tags, s.ignorado, par.id);
+      if (s.categoria_manual)
+        db.prepare("UPDATE lancamentos SET categoria_id = ?, categoria_manual = 1, regra_id = NULL WHERE id = ?").run(s.categoria_id, par.id);
+      if (s.descricao_editada) db.prepare("UPDATE lancamentos SET descricao = ? WHERE id = ?").run(s.descricao, par.id);
+    }
+    db.prepare("DELETE FROM lancamentos WHERE id = ?").run(s.id);
+  }
 }
 
 /** Busca na Pluggy e grava: item, contas, transações, faturas (cartões) e investimentos. */
@@ -132,14 +180,19 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
 
     const regras = carregarRegras();
     for (const c of contas) {
-      // incremental: volta 15 dias a partir do último lançamento, para pegar pendentes que viraram lançados
-      const ultimo = (db.prepare("SELECT MAX(data) AS d FROM lancamentos WHERE conta_id = ?").get(c.id) as { d: string | null }).d;
-      const de = desde ?? (ultimo ? new Date(Date.parse(ultimo) - 15 * 86_400_000).toISOString().slice(0, 10) : diasAtras(env.syncDiasIniciais));
-      for await (const pagina of pluggy.transacoes(c.id, de)) {
-        const r = transacao(() => salvarTransacoes(pagina, regras));
-        res.novos += r.novos;
-        res.atualizados += r.atualizados;
-      }
+      // Relê a janela inteira: a Pluggy cria lançamentos com data passada e parcelas com data futura, então partir
+      // do "último lançamento" deixaria buracos. São poucas páginas de 500.
+      const de = desde ?? diasAtras(env.syncDiasIniciais);
+      const lista: PTransacao[] = [];
+      for await (const pagina of pluggy.transacoes(c.id, de)) lista.push(...pagina);
+      // só grava com todas as páginas em mãos, numa transação: conta inteira ou nada
+      const r = transacao(() => {
+        const r = salvarTransacoes(lista, regras);
+        removerSumidos(c.id, de, lista, r.novos);
+        return r;
+      });
+      res.novos += r.novos.length;
+      res.atualizados += r.atualizados;
       if (c.type === "CREDIT") {
         try {
           const faturas = await pluggy.faturas(c.id);
@@ -186,20 +239,18 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
   return res;
 }
 
-let emAndamento: Promise<ResultadoSync[]> | null = null;
+let fila: Promise<unknown> = Promise.resolve();
 
-/** Sincroniza tudo (ou um item). Duas chamadas ao mesmo tempo reaproveitam a mesma execução. */
-export function sincronizar(itemId?: string, desde?: string) {
-  if (emAndamento) return emAndamento;
-  const ids = itemId
-    ? [itemId]
-    : (db.prepare("SELECT item_id FROM conexoes ORDER BY criado_em").all() as { item_id: string }[]).map((r) => r.item_id);
-  emAndamento = (async () => {
+/** Sincroniza tudo (ou um item). Uma por vez: chamadas simultâneas entram na fila e cada uma recebe o próprio resultado. */
+export function sincronizar(itemId?: string, desde?: string): Promise<ResultadoSync[]> {
+  const execucao = fila.then(async () => {
+    const ids = itemId
+      ? [itemId]
+      : (db.prepare("SELECT item_id FROM conexoes ORDER BY criado_em").all() as { item_id: string }[]).map((r) => r.item_id);
     const out: ResultadoSync[] = [];
     for (const id of ids) out.push(await sincronizarItem(id, desde));
     return out;
-  })().finally(() => {
-    emAndamento = null;
   });
-  return emAndamento;
+  fila = execucao.catch(() => {});
+  return execucao;
 }

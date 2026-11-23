@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, type Conta } from "../lib/api";
@@ -29,6 +29,8 @@ export default function Contas() {
           <input type="checkbox" checked={mostrarOcultas} onChange={(e) => setMostrarOcultas(e.target.checked)} /> Mostrar ocultas
         </label>
       </header>
+
+      {(q.error ?? editar.error) && <div className="aviso erro">{(q.error ?? editar.error)!.message}</div>}
 
       {(["PF", "PJ"] as const).map((pessoa) => {
         const doGrupo = contas.filter((c) => c.pessoa === pessoa);
@@ -66,7 +68,14 @@ export default function Contas() {
 }
 
 function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean }) => void }) {
-  const [apelido, setApelido] = useState(c.apelido ?? c.nome ?? "");
+  const atual = c.apelido ?? c.nome ?? "";
+  const [apelido, setApelido] = useState(atual);
+  useEffect(() => setApelido(atual), [atual]);
+  const salvarApelido = () => {
+    const v = apelido.trim();
+    if (v !== atual) onEditar({ apelido: v || null });
+    if (!v) setApelido(c.nome ?? ""); // vazio volta ao nome do banco
+  };
   const credito = c.tipo === "CREDIT";
   const usado = credito && c.limite_centavos ? Math.min(100, ((c.limite_centavos - (c.limite_disponivel_centavos ?? 0)) / c.limite_centavos) * 100) : 0;
 
@@ -78,7 +87,7 @@ function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: stri
           className="editavel titulo"
           value={apelido}
           onChange={(e) => setApelido(e.target.value)}
-          onBlur={() => apelido.trim() !== (c.apelido ?? c.nome ?? "") && onEditar({ apelido: apelido.trim() || null })}
+          onBlur={salvarApelido}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           title="Clique para renomear"
         />

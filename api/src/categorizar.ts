@@ -11,6 +11,15 @@ interface Regra {
 const MAPA_PLUGGY: [string, string][] = [
   ["credit card payment", "Pagamento de fatura"],
   ["same person transfer", "Transferência entre contas"],
+  // específicos antes dos genéricos que eles contêm (income, rent, tickets, interest, vehicle, sports)
+  ["income taxes", "Impostos e taxas"],
+  ["fixed income", "Investimentos"],
+  ["variable income", "Investimentos"],
+  ["proceeds interests", "Investimentos"],
+  ["car rental", "Transporte"],
+  ["traffic tickets", "Transporte"],
+  ["financing", "Juros e dívidas"],
+  ["sports goods", "Compras"],
   ["salary", "Renda"],
   ["income", "Renda"],
   ["retirement", "Renda"],
@@ -99,15 +108,21 @@ export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: str
 export function reaplicarRegras(): number {
   const regras = carregarRegras();
   const alvo = db
-    .prepare("SELECT id, descricao_original, categoria_pluggy, categoria_id FROM lancamentos WHERE categoria_manual = 0")
-    .all() as { id: string; descricao_original: string | null; categoria_pluggy: string | null; categoria_id: number | null }[];
+    .prepare("SELECT id, descricao_original, categoria_pluggy, categoria_id, regra_id FROM lancamentos WHERE categoria_manual = 0")
+    .all() as {
+    id: string;
+    descricao_original: string | null;
+    categoria_pluggy: string | null;
+    categoria_id: number | null;
+    regra_id: number | null;
+  }[];
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
   for (const l of alvo) {
     const s = sugerirCategoria(l.descricao_original ?? "", l.categoria_pluggy, regras);
-    if (s.categoria_id !== l.categoria_id) {
+    if (s.categoria_id !== l.categoria_id || s.regra_id !== l.regra_id) {
       upd.run(s.categoria_id, s.regra_id, l.id);
-      n++;
+      if (s.categoria_id !== l.categoria_id) n++;
     }
   }
   return n;

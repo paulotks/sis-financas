@@ -10,13 +10,16 @@ import { limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
 
 migrar();
 
-const app = Fastify({ logger: { level: "info", transport: undefined } });
+export const app = Fastify({ logger: { level: "info", transport: undefined } });
 
 // Só aceita escrita vinda do próprio PC (front em dev na 5173 ou servido pela própria API).
 const ORIGENS = new Set(
   [5173, env.porta].flatMap((p) => [`http://localhost:${p}`, `http://127.0.0.1:${p}`]),
 );
+const HOSTS = new Set([...ORIGENS].map((o) => new URL(o).host));
 app.addHook("onRequest", async (req, reply) => {
+  // Host de fora = DNS rebinding: um site qualquer apontando o próprio domínio para 127.0.0.1 leria os dados via GET
+  if (!HOSTS.has(req.headers.host ?? "")) return reply.code(403).send({ erro: "host não permitido" });
   const origem = req.headers.origin;
   if (req.method !== "GET" && req.method !== "HEAD" && origem && !ORIGENS.has(origem)) {
     return reply.code(403).send({ erro: "origem não permitida" });
@@ -26,17 +29,25 @@ app.addHook("onRequest", async (req, reply) => {
 app.setErrorHandler((err: Error, _req, reply) => {
   if (err instanceof ZodError) return reply.code(400).send({ erro: "dados inválidos", detalhes: err.issues });
   if (err instanceof ErroPluggy) return reply.code(502).send({ erro: err.message });
+  const errcode = (err as { errcode?: number }).errcode; // node:sqlite
+  if (errcode === 2067) return reply.code(409).send({ erro: "já existe um registro com esse nome ou texto" }); // UNIQUE
+  if (errcode === 787) return reply.code(400).send({ erro: "categoria não encontrada" }); // FOREIGN KEY
   const status = (err as { statusCode?: number }).statusCode ?? 500;
   if (status >= 500) app.log.error(err);
   return reply.code(status).send({ erro: err.message });
 });
 
 const uuid = z.string().uuid();
-const mesRe = /^\d{4}-\d{2}$/;
+const mesRe = /^\d{4}-(0[1-9]|1[0-2])$/;
 const fimDoMes = (mes: string) => {
   const [a, m] = mes.split("-").map(Number);
   return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
 };
+
+function ouNaoEncontrado<T>(registro: T | undefined, oQue: string): T {
+  if (registro === undefined) throw Object.assign(new Error(`${oQue}: não encontrado(a)`), { statusCode: 404 });
+  return registro;
+}
 
 // ---------------- Pluggy / conexões ----------------
 
@@ -96,7 +107,7 @@ app.patch("/api/contas/:id", async (req) => {
   if (d.oculta !== undefined) (sets.push("oculta = ?"), vals.push(d.oculta ? 1 : 0));
   if (!sets.length) return { ok: true };
   db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
-  return db.prepare("SELECT * FROM contas WHERE id = ?").get(id);
+  return ouNaoEncontrado(db.prepare("SELECT * FROM contas WHERE id = ?").get(id), "conta");
 });
 
 // ---------------- lançamentos ----------------
@@ -135,14 +146,16 @@ app.get("/api/lancamentos", async (req) => {
   if (q.conta) (onde.push("l.conta_id = ?"), vals.push(q.conta));
   if (q.categoria) (onde.push("l.categoria_id = ?"), vals.push(q.categoria));
   if (q.pessoa) (onde.push("ct.pessoa = ?"), vals.push(q.pessoa));
-  if (q.pendentes === "1") onde.push("l.categoria_id IS NULL AND l.ignorado = 0");
+  if (q.pendentes === "1") onde.push("l.categoria_id IS NULL AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'");
   if (q.busca) {
     onde.push("(l.descricao LIKE ? OR l.descricao_original LIKE ? OR l.notas LIKE ?)");
     const b = `%${q.busca}%`;
     vals.push(b, b, b);
   }
   const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde.join(" AND ")} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
-  return { itens, total: itens.length };
+  // total de verdade: a lista para em 2000 e a tela precisa saber que foi cortada
+  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id WHERE ${onde.join(" AND ")}`).get(...vals) as { total: number };
+  return { itens, total };
 });
 
 app.patch("/api/lancamentos/:id", async (req) => {
@@ -158,8 +171,7 @@ app.patch("/api/lancamentos/:id", async (req) => {
     })
     .parse(req.body);
 
-  const atual = db.prepare("SELECT descricao_original FROM lancamentos WHERE id = ?").get(id) as { descricao_original: string } | undefined;
-  if (!atual) throw Object.assign(new Error("lançamento não encontrado"), { statusCode: 404 });
+  const atual = ouNaoEncontrado(db.prepare("SELECT descricao_original FROM lancamentos WHERE id = ?").get(id), "lançamento") as { descricao_original: string };
 
   let afetados = 0;
   transacao(() => {
@@ -204,7 +216,7 @@ app.get("/api/resumo", async (req) => {
     .object({ mes: z.string().regex(mesRe), pessoa: z.enum(["PF", "PJ"]).default("PF") })
     .parse(req.query);
   const base = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
-    WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0
+    WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
       AND COALESCE(cat.grupo, '') <> 'transferencia'`;
   const p = [`${mes}-01`, fimDoMes(mes), pessoa];
   const tot = db.prepare(
@@ -242,7 +254,7 @@ app.patch("/api/categorias/:id", async (req) => {
   db.prepare("UPDATE categorias SET nome = COALESCE(?, nome), grupo = COALESCE(?, grupo), cor = COALESCE(?, cor) WHERE id = ?")
     .run(d.nome ?? null, d.grupo ?? null, d.cor ?? null, id);
   limparCacheCategorias();
-  return db.prepare("SELECT * FROM categorias WHERE id = ?").get(id);
+  return ouNaoEncontrado(db.prepare("SELECT * FROM categorias WHERE id = ?").get(id), "categoria");
 });
 
 app.get("/api/regras", async () =>
@@ -253,15 +265,18 @@ app.get("/api/regras", async () =>
 );
 app.post("/api/regras", async (req) => {
   const d = z.object({ padrao: z.string().trim().min(2).max(120), categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
-  const r = db.prepare("INSERT INTO regras (padrao, categoria_id, descricao, prioridade) VALUES (?,?,?,?) RETURNING *")
-    .get(d.padrao, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
-  return { regra: r, recategorizados: reaplicarRegras() };
+  return transacao(() => {
+    const r = db.prepare("INSERT INTO regras (padrao, categoria_id, descricao, prioridade) VALUES (?,?,?,?) RETURNING *")
+      .get(d.padrao, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
+    return { regra: r, recategorizados: reaplicarRegras() };
+  });
 });
 app.delete("/api/regras/:id", async (req) => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
-  db.prepare("UPDATE lancamentos SET regra_id = NULL WHERE regra_id = ?").run(id);
-  db.prepare("DELETE FROM regras WHERE id = ?").run(id);
-  return { ok: true, recategorizados: reaplicarRegras() };
+  return transacao(() => {
+    db.prepare("DELETE FROM regras WHERE id = ?").run(id);
+    return { ok: true, recategorizados: reaplicarRegras() }; // também limpa o regra_id de quem usava a regra
+  });
 });
 
 app.get("/api/saude", async () => ({ ok: true }));

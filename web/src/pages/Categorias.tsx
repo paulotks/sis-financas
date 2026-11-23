@@ -42,7 +42,7 @@ export default function Categorias() {
             <input type="color" value={cor} onChange={(e) => setCor(e.target.value)} />
             <button className="botao" disabled={criar.isPending}>Adicionar</button>
           </form>
-          {criar.error && <div className="aviso erro">{criar.error.message}</div>}
+          {(cats.error ?? criar.error) && <div className="aviso erro">{(cats.error ?? criar.error)!.message}</div>}
           {(Object.keys(GRUPOS) as Categoria["grupo"][]).map((g) => (
             <div key={g}>
               <h3>{GRUPOS[g]}</h3>
@@ -61,6 +61,7 @@ export default function Categorias() {
             Criadas quando você categoriza um lançamento com “Aplicar a iguais” ligado. Valem para lançamentos novos cuja descrição
             original contenha o texto.
           </p>
+          {(regras.error ?? apagar.error) && <div className="aviso erro">{(regras.error ?? apagar.error)!.message}</div>}
           <table className="tabela compacta">
             <tbody>
               {regras.data?.length === 0 && <tr><td className="vazio">Nenhuma regra ainda.</td></tr>}

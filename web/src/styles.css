@@ -72,7 +72,9 @@ code { font-size: 12px; color: #b9b9c6; }
 .erro { color: var(--neg) !important; }
 
 /* tabela */
-.tabela-wrap { border: 1px solid var(--borda); border-radius: var(--raio); overflow: hidden; }
+.tabela-wrap { border: 1px solid var(--borda); border-radius: var(--raio); overflow-x: auto; }
+.tabela { min-width: 640px; }
+.painel { overflow-x: auto; }
 .tabela { width: 100%; border-collapse: collapse; background: var(--painel); }
 .tabela th { text-align: left; font-weight: 500; color: var(--mudo); font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--borda); background: #111114; position: sticky; top: 0; }
 .tabela td { padding: 6px 12px; border-bottom: 1px solid #1c1c22; vertical-align: middle; }
@@ -132,5 +134,18 @@ code { font-size: 12px; color: #b9b9c6; }
   .lateral { position: static; height: auto; flex-direction: row; flex-wrap: wrap; }
   .cards, .duas-colunas { grid-template-columns: 1fr 1fr; }
   .conteudo { padding: 20px; }
+  .lateral { padding: 10px 12px; gap: 6px; align-items: center; }
+  .marca { padding: 0 8px 0 0; }
+  .lateral nav { flex-direction: row; overflow-x: auto; flex: 1 1 100%; order: 3; }
+  .lateral nav a { white-space: nowrap; }
+  .sync { margin: 0 0 0 auto; flex-direction: row; align-items: center; border: 0; padding: 0; flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .conteudo { padding: 14px 12px 40px; }
+  .cards, .duas-colunas { grid-template-columns: 1fr; }
+  .topo { flex-wrap: wrap; }
+  .filtros input.campo, .filtros .campo.categoria { min-width: 0; flex: 1 1 100%; }
+  .seletor-mes span { min-width: 110px; }
+  .card strong { font-size: 19px; }
 }
 .filtros .campo.categoria { width: auto; min-width: 200px; }

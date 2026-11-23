@@ -13,7 +13,8 @@
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev -w api\" \"npm:dev -w web\"",
     "build": "npm run build -w api && npm run build -w web",
     "start": "npm run start -w api",
-    "typecheck": "npm run typecheck -w api && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w api && npm run typecheck -w web",
+    "test": "npm test -w api"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

@@ -12,9 +12,16 @@ export class ErroPluggy extends Error {
 
 async function requisitar<T>(metodo: string, caminho: string, corpo?: unknown, comChave = true): Promise<T> {
   const url = caminho.startsWith("http") ? caminho : env.pluggyUrl + caminho;
+  // a paginação pode devolver URL completa: a chave só pode ir para a própria Pluggy
+  if (new URL(url).origin !== new URL(env.pluggyUrl).origin) throw new Error("URL fora da Pluggy recusada");
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
   if (comChave) headers["X-API-KEY"] = await apiKey();
-  const r = await fetch(url, { method: metodo, headers, body: corpo === undefined ? undefined : JSON.stringify(corpo) });
+  const r = await fetch(url, {
+    method: metodo,
+    headers,
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    signal: AbortSignal.timeout(60_000), // sem isto, uma chamada travada prenderia a fila de sincronização
+  });
   if (!r.ok) {
     let msg = "";
     try {
@@ -95,7 +102,9 @@ type Lista<T> = { results: T[] };
 export const pluggy = {
   /** Connect Token para abrir o widget no navegador (vale 30 min). itemId: reconectar/atualizar um item. */
   async connectToken(clientUserId: string, itemId?: string) {
-    const corpo: Record<string, unknown> = { options: { clientUserId, avoidDuplicates: true } };
+    // Sem avoidDuplicates: no MeuPluggy todos os bancos usam o mesmo conector (200) e a mesma conta Meu Pluggy,
+    // então a Pluggy trataria o 2º banco como "credencial duplicada" e recusaria. O dedupe fica na nossa base (item_id).
+    const corpo: Record<string, unknown> = { options: { clientUserId } };
     if (itemId) corpo.itemId = itemId;
     return (await requisitar<{ accessToken: string }>("POST", "/connect_token", corpo)).accessToken;
   },
@@ -114,11 +123,8 @@ export const pluggy = {
     while (proxima) {
       const pagina: { results: PTransacao[]; next?: string | null } = await requisitar("GET", proxima);
       yield pagina.results;
-      const n: string | null | undefined = pagina.next;
-      if (!n) proxima = null;
-      else if (n.startsWith("http")) proxima = n;
-      else
-        proxima = `/v2/transactions?accountId=${encodeURIComponent(contaId)}&dateFrom=${encodeURIComponent(desde)}&after=${encodeURIComponent(n)}`;
+      // `next` já é a query string pronta ("?accountId=...&after=..."); new URL também aceita URL completa
+      proxima = pagina.next ? new URL(pagina.next, env.pluggyUrl + "/v2/transactions").href : null;
     }
   },
 };

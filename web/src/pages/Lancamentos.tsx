@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, GRUPOS, mesAtual, type Categoria, type Lancamento } from "../lib/api";
@@ -22,6 +22,12 @@ export default function Lancamentos() {
     setParams(p, { replace: true });
   };
 
+  // o campo acompanha a URL (voltar, links) sem perder o foco
+  const campoBusca = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (campoBusca.current) campoBusca.current.value = filtros.busca ?? "";
+  }, [filtros.busca]);
+
   const [aplicarIguais, setAplicarIguais] = useState(true);
   const [aviso, setAviso] = useState<string | null>(null);
   useEffect(() => {
@@ -42,10 +48,9 @@ export default function Lancamentos() {
       qc.setQueryData<{ itens: Lancamento[]; total: number }>(chave, (old) =>
         old ? { ...old, itens: old.itens.map((l) => (l.id === lancamento.id ? lancamento : l)) } : old,
       );
-      if (afetados > 0) {
-        setAviso(`Regra criada: mais ${afetados} lançamento(s) iguais foram categorizados.`);
-        qc.invalidateQueries({ queryKey: ["lancamentos"] });
-      }
+      if (afetados > 0) setAviso(`Regra criada: mais ${afetados} lançamento(s) iguais foram categorizados.`);
+      // outros filtros em cache ficam velhos; a lista aberta só recarrega se outras linhas mudaram (para não pular da tela)
+      qc.invalidateQueries({ queryKey: ["lancamentos"], refetchType: afetados > 0 ? "active" : "none" });
       qc.invalidateQueries({ queryKey: ["resumo"] });
       qc.invalidateQueries({ queryKey: ["regras"] });
     },
@@ -54,7 +59,7 @@ export default function Lancamentos() {
 
   const itens = lista.data?.itens ?? [];
   const totais = useMemo(() => {
-    const vis = itens.filter((l) => !l.ignorado);
+    const vis = itens.filter((l) => !l.ignorado && l.status !== "REMOVIDO");
     return {
       entradas: vis.filter((l) => l.valor_centavos > 0).reduce((s, l) => s + l.valor_centavos, 0),
       saidas: vis.filter((l) => l.valor_centavos < 0).reduce((s, l) => s - l.valor_centavos, 0),
@@ -70,6 +75,7 @@ export default function Lancamentos() {
 
       <div className="filtros">
         <input
+          ref={campoBusca}
           className="campo"
           placeholder="Buscar descrição ou nota…"
           defaultValue={filtros.busca}
@@ -110,6 +116,7 @@ export default function Lancamentos() {
       </div>
 
       {aviso && <div className="aviso">{aviso}</div>}
+      {lista.error && <div className="aviso erro">{lista.error.message}</div>}
 
       <div className="tabela-wrap">
         <table className="tabela">
@@ -127,7 +134,7 @@ export default function Lancamentos() {
             {lista.isLoading && (
               <tr><td colSpan={6} className="vazio">Carregando…</td></tr>
             )}
-            {!lista.isLoading && itens.length === 0 && (
+            {lista.data && itens.length === 0 && (
               <tr><td colSpan={6} className="vazio">Nenhum lançamento com esses filtros.</td></tr>
             )}
             {itens.map((l) => (
@@ -141,7 +148,10 @@ export default function Lancamentos() {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4}>{itens.length} lançamento(s)</td>
+              <td colSpan={4}>
+                {itens.length} lançamento(s)
+                {lista.data && lista.data.total > itens.length && ` de ${lista.data.total}: lista e totais cortados, use os filtros`}
+              </td>
               <td className="num" colSpan={2}>
                 <span className="pos">{dinheiro(totais.entradas)}</span> · <span className="neg">{dinheiro(-totais.saidas)}</span>
               </td>
@@ -167,7 +177,7 @@ function Linha({ l, categorias, onSalvar }: {
   };
 
   return (
-    <tr className={l.ignorado ? "ignorado" : l.categoria_id === null ? "pendente" : ""}>
+    <tr className={l.ignorado || l.status === "REMOVIDO" ? "ignorado" : l.categoria_id === null ? "pendente" : ""}>
       <td className="mudo">{dataCurta(l.data)}</td>
       <td>
         <input
@@ -184,6 +194,7 @@ function Linha({ l, categorias, onSalvar }: {
           {l.descricao_original !== l.descricao && <span title="Descrição original do banco">{l.descricao_original}</span>}
           {l.total_parcelas && l.total_parcelas > 1 && <span className="selo">{l.parcela}/{l.total_parcelas}</span>}
           {l.status === "PENDING" && <span className="selo">pendente no banco</span>}
+          {l.status === "REMOVIDO" && <span className="selo" title="O banco não devolve mais este lançamento; não entra no resumo">removido pelo banco</span>}
         </div>
       </td>
       <td className="mudo">{l.conta}</td>

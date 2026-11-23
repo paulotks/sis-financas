@@ -63,6 +63,7 @@ export interface Conexao {
   conector: string | null;
   imagem_url: string | null;
   status: string | null;
+  status_execucao: string | null;
   ultimo_sync: string | null;
   erro: string | null;
   contas: number;
@@ -120,7 +121,7 @@ export const api = {
   sincronizar: (itemId?: string) => req<{ resultados: ResultadoSync[] }>("POST", "/api/sync", { itemId }),
 
   contas: () => req<{ contas: Conta[]; investimentos: Investimento[] }>("GET", "/api/contas"),
-  editarConta: (id: string, d: Partial<Pick<Conta, "apelido" | "pessoa">> & { oculta?: boolean }) =>
+  editarConta: (id: string, d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean }) =>
     req<Conta>("PATCH", `/api/contas/${id}`, d),
 
   meses: () => req<string[]>("GET", "/api/meses"),
@@ -151,7 +152,6 @@ export const dataCurta = (iso: string) => {
 };
 export const quando = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca";
-export const mesAtual = () => new Date().toISOString().slice(0, 7);
 export const nomeMes = (mes: string) => {
   const [a, m] = mes.split("-").map(Number);
   const s = new Date(a, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
@@ -162,6 +162,7 @@ export const somarMes = (mes: string, delta: number) => {
   const d = new Date(a, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
+export const mesAtual = () => new Date().toLocaleDateString("sv").slice(0, 7); // "sv" = AAAA-MM-DD local; em UTC o mês virava às 21h
 export const GRUPOS: Record<Categoria["grupo"], string> = {
   essencial: "Essencial",
   estilo_de_vida: "Estilo de vida",
