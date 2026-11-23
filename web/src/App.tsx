@@ -1,0 +1,70 @@
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, quando } from "./lib/api";
+import Resumo from "./pages/Resumo";
+import Lancamentos from "./pages/Lancamentos";
+import Contas from "./pages/Contas";
+import Conexoes from "./pages/Conexoes";
+import Categorias from "./pages/Categorias";
+
+const MENU = [
+  { to: "/resumo", rotulo: "Resumo", icone: "◎" },
+  { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡" },
+  { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
+  { to: "/categorias", rotulo: "Categorias e regras", icone: "◇" },
+  { to: "/conexoes", rotulo: "Conexões", icone: "⇄" },
+];
+
+export default function App() {
+  const qc = useQueryClient();
+  const conexoes = useQuery({ queryKey: ["conexoes"], queryFn: api.conexoes });
+  const sync = useMutation({
+    mutationFn: () => api.sincronizar(),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+  const ultimo = conexoes.data?.map((c) => c.ultimo_sync).filter(Boolean).sort().at(-1) ?? null;
+  const erros = conexoes.data?.filter((c) => c.erro).length ?? 0;
+
+  return (
+    <div className="app">
+      <aside className="lateral">
+        <div className="marca">
+          <span className="logo">R$</span> Finanças
+        </div>
+        <nav>
+          {MENU.map((m) => (
+            <NavLink key={m.to} to={m.to} className={({ isActive }) => (isActive ? "ativo" : "")}>
+              <span className="icone">{m.icone}</span>
+              {m.rotulo}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="sync">
+          <button className="botao" disabled={sync.isPending || !conexoes.data?.length} onClick={() => sync.mutate()}>
+            {sync.isPending ? "Sincronizando…" : "↻ Sincronizar"}
+          </button>
+          <small>Última: {quando(ultimo)}</small>
+          {sync.data && (
+            <small className="ok">
+              +{sync.data.resultados.reduce((s, r) => s + r.novos, 0)} novos
+            </small>
+          )}
+          {(sync.error || erros > 0) && (
+            <small className="erro">{sync.error ? sync.error.message : `${erros} conexão(ões) com erro`}</small>
+          )}
+        </div>
+      </aside>
+      <main className="conteudo">
+        <Routes>
+          <Route path="/" element={<Navigate to={conexoes.data?.length === 0 ? "/conexoes" : "/resumo"} replace />} />
+          <Route path="/resumo" element={<Resumo />} />
+          <Route path="/lancamentos" element={<Lancamentos />} />
+          <Route path="/contas" element={<Contas />} />
+          <Route path="/categorias" element={<Categorias />} />
+          <Route path="/conexoes" element={<Conexoes />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
