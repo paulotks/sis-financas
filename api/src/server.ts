@@ -192,30 +192,67 @@ app.get("/api/meses", async () =>
 
 // ---------------- resumo do mês ----------------
 
+/** O que conta no mês. Resumo e orçamento usam este mesmo trecho: se um mudar, o outro muda junto. */
+const BASE_RESUMO = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
+  WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
+    AND COALESCE(cat.grupo, '') <> 'transferencia'`;
+/**
+ * Gasto em centavos positivos; NULL = é entrada. Crédito no cartão já categorizado é estorno e abate a categoria.
+ * Sem categoria não abate: pode ser um pagamento de fatura que ainda não foi marcado como transferência.
+ */
+const GASTO = `CASE WHEN l.valor_centavos < 0 OR (ct.tipo = 'CREDIT' AND cat.grupo <> 'renda') THEN -l.valor_centavos END`;
+const periodo = (mes: string, pessoa: string) => [`${mes}-01`, fimDoMes(mes), pessoa];
+
+interface GastoCategoria { categoria_id: number | null; categoria: string; cor: string | null; grupo: string | null; total: number; qtd: number }
+const gastosPorCategoria = (mes: string, pessoa: string) =>
+  db.prepare(
+    `SELECT l.categoria_id, COALESCE(cat.nome,'Sem categoria') AS categoria, cat.cor, cat.grupo, SUM(${GASTO}) AS total, COUNT(${GASTO}) AS qtd
+     ${BASE_RESUMO} GROUP BY l.categoria_id HAVING COUNT(${GASTO}) > 0 ORDER BY total DESC`,
+  ).all(...periodo(mes, pessoa)) as unknown as GastoCategoria[];
+
 app.get("/api/resumo", async (req) => {
   const { mes, pessoa } = z
     .object({ mes: z.string().regex(mesRe), pessoa: z.enum(["PF", "PJ"]).default("PF") })
     .parse(req.query);
-  const base = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
-    WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
-      AND COALESCE(cat.grupo, '') <> 'transferencia'`;
-  const p = [`${mes}-01`, fimDoMes(mes), pessoa];
   const tot = db.prepare(
-    `SELECT COALESCE(SUM(CASE WHEN l.valor_centavos > 0 THEN l.valor_centavos END),0) AS entradas,
-            COALESCE(SUM(CASE WHEN l.valor_centavos < 0 THEN -l.valor_centavos END),0) AS saidas,
-            SUM(l.categoria_id IS NULL) AS pendentes ${base}`,
-  ).get(...p) as { entradas: number; saidas: number; pendentes: number | null };
-  const porCategoria = db.prepare(
-    `SELECT l.categoria_id, COALESCE(cat.nome,'Sem categoria') AS categoria, cat.cor, cat.grupo,
-            -SUM(l.valor_centavos) AS total, COUNT(*) AS qtd
-     ${base} AND l.valor_centavos < 0 GROUP BY l.categoria_id ORDER BY total DESC`,
-  ).all(...p);
+    `SELECT COALESCE(SUM(CASE WHEN ${GASTO} IS NULL THEN l.valor_centavos END),0) AS entradas,
+            COALESCE(SUM(${GASTO}),0) AS saidas,
+            SUM(l.categoria_id IS NULL) AS pendentes ${BASE_RESUMO}`,
+  ).get(...periodo(mes, pessoa)) as { entradas: number; saidas: number; pendentes: number | null };
+  const porCategoria = gastosPorCategoria(mes, pessoa);
   const saldos = db.prepare(
     `SELECT COALESCE(SUM(CASE WHEN tipo='BANK' THEN saldo_centavos END),0) AS contas,
             COALESCE(SUM(CASE WHEN tipo='CREDIT' THEN saldo_centavos END),0) AS cartoes
      FROM contas WHERE pessoa = ? AND oculta = 0`,
   ).get(pessoa);
   return { mes, pessoa, ...tot, pendentes: tot.pendentes ?? 0, porCategoria, saldos };
+});
+
+// ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
+
+app.get("/api/orcamento", async (req) => {
+  const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
+  const gastos = gastosPorCategoria(mes, "PF");
+  const cats = db.prepare(
+    `SELECT c.id AS categoria_id, c.nome AS categoria, c.cor, c.grupo,
+            (SELECT valor_centavos FROM orcamentos WHERE categoria_id = c.id AND mes <= ? ORDER BY mes DESC LIMIT 1) AS planejado
+     FROM categorias c WHERE c.grupo <> 'transferencia' ORDER BY c.nome`,
+  ).all(mes) as { categoria_id: number; categoria: string; cor: string | null; grupo: string; planejado: number | null }[];
+  const linhas = cats
+    .map((c) => ({ ...c, realizado: gastos.find((g) => g.categoria_id === c.categoria_id)?.total ?? 0 }))
+    .filter((c) => c.grupo !== "renda" || c.realizado); // renda só aparece se teve saída (para o total bater com o Resumo)
+  return { mes, linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0 };
+});
+
+app.put("/api/orcamento", async (req) => {
+  const d = z
+    .object({ mes: z.string().regex(mesRe), categoria_id: z.number().int(), valor_centavos: z.number().int().min(0).max(1e11) })
+    .parse(req.body);
+  db.prepare(
+    `INSERT INTO orcamentos (categoria_id, mes, valor_centavos) VALUES (?,?,?)
+     ON CONFLICT(categoria_id, mes) DO UPDATE SET valor_centavos = excluded.valor_centavos`,
+  ).run(d.categoria_id, d.mes, d.valor_centavos);
+  return { ok: true };
 });
 
 // ---------------- categorias e regras ----------------

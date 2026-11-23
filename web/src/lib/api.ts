@@ -88,6 +88,20 @@ export interface Resumo {
   saldos: { contas: number; cartoes: number };
 }
 
+export interface LinhaOrcamento {
+  categoria_id: number;
+  categoria: string;
+  cor: string | null;
+  grupo: Categoria["grupo"];
+  planejado: number | null;
+  realizado: number;
+}
+export interface Orcamento {
+  mes: string;
+  linhas: LinhaOrcamento[];
+  sem_categoria: number;
+}
+
 export interface Regra {
   id: number;
   padrao: string;
@@ -138,6 +152,9 @@ export const api = {
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
 
+  orcamento: (mes: string) => req<Orcamento>("GET", `/api/orcamento${qs({ mes })}`),
+  salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<{ ok: true }>("PUT", "/api/orcamento", d),
+
   categorias: () => req<Categoria[]>("GET", "/api/categorias"),
   criarCategoria: (d: { nome: string; grupo: Categoria["grupo"]; cor?: string }) => req<Categoria>("POST", "/api/categorias", d),
   regras: () => req<Regra[]>("GET", "/api/regras"),
@@ -155,6 +172,13 @@ export const sugerirPadrao = (original: string) => {
 // ---- formatação ----
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const dinheiro = (centavos: number | null | undefined) => (centavos == null ? "—" : brl.format(centavos / 100));
+/** "1.234,56" -> 123456 centavos; vazio = 0; o que não for número = null. */
+export const lerDinheiro = (texto: string): number | null => {
+  const t = texto.replace(/[R$\s]/g, "");
+  if (!t) return 0;
+  const n = t.includes(",") || !/^-?\d+\.\d{1,2}$/.test(t) ? t.replace(/\./g, "").replace(",", ".") : t; // "12.50" é decimal; "1.234" é milhar
+  return /^-?\d*\.?\d+$/.test(n) ? Math.round(Number(n) * 100) : null;
+};
 export const dataCurta = (iso: string) => {
   const [a, m, d] = iso.slice(0, 10).split("-");
   return `${d}/${m}${a !== String(new Date().getFullYear()) ? "/" + a.slice(2) : ""}`;

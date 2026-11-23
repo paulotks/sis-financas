@@ -11,6 +11,7 @@ export default function SelectCategoria({ categorias, valor, vazio, cor, onChang
   return (
     <select
       className="campo categoria"
+      name="categoria"
       aria-label="Categoria"
       style={cor ? { borderLeftColor: cor } : undefined}
       value={valor ?? ""}

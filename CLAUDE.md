@@ -32,8 +32,8 @@ api/src/
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
-  pages/                Resumo, Lancamentos, Contas, Categorias, Conexoes
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
+  pages/                Resumo, Lancamentos, Orcamento, Contas, Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -56,6 +56,8 @@ web/src/
 - Movimento interno vem em **par** (+X e −X) e a Pluggy dá categoria diferente a cada perna (cofrinho do MP, débito automático de fatura). Só tirar do resumo quando as **duas** pernas saem juntas: tirar uma só distorce o mês. Pix no crédito do Nubank tem três pernas e fica de fora de propósito.
 - Fora do trial a Pluggy pode mandar `category: null`; o sync guarda a última categoria conhecida.
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura) fica **fora do resumo**, para não contar o mesmo gasto duas vezes.
+- **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Crédito em cartão com categoria de gasto é **estorno e abate** a categoria; sem categoria não abate (pode ser fatura paga).
+- **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
 - Contas têm `pessoa` PF/PJ. Inter Empresas = PJ (TRKS Studio, empresa do Paulo) e não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe
@@ -94,7 +96,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 ## Próximas fases
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
-2. Orçamento mensal (planejado × realizado)
+2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)
 3. Faturas e parcelas futuras (projeção)
 4. Assinaturas recorrentes
 5. Lançamentos manuais (cartões sem Open Finance, dinheiro)

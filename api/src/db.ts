@@ -142,6 +142,14 @@ const MIGRACOES: string[] = [
     ('Pagamento de fatura','transferencia','#636e72'),
     ('Outros','estilo_de_vida','#95a5a6');
   `,
+  `
+  CREATE TABLE orcamentos (
+    categoria_id   INTEGER NOT NULL REFERENCES categorias(id) ON DELETE CASCADE,
+    mes            TEXT NOT NULL,                          -- AAAA-MM; vale deste mês em diante, até a próxima linha da categoria
+    valor_centavos INTEGER NOT NULL CHECK (valor_centavos >= 0),
+    PRIMARY KEY (categoria_id, mes)
+  );
+  `,
 ];
 
 export function migrar() {

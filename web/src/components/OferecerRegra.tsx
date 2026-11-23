@@ -34,7 +34,7 @@ export default function OferecerRegra({ l, onFechar }: { l: Lancamento; onFechar
       onKeyDown={(e) => e.key === "Escape" && onFechar()}
     >
       <span>Sempre que a descrição contiver</span>
-      <input className="campo" aria-label="Texto da regra" maxLength={120} value={padrao} onChange={(e) => setPadrao(e.target.value)} />
+      <input className="campo" name="padrao" aria-label="Texto da regra" maxLength={120} value={padrao} onChange={(e) => setPadrao(e.target.value)} />
       <span>→ <strong>{l.categoria}</strong></span>
       <span className="mudo" aria-live="polite">
         {!contido ? "o texto precisa estar na descrição original"

@@ -51,7 +51,7 @@ const { app } = await import("../src/server.js");
 const { db } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
-const { sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
+const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
   await app.close();
@@ -263,4 +263,68 @@ test("API: host e origem de fora são recusados; erro de dados não vira 500", a
   assert.equal((await chamar("PATCH", "/api/categorias/9999", { nome: "x" })).status, 404);
   assert.equal((await chamar("GET", "/api/lancamentos?mes=2026-13")).status, 400);
   assert.equal((await chamar("GET", "/api/lancamentos")).d.total, ids().length);
+});
+
+// daqui em diante: contas e lançamentos inseridos direto, em meses que nenhum teste acima usa
+let nConta = 0;
+const novaConta = (tipo: "BANK" | "CREDIT", extra: { pessoa?: string; oculta?: number; saldo?: number; item?: string } = {}) => {
+  const id = `00000000-0000-4000-8000-${String(++nConta).padStart(12, "0")}`;
+  db.prepare("INSERT INTO contas (id, item_id, tipo, nome, pessoa, oculta, saldo_centavos) VALUES (?,?,?,?,?,?,?)")
+    .run(id, extra.item ?? ITEM, tipo, `conta ${nConta}`, extra.pessoa ?? "PF", extra.oculta ?? 0, extra.saldo ?? 0);
+  return id;
+};
+let nLanc = 0;
+const novoLanc = (conta: string, data: string, valor: number, categoria: number | null, extra: Record<string, string | number> = {}) => {
+  const cols = { id: `m${++nLanc}`, conta_id: conta, data, valor_centavos: valor, categoria_id: categoria, status: "POSTED", ...extra };
+  db.prepare(`INSERT INTO lancamentos (${Object.keys(cols).join(",")}) VALUES (${Object.keys(cols).map(() => "?").join(",")})`).run(...Object.values(cols));
+};
+const MERCADO = 3, RENDA = 18, TRANSFERENCIA = 19;
+
+test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência, PJ e oculta; estorno no cartão abate", async () => {
+  const banco = novaConta("BANK"), cartao = novaConta("CREDIT");
+  novoLanc(banco, "2020-03-05", -10000, MERCADO);
+  novoLanc(cartao, "2020-03-06", -5000, MERCADO, { status: "PENDING" });
+  novoLanc(cartao, "2020-03-07", 2000, MERCADO); // estorno: abate
+  novoLanc(banco, "2020-03-08", 2500, MERCADO); // Pix de alguém rachando a conta: entrada
+  novoLanc(cartao, "2020-03-09", 3000, null); // crédito no cartão sem categoria: não abate
+  novoLanc(banco, "2020-03-10", 50000, RENDA);
+  novoLanc(banco, "2020-03-11", -700, null);
+  novoLanc(banco, "2020-03-12", -999, MERCADO, { status: "REMOVIDO" });
+  novoLanc(banco, "2020-03-12", -999, MERCADO, { ignorado: 1 });
+  novoLanc(banco, "2020-03-12", -999, TRANSFERENCIA);
+  novoLanc(novaConta("BANK", { pessoa: "PJ" }), "2020-03-12", -999, MERCADO);
+  novoLanc(novaConta("BANK", { oculta: 1 }), "2020-03-12", -999, MERCADO);
+  novoLanc(banco, "2020-04-01", -999, MERCADO);
+
+  const r = (await chamar("GET", "/api/resumo?mes=2020-03")).d;
+  assert.deepEqual([r.entradas, r.saidas, r.pendentes], [55500, 13700, 2]);
+  assert.deepEqual(r.porCategoria.map((c: any) => [c.categoria, c.total]), [["Mercado", 13000], ["Sem categoria", 700]]);
+  const o = (await chamar("GET", "/api/orcamento?mes=2020-03")).d;
+  assert.equal(o.linhas.find((l: any) => l.categoria_id === MERCADO).realizado, 13000);
+  assert.equal(o.sem_categoria, 700);
+  assert.equal(o.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + o.sem_categoria, r.saidas);
+  assert.ok(!o.linhas.some((l: any) => ["transferencia", "renda"].includes(l.grupo)));
+});
+
+test("planejado vale dali em diante e não mexe no passado", async () => {
+  const planejado = async (mes: string) =>
+    (await chamar("GET", `/api/orcamento?mes=${mes}`)).d.linhas.find((l: any) => l.categoria_id === MERCADO).planejado;
+  const por = (mes: string, valor_centavos: number, categoria_id = MERCADO) => chamar("PUT", "/api/orcamento", { mes, categoria_id, valor_centavos });
+  await por("2020-02", 40000);
+  assert.deepEqual([await planejado("2020-01"), await planejado("2020-02"), await planejado("2021-01")], [null, 40000, 40000]);
+  await por("2020-04", 50000);
+  assert.deepEqual([await planejado("2020-03"), await planejado("2020-04")], [40000, 50000]);
+  await por("2020-04", 0); // apagar no campo = sem orçamento daqui em diante
+  assert.deepEqual([await planejado("2020-03"), await planejado("2020-05")], [40000, 0]);
+  assert.equal((await por("2020-04", -1)).status, 400);
+  assert.equal((await por("2020-13", 1)).status, 400);
+  assert.equal((await por("2020-04", 1, 9999)).status, 400);
+});
+
+test("dinheiro digitado no jeito brasileiro vira centavos", () => {
+  for (const [texto, centavos] of [
+    ["1.234,56", 123456], ["R$ 1.234,56", 123456], ["1234", 123400], ["1.234", 123400], ["12,5", 1250], ["12.50", 1250],
+    ["0,1", 10], ["", 0], ["-50", -5000], ["abc", null], ["1,2,3", null],
+  ] as const)
+    assert.equal(lerDinheiro(texto), centavos, texto);
 });

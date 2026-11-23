@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, quando } from "./lib/api";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
+import Orcamento from "./pages/Orcamento";
 import Contas from "./pages/Contas";
 import Conexoes from "./pages/Conexoes";
 import Categorias from "./pages/Categorias";
@@ -10,6 +11,7 @@ import Categorias from "./pages/Categorias";
 const MENU = [
   { to: "/resumo", rotulo: "Resumo", icone: "◎" },
   { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡" },
+  { to: "/orcamento", rotulo: "Orçamento", icone: "◔" },
   { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
   { to: "/categorias", rotulo: "Categorias e regras", icone: "◇" },
   { to: "/conexoes", rotulo: "Conexões", icone: "⇄" },
@@ -61,7 +63,8 @@ export default function App() {
           <Route path="/" element={conexoes.isPending ? null : <Navigate to={conexoes.data?.length === 0 ? "/conexoes" : "/resumo"} replace />} />
           <Route path="/resumo" element={<Resumo />} />
           <Route path="/lancamentos" element={<Lancamentos />} />
-          <Route path="/contas" element={<Contas />} />
+          <Route path="/orcamento" element={<Orcamento />} />
+          <Route path="/contas"element={<Contas />} />
           <Route path="/categorias" element={<Categorias />} />
           <Route path="/conexoes" element={<Conexoes />} />
           <Route path="*" element={<Navigate to="/" replace />} />
