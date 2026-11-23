@@ -9,6 +9,7 @@ import { salvarConexao, sincronizar } from "./sync.js";
 import { limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
 
 migrar();
+reaplicarRegras(); // mudança no mapa de categorias passa a valer também para o que já está na base
 
 export const app = Fastify({ logger: { level: "info", transport: undefined } });
 

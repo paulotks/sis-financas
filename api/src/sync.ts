@@ -88,9 +88,10 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))`,
   );
   // atualização preserva o que é do usuário: descricao, categoria manual, notas, tags, ignorado
+  // e a última categoria da Pluggy: fora do trial ela vem null, e reaplicarRegras descategorizaria tudo
   const atualizar = db.prepare(
-    `UPDATE lancamentos SET data=?, descricao_original=?, valor_centavos=?, tipo=?, status=?, categoria_pluggy=?,
-       comerciante=?, parcela=?, total_parcelas=?, fatura_id=?, bruto=?, atualizado_em=datetime('now','localtime')
+    `UPDATE lancamentos SET data=?, descricao_original=?, valor_centavos=?, tipo=?, status=?,
+       categoria_pluggy=COALESCE(?, categoria_pluggy), comerciante=?, parcela=?, total_parcelas=?, fatura_id=?, bruto=?, atualizado_em=datetime('now','localtime')
      WHERE id=?`,
   );
   for (const t of lista) {

@@ -50,7 +50,7 @@ Object.assign(process.env, {
 const { app } = await import("../src/server.js");
 const { db } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
-const { sugerirCategoria } = await import("../src/categorizar.js");
+const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 
 after(async () => {
   await app.close();
@@ -174,6 +174,41 @@ test("categorias da Pluggy caem no lugar certo", () => {
     ["Credit card payment", "Pagamento de fatura"],
   ])
     assert.equal(nome(pluggy), nossa, pluggy);
+});
+
+test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual for a categoria da Pluggy", () => {
+  const grupo = (descricao: string, cp: string) => {
+    const id = sugerirCategoria(descricao, cp, []).categoria_id;
+    return id && (db.prepare("SELECT grupo FROM categorias WHERE id = ?").get(id) as { grupo: string }).grupo;
+  };
+  for (const [descricao, cp] of [
+    ["Dinheiro reservado Férias", "Transfer - Internal"],
+    ["Dinheiro reservado Férias", "Investments"],
+    ["Dinheiro retirado", "Same person transfer - CASH"],
+    ["Dinheiro retirado PLR", "Salary"],
+    ["Débito automático Fatura do cartão", "Transfer - Internal"],
+    ["Débito automático total", "Transfer - Internal"],
+  ])
+    assert.equal(grupo(descricao, cp), "transferencia", `${descricao} / ${cp}`);
+  // Pix no crédito: tirar só esta perna contaria o gasto em dobro
+  assert.equal(grupo("Valor adicionado na conta por cartão de crédito", "Transfer - Internal"), null);
+  // regra do Paulo continua mandando
+  const pet = { id: 1, padrao: "reservado belinha", categoria_id: 8, descricao: null };
+  assert.equal(sugerirCategoria("Dinheiro reservado Belinha", "Transfer - Internal", [pet]).categoria_id, 8);
+});
+
+test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza o que já estava", async () => {
+  const base = paginas[0];
+  paginas = [[...base, tx("trial", -4, { category: "Groceries" })]];
+  await sync();
+  const mercado = lanc("trial").categoria_id;
+  assert.ok(mercado);
+  paginas = [[...base, tx("trial", -4, { category: null })]];
+  await sync();
+  reaplicarRegras();
+  assert.deepEqual([lanc("trial").categoria_pluggy, lanc("trial").categoria_id], ["Groceries", mercado]);
+  paginas = [base];
+  await sync();
 });
 
 test("API: host e origem de fora são recusados; erro de dados não vira 500", async () => {

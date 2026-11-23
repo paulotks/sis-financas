@@ -73,6 +73,16 @@ const MAPA_PLUGGY: [string, string][] = [
   ["investment", "Investimentos"],
 ];
 
+/**
+ * Movimento interno que vem em par (+X e -X). A Pluggy dá categorias diferentes às duas pernas (Internal, Investments,
+ * Salary, Clothing…), então aqui vale a descrição: ou as duas saem do resumo, ou nenhuma.
+ * "Valor adicionado" (Pix no crédito do Nubank) fica de fora de propósito: tirar só essa perna contaria o gasto em dobro.
+ */
+const INTERNOS: [RegExp, string][] = [
+  [/^dinheiro (reservado|retirado)\b/, "Transferência entre contas"], // cofrinhos do Mercado Pago
+  [/^débito automático (fatura|total)\b/, "Pagamento de fatura"], // fatura do Mercado Pago: perna da conta e perna do cartão
+];
+
 let idsPorNome: Map<string, number> | null = null;
 function categoriaPorNome(nome: string) {
   if (!idsPorNome) {
@@ -90,11 +100,13 @@ export function carregarRegras(): Regra[] {
   return db.prepare("SELECT id, padrao, categoria_id, descricao FROM regras ORDER BY prioridade DESC, length(padrao) DESC").all() as unknown as Regra[];
 }
 
-/** Decide a categoria de um lançamento novo: regra do Paulo > categoria da Pluggy > pendente (null). */
+/** Decide a categoria de um lançamento novo: regra do Paulo > movimento interno > categoria da Pluggy > pendente (null). */
 export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: string | null | undefined, regras: Regra[]) {
   const texto = descricaoOriginal.toLowerCase();
   const regra = regras.find((r) => texto.includes(r.padrao.toLowerCase()));
   if (regra) return { categoria_id: regra.categoria_id, regra_id: regra.id, descricao: regra.descricao };
+  const interno = INTERNOS.find(([re]) => re.test(texto));
+  if (interno) return { categoria_id: categoriaPorNome(interno[1]), regra_id: null, descricao: null };
   const cp = (categoriaPluggy ?? "").toLowerCase();
   if (cp) {
     for (const [termo, nome] of MAPA_PLUGGY) {
