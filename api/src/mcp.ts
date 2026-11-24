@@ -18,6 +18,7 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   Regra para categoria de transferência só com o "ok" explícito do Paulo.
 - Lançamento ignorado ou com status REMOVIDO não soma. Crédito em cartão já categorizado é estorno e abate a categoria.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
+- Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
   porque a edição manual nunca mais é alterada por regra. Comece por pendentes_agrupados e use previa_regra antes de criar_regra.
   Nome genérico pega gasto que não devia. Não crie regra com "Pagamento de conta".
@@ -234,7 +235,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "previa_regra",
     {
-      description: "O que uma regra com esse texto pegaria, sem gravar nada (PF, PJ e contas ocultas). ja_categorizados = o que teria a categoria trocada. Confira os exemplos antes de criar.",
+      description: "O que uma regra com esse texto pegaria, sem gravar nada (PF, PJ e contas ocultas). ja_categorizados = no máximo quantos teriam a categoria trocada (outra regra mais específica ou prioritária pode vencer); o número real vem em recategorizados, ao criar. Confira os exemplos antes.",
       inputSchema: { padrao },
       annotations: LEITURA,
     },
@@ -328,7 +329,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "categorizar_lancamento",
     {
-      description: "Edita um lançamento. Com categoria_id vira edição manual: nenhuma regra muda mais. Prefira criar_regra quando a descrição se repete. categoria_id null desfaz a edição manual.",
+      description: "Edita um lançamento. Com categoria_id vira edição manual: nenhuma regra muda mais. Prefira criar_regra quando a descrição se repete. categoria_id null desfaz a edição manual e deixa sem categoria até as regras serem reaplicadas (ao criar ou apagar regra, ou ao reiniciar o app).",
       inputSchema: {
         id: z.string().min(1).max(100),
         categoria_id: categoriaId.nullable().optional(),
