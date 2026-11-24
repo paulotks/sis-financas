@@ -140,7 +140,7 @@ app.get("/api/lancamentos", async (req) => {
   const q = z
     .object({
       mes: z.string().regex(mesRe).optional(),
-      conta: uuid.optional(),
+      conta: z.union([uuid, z.enum(["contas", "cartoes"])]).optional(), // uma conta, só contas ou só cartões
       categoria: z.coerce.number().int().optional(),
       busca: z.string().max(100).optional(),
       pendentes: z.enum(["1", "0"]).optional(),
@@ -151,7 +151,9 @@ app.get("/api/lancamentos", async (req) => {
   const onde: string[] = ["ct.oculta = 0"];
   const vals: (string | number)[] = [];
   if (q.mes) (onde.push("l.data BETWEEN ? AND ?"), vals.push(`${q.mes}-01`, fimDoMes(q.mes)));
-  if (q.conta) (onde.push("l.conta_id = ?"), vals.push(q.conta));
+  if (q.conta === "cartoes") onde.push("ct.tipo IS 'CREDIT'");
+  else if (q.conta === "contas") onde.push("ct.tipo IS NOT 'CREDIT'"); // o que não é cartão é conta, como na tela
+  else if (q.conta) (onde.push("l.conta_id = ?"), vals.push(q.conta));
   if (q.categoria) (onde.push("l.categoria_id = ?"), vals.push(q.categoria));
   if (q.pessoa) (onde.push("ct.pessoa = ?"), vals.push(q.pessoa));
   if (q.pendentes === "1") onde.push("l.categoria_id IS NULL AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'");

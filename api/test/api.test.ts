@@ -562,6 +562,20 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
   db.prepare("DELETE FROM lancamentos WHERE id LIKE 'pix%'").run();
 });
 
+test("filtro de conta: uma, só contas ou só cartões", async () => {
+  const banco = novaConta("BANK"), cartao = novaConta("CREDIT");
+  for (const [id, conta] of [["fc-banco", banco], ["fc-cartao", cartao]]) novoLanc(conta, "2014-02-10", -100, null, { id });
+  const filtrados = async (conta: string) => {
+    const { itens, total } = (await chamar("GET", `/api/lancamentos?mes=2014-02&conta=${conta}`)).d;
+    assert.equal(total, itens.length);
+    return itens.map((l: any) => l.id).sort();
+  };
+  assert.deepEqual(await filtrados("contas"), ["fc-banco"]);
+  assert.deepEqual(await filtrados("cartoes"), ["fc-cartao"]);
+  assert.deepEqual(await filtrados(banco), ["fc-banco"]);
+  assert.equal((await chamar("GET", "/api/lancamentos?conta=xyz")).status, 400);
+});
+
 test("estorno: o filtro acha só os créditos de cartão e as compras candidatas vêm na ordem certa", async () => {
   const cartao = novaConta("CREDIT"), outro = novaConta("CREDIT"), banco = novaConta("BANK");
   const por = (id: string, conta: string, data: string, valor: number, categoria: number | null, texto: string, extra: Record<string, string | number> = {}) =>

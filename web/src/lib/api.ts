@@ -54,6 +54,10 @@ export interface Conta {
   ultimo_sync: string | null;
 }
 
+/** Contas e cartões separados, sem grupo vazio. */
+export const porTipo = (cs: Conta[]) =>
+  ([["Contas", cs.filter((c) => c.tipo !== "CREDIT")], ["Cartões de crédito", cs.filter((c) => c.tipo === "CREDIT")]] as const).filter(([, l]) => l.length);
+
 export interface Investimento {
   id: string;
   nome: string | null;

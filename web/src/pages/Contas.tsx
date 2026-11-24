@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, type Conta } from "../lib/api";
+import { api, dataCurta, dinheiro, porTipo, type Conta } from "../lib/api";
 import Patrimonio from "../components/Patrimonio";
 
 export default function Contas() {
@@ -41,11 +41,16 @@ export default function Contas() {
         return (
           <div key={pessoa}>
             <h2>{pessoa === "PF" ? "Pessoa física" : "Empresa (PJ)"}</h2>
-            <div className="grade-contas">
-              {doGrupo.map((c) => (
-                <CartaoConta key={c.id} c={c} onEditar={(d) => editar.mutate({ id: c.id, d })} />
-              ))}
-            </div>
+            {porTipo(doGrupo).map(([titulo, daSecao]) => (
+              <Fragment key={titulo}>
+                <h3>{titulo}</h3>
+                <div className="grade-contas">
+                  {daSecao.map((c) => (
+                    <CartaoConta key={c.id} c={c} onEditar={(d) => editar.mutate({ id: c.id, d })} />
+                  ))}
+                </div>
+              </Fragment>
+            ))}
           </div>
         );
       })}

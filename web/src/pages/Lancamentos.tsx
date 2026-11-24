@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, mesAtual, nomePluggy, type Categoria, type Lancamento } from "../lib/api";
+import { api, dataCurta, dinheiro, mesAtual, nomePluggy, porTipo, type Categoria, type Lancamento } from "../lib/api";
 import ComprasDoEstorno from "../components/ComprasDoEstorno";
 import OferecerRegra from "../components/OferecerRegra";
 import SelectCategoria from "../components/SelectCategoria";
@@ -23,6 +23,8 @@ export default function Lancamentos() {
     const p = new URLSearchParams(params);
     if (v === null || v === "") p.delete(k);
     else p.set(k, v);
+    // uma conta específica é de PF ou de PJ: ao trocar, ela sai do filtro (a lista ficaria vazia sem explicação)
+    if (k === "pessoa" && !["contas", "cartoes"].includes(p.get("conta") ?? "")) p.delete("conta");
     setParams(p, { replace: true });
   };
 
@@ -46,6 +48,7 @@ export default function Lancamentos() {
   const lista = useQuery({ queryKey: chave, queryFn: () => api.lancamentos(filtros) });
   const categorias = useQuery({ queryKey: ["categorias"], queryFn: api.categorias });
   const contas = useQuery({ queryKey: ["contas"], queryFn: api.contas });
+  const grupos = porTipo((contas.data?.contas ?? []).filter((c) => c.pessoa === filtros.pessoa));
 
   const editar = useMutation({
     mutationFn: ({ id, d }: { id: string; d: Parameters<typeof api.editarLancamento>[1]; semRegra?: boolean }) => api.editarLancamento(id, d),
@@ -90,13 +93,17 @@ export default function Lancamentos() {
           onKeyDown={(e) => e.key === "Enter" && set("busca", (e.target as HTMLInputElement).value)}
           onBlur={(e) => set("busca", e.target.value)}
         />
-        <select className="campo" value={filtros.conta ?? ""} onChange={(e) => set("conta", e.target.value)}>
-          <option value="">Todas as contas</option>
-          {contas.data?.contas
-            .filter((c) => c.pessoa === filtros.pessoa)
-            .map((c) => (
-              <option key={c.id} value={c.id}>{c.apelido ?? c.nome}</option>
-            ))}
+        <select className="campo" name="conta" aria-label="Conta ou cartão" value={filtros.conta ?? ""} onChange={(e) => set("conta", e.target.value)}>
+          <option value="">Contas e cartões</option>
+          <option value="contas">Só contas</option>
+          <option value="cartoes">Só cartões</option>
+          {grupos.map(([titulo, lista]) => (
+            <optgroup key={titulo} label={titulo}>
+              {lista.map((c) => (
+                <option key={c.id} value={c.id}>{c.apelido ?? c.nome}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <SelectCategoria
           categorias={categorias.data ?? []}

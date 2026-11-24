@@ -191,6 +191,7 @@ code { font-size: 12px; color: #b9b9c6; }
 
 /* contas */
 .grade-contas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.grade-contas + h3 { border-top: 1px solid var(--borda); margin-top: 24px; padding-top: 16px; } /* divide contas de cartões */
 .conta { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .conta.oculta { opacity: .45; }
 .conta-topo { display: flex; gap: 8px; align-items: center; }
