@@ -334,7 +334,7 @@ app.get("/api/ritmo", async (req) => {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
   const situacao = mes === mesAtual ? "aberto" : mes < mesAtual ? "fechado" : "futuro";
-  const { totais, inicio, anteriores, orcado, esperada, origem } = reguaDoMes(mes, mesAtual);
+  const { totais, inicio, anteriores, cats, orcado, esperada, origem } = reguaDoMes(mes, mesAtual);
   const { entradas, saidas } = totaisDoMes(mes, "PF");
   // sem renda esperada, o orçado é o único limite
   const teto = esperada ?? (orcado || null);
@@ -367,7 +367,8 @@ app.get("/api/ritmo", async (req) => {
       const normal = Math.max(0, mediana(historico.map((h) => h.find((x) => x.categoria_id === categoria_id)?.total ?? 0))!);
       return { categoria_id, categoria, cor, gasto: total, normal, acima: total - normal };
     })
-    .filter((c) => c.acima > 0)
+    // dentro do próprio orçado não é culpado, mesmo acima do normal (o normal pode estar baixo por causa de reembolso)
+    .filter((c) => c.acima > 0 && c.gasto > (cats.find((x) => x.categoria_id === c.categoria_id)?.planejado ?? 0))
     .sort((a, b) => b.acima - a.acima)
     .slice(0, 3);
 
@@ -379,7 +380,7 @@ app.get("/api/ritmo", async (req) => {
     nivel: situacao === "aberto" ? nivelDo(projecao?.media ?? saidas, orcado, esperada)
       : situacao === "fechado" && analisado ? nivelDo(saidas, orcado, entradas)
       : null,
-    por_dia: situacao === "aberto" && teto !== null ? { valor: Math.trunc(livre / dias), media: Math.round(gastoAteHoje / dia), livre, dias, recorrentes } : null,
+    por_dia: situacao === "aberto" && teto !== null ? { valor: Math.trunc(livre / dias), no_ritmo: projecao && Math.round((projecao.media - saidas) / dias), livre, dias, recorrentes } : null,
     acumulado: noFim.length ? { de: noFim[0].mes, ate: noFim.at(-1)!.mes, meses: noFim.length, entradas: ganho, gasto, sobra: ganho - gasto } : null,
     acima,
   };

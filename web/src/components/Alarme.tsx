@@ -157,7 +157,7 @@ function PorDia({ r }: { r: Ritmo }) {
     );
   }
   if (!r.por_dia) return <><small>Renda esperada</small><strong>{dinheiro(r.renda.esperada)}</strong></>;
-  const { valor, media, livre, dias, recorrentes } = r.por_dia;
+  const { valor, no_ritmo, livre, dias, recorrentes } = r.por_dia;
   const detalhe = recorrentes > 0 ? `Já desconta as parcelas lançadas e ${dinheiro(recorrentes)} de recorrentes que ainda vêm.` : "Já desconta as parcelas lançadas.";
   return livre < 0 ? (
     <>
@@ -169,7 +169,7 @@ function PorDia({ r }: { r: Ritmo }) {
     <>
       <small>Pode gastar por dia</small>
       <strong>{dinheiro(valor)}</strong>
-      {media > 0 && <p>Até hoje você gasta <b className={media > valor ? "neg" : ""}>{dinheiro(media)}</b> por dia.</p>}
+      {no_ritmo !== null && no_ritmo > valor && <p>No ritmo atual, serão uns <b className="neg">{dinheiroCurto(Math.round(no_ritmo / 100) * 100)}</b> por dia.</p>}
       <p className="mudo pequeno">{dias === 1 ? "Último dia do mês." : `Nos ${dias} dias que faltam, contando hoje.`} {detalhe}</p>
     </>
   );

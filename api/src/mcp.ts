@@ -185,7 +185,7 @@ export function criarServidor(base: string) {
           gasto: reais(r.gasto), sobra: reais(r.sobra), sobra_sem_a_renda_extra: reais(r.sobra - r.renda.extra), teto: reais(r.teto),
           projecao_do_gasto: r.projecao && { de: reais(r.projecao.min), ate: reais(r.projecao.max), media: reais(r.projecao.media) },
           pode_gastar_por_dia: r.por_dia && {
-            valor: reais(r.por_dia.valor), media_gasta_por_dia_ate_hoje: reais(r.por_dia.media), dias_que_faltam: r.por_dia.dias, livre_ate_o_fim: reais(r.por_dia.livre), recorrentes_previstas: reais(r.por_dia.recorrentes),
+            valor: reais(r.por_dia.valor), no_ritmo_atual: reais(r.por_dia.no_ritmo), dias_que_faltam: r.por_dia.dias, livre_ate_o_fim: reais(r.por_dia.livre), recorrentes_previstas: reais(r.por_dia.recorrentes),
           },
           ultimos_meses_fechados: r.acumulado && {
             de: r.acumulado.de, ate: r.acumulado.ate, meses: r.acumulado.meses,

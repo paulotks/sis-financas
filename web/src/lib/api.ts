@@ -163,7 +163,7 @@ export interface Ritmo {
   teto: number | null;
   projecao: { min: number; max: number; media: number } | null;
   nivel: "verde" | "amarelo" | "vermelho" | null;
-  por_dia: { valor: number; media: number; livre: number; dias: number; recorrentes: number } | null;
+  por_dia: { valor: number; no_ritmo: number | null; livre: number; dias: number; recorrentes: number } | null; // no_ritmo = o que a projeção supõe
   acumulado: { de: string; ate: string; meses: number; entradas: number; gasto: number; sobra: number } | null;
   acima: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number; acima: number }[];
 }

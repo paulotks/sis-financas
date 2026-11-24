@@ -882,6 +882,13 @@ test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF 
   const { mes } = (await chamar("GET", "/api/ritmo")).d, [m1, m2, m3] = [1, 2, 3].map((k) => somarMes(mes, -k));
   const ritmo = async (m = mes) => (await chamar("GET", `/api/ritmo?mes=${m}`)).d;
   assert.deepEqual([(await ritmo()).renda.esperada, (await ritmo()).acumulado, (await ritmo()).analisado], [null, null, false]); // sem renda não inventa régua
+  await chamar("PUT", "/api/orcamento", { mes, categoria_id: MERCADO, valor_centavos: 100 });
+  novoLanc(banco, `${mes}-01`, -90000000, MERCADO, { id: "enorme" });
+  const semRenda = await ritmo();
+  assert.ok(semRenda.gasto > semRenda.orcado);
+  assert.equal(semRenda.nivel, "amarelo"); // sem renda conhecida, passar do orçado não é "estourando a renda"
+  db.prepare("DELETE FROM lancamentos WHERE id = 'enorme'").run();
+  await chamar("PUT", "/api/orcamento", { mes, categoria_id: MERCADO, valor_centavos: 0 });
 
   for (const [m, renda] of [[m1, 1000000], [m2, 1200000], [m3, 900000]] as const) {
     novoLanc(banco, `${m}-05`, renda, RENDA);
@@ -894,6 +901,7 @@ test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF 
   assert.deepEqual([r.gasto, r.renda.recebida, r.sobra], [resumo.saidas, resumo.entradas, resumo.entradas - resumo.saidas]);
   assert.deepEqual([r.renda.esperada, r.renda.origem, r.renda.extra], [1000000, "mediana", resumo.entradas - 1000000]);
   assert.equal(r.por_dia.livre, 1000000 - r.gasto - r.por_dia.recorrentes); // a renda extra não alivia
+  assert.equal(r.por_dia.no_ritmo, r.projecao && Math.round((r.projecao.media - r.gasto) / r.por_dia.dias));
   const fechados = await Promise.all([m1, m2, m3].map(async (m) => (await chamar("GET", `/api/resumo?mes=${m}`)).d));
   assert.deepEqual([r.acumulado.de, r.acumulado.ate, r.acumulado.meses], [m3, m1, 3]);
   assert.equal(r.acumulado.sobra, fechados.reduce((s, x) => s + x.entradas - x.saidas, 0));
@@ -928,6 +936,9 @@ test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF 
   const ruim = await ritmo(m1);
   assert.deepEqual([ruim.situacao, ruim.nivel, ruim.projecao, ruim.por_dia, ruim.acima[0].categoria], ["fechado", "vermelho", null, null, "Mercado"]);
   assert.ok(ruim.sobra < 0);
+  await chamar("PUT", "/api/orcamento", { mes: m1, categoria_id: MERCADO, valor_centavos: 90000000 });
+  assert.ok(!(await ritmo(m1)).acima.some((c: any) => c.categoria === "Mercado")); // dentro do orçado não é culpado
+  db.prepare("DELETE FROM orcamentos WHERE categoria_id = ? AND mes = ?").run(MERCADO, m1);
   const antes = await ritmo(somarMes(m3, -1));
   assert.deepEqual([antes.analisado, antes.nivel], [false, null]);
   const futuro = await ritmo(somarMes(mes, 1));
