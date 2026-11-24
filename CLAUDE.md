@@ -53,7 +53,7 @@ web/src/
 - Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ ou bens (o teste confere a lista de ferramentas). PF é o padrão.
-- `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro.
+- `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
 

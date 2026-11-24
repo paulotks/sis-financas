@@ -51,7 +51,7 @@ O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API 
 Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 
 - **Lê:** estado, resumo, orçamento, lançamentos, pendentes agrupados, categorias, regras, prévia de regra, recorrentes, patrimônio e contas.
-- **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, recorrente e sincronização. Deixe a aprovação dessas em "perguntar sempre".
+- **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, recorrente e sincronização. **O Cowork pode gravar sem pedir confirmação** (aconteceu em 24/11/2026): use o modo Manual no seletor da conversa ou marque essas ferramentas como "Sempre perguntar", se elas aparecerem em Customize > Connectors. O pedido de "ok" nas convenções é só uma instrução ao modelo, não uma trava.
 - **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens.
 - O que ele lê passa pela conversa do Claude, na conta em que o Desktop está logado.
 
