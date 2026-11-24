@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, quando, type Conexao } from "../lib/api";
+import { api, dadosVelhos, quando, type Conexao } from "../lib/api";
 import { abrirPluggyConnect } from "../lib/pluggyConnect";
 
 const LIMITE_CONEXOES = 5;
@@ -69,12 +69,13 @@ export default function Conexoes() {
             <th>Contas</th>
             <th>Status</th>
             <th>Última sincronização</th>
+            <th>Dados do banco de</th>
             <th style={{ width: 220 }} />
           </tr>
         </thead>
         <tbody>
           {q.data?.length === 0 && (
-            <tr><td colSpan={5} className="vazio">Nenhum banco conectado. Clique em “Conectar banco”.</td></tr>
+            <tr><td colSpan={6} className="vazio">Nenhum banco conectado. Clique em “Conectar banco”.</td></tr>
           )}
           {q.data?.map((c) => (
             <tr key={c.item_id}>
@@ -97,6 +98,10 @@ export default function Conexoes() {
                 )}
               </td>
               <td className="mudo">{quando(c.ultimo_sync)}</td>
+              <td className={dadosVelhos(c.atualizado_pluggy) ? "alerta" : "mudo"}>
+                {c.atualizado_pluggy ? quando(c.atualizado_pluggy) : "sem data"}
+                {dadosVelhos(c.atualizado_pluggy) && <div className="sub">⚠ mais de 48 h</div>}
+              </td>
               <td className="acoes-linha">
                 <button className="botao secundario" disabled={sync.isPending} onClick={() => sync.mutate(c.item_id)}>Sincronizar</button>
                 <a className="botao secundario" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer"

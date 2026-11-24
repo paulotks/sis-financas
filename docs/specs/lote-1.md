@@ -30,7 +30,9 @@ Itens 1, 3, 13, 14, 15, 17 e 20 do [backlog](../backlog.md). Nenhum muda a estru
 ## 15. "Dados do banco de…"
 
 - **O que já existe:** `conexoes.atualizado_pluggy` (o `lastUpdatedAt` do item) é gravado a cada sync e `GET /api/conexoes` já devolve (`c.*`).
-  Falta só o campo no tipo `Conexao` (`web/src/lib/api.ts`) e a tela. Conferir o significado de `lastUpdatedAt` no MCP `pluggy-docs`.
+  Falta só o campo no tipo `Conexao` (`web/src/lib/api.ts`) e a tela. Conferido no `pluggy-docs` (2026-11-24): `lastUpdatedAt` é a data da última
+  sincronização do item com o banco. O item do Meu Pluggy só espelha o item original, que atualiza a cada 24 h, então a data é a dos dados.
+  Sem data (nulo): mostrar "sem data", sem destaque.
 - **Fazer:** coluna "Dados do banco de" em Conexões; na barra lateral, a data **mais antiga** entre as conexões, com o `title` listando
   banco e data de cada uma. Destacar quando passar de 48 h (o Meu Pluggy atualiza 1x por dia).
 - **Fora:** botão para pedir atualização ao banco. O item do Meu Pluggy não aceita (ver `CLAUDE.md`).

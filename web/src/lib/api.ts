@@ -64,6 +64,7 @@ export interface Conexao {
   imagem_url: string | null;
   status: string | null;
   status_execucao: string | null;
+  atualizado_pluggy: string | null; // até quando vão os dados que o banco entregou (ultimo_sync = quando nós lemos)
   ultimo_sync: string | null;
   erro: string | null;
   contas: number;
@@ -221,6 +222,8 @@ export const dataCurta = (iso: string) => {
 };
 export const quando = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca";
+/** O Meu Pluggy atualiza 1x por dia: passou de 48 h, o banco está atrasado. */
+export const dadosVelhos = (iso: string | null) => iso !== null && Date.now() - Date.parse(iso) > 48 * 3_600_000;
 export const nomeMes = (mes: string) => {
   const [a, m] = mes.split("-").map(Number);
   const s = new Date(a, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });

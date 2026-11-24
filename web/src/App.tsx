@@ -1,6 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, quando } from "./lib/api";
+import { api, dadosVelhos, quando } from "./lib/api";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
 import Orcamento from "./pages/Orcamento";
@@ -27,6 +27,7 @@ export default function App() {
     onSuccess: () => qc.invalidateQueries(),
   });
   const ultimo = conexoes.data?.map((c) => c.ultimo_sync).filter(Boolean).sort().at(-1) ?? null;
+  const maisAntigo = conexoes.data?.map((c) => c.atualizado_pluggy).filter(Boolean).sort()[0] ?? null;
   const erros = conexoes.data?.filter((c) => c.erro).length ?? 0;
 
   return (
@@ -49,6 +50,14 @@ export default function App() {
           </button>
           {/* sem resposta da API não dá para dizer "nunca" */}
           <small>Última: {conexoes.data ? quando(ultimo) : "…"}</small>
+          {maisAntigo && (
+            <small
+              className={dadosVelhos(maisAntigo) ? "alerta" : ""}
+              title={conexoes.data?.map((c) => `${c.nomes_contas ?? c.conector ?? "?"}: ${c.atualizado_pluggy ? quando(c.atualizado_pluggy) : "sem data"}`).join("\n")}
+            >
+              {dadosVelhos(maisAntigo) && "⚠ "}Dados do banco de {quando(maisAntigo)}
+            </small>
+          )}
           {sync.data && (
             <small className="ok">
               +{sync.data.resultados.reduce((s, r) => s + r.novos, 0)} novos

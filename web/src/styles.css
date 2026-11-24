@@ -37,6 +37,7 @@ code { font-size: 12px; color: #b9b9c6; }
 .lateral .icone { width: 18px; text-align: center; }
 .sync { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 8px 0; border-top: 1px solid var(--borda); }
 .sync small { color: var(--mudo); }
+.sync small.alerta { color: var(--alerta); }
 .conteudo { padding: 28px 36px 60px; max-width: 1280px; width: 100%; }
 .topo { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .topo h1 { margin-right: auto; }
