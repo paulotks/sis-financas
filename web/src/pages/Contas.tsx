@@ -80,7 +80,12 @@ function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: stri
     if (!v) setApelido(c.nome ?? ""); // vazio volta ao nome do banco
   };
   const credito = c.tipo === "CREDIT";
-  const usado = credito && c.limite_centavos ? Math.min(100, ((c.limite_centavos - (c.limite_disponivel_centavos ?? 0)) / c.limite_centavos) * 100) : 0;
+  // sem o disponível não dá para saber o uso; a conta fica em centavos até o fim para 80% e 100% saírem exatos
+  const usado =
+    credito && c.limite_centavos && c.limite_disponivel_centavos !== null
+      ? Math.floor(((c.limite_centavos - c.limite_disponivel_centavos) * 100) / c.limite_centavos)
+      : null;
+  const nivel = usado === null || usado < 80 ? "" : usado < 100 ? "perto" : "estourou";
 
   return (
     <div className={`conta ${c.oculta ? "oculta" : ""}`}>
@@ -101,7 +106,8 @@ function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: stri
       <strong className={credito ? "neg" : ""}>{dinheiro(c.saldo_centavos)}</strong>
       {credito && (
         <>
-          <div className="barra"><span style={{ width: `${usado}%` }} /></div>
+          {usado !== null && <div className={`barra ${nivel}`}><span style={{ width: `${Math.min(100, usado)}%` }} /></div>}
+          {nivel && <small className={nivel === "perto" ? "alerta" : "neg"}>⚠ {usado}% do limite usado</small>}
           <small className="mudo">
             Limite {dinheiro(c.limite_centavos)} · disponível {dinheiro(c.limite_disponivel_centavos)}
             {c.vencimento && ` · vence ${dataCurta(c.vencimento)}`}

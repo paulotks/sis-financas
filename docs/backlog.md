@@ -20,7 +20,7 @@ Spec: [specs/lote-1.md](specs/lote-1.md). Rápido e sem migração. Ordem sugeri
 | 14 | Painel Regras: categoria visível, sem rolagem horizontal | P | não | feito (2026-11-24) |
 | 15 | Mostrar "dados do banco de…" | P | não | feito (2026-11-24) |
 | 17 | Traduzir as categorias da Pluggy | P | regrava categorias | a iniciar |
-| 20 | Alerta de cartão acima de 80% do limite | P | não | a iniciar |
+| 20 | Alerta de cartão acima de 80% do limite | P | não | feito (2026-11-24) |
 
 ## Lote 2: PRÓXIMO (números corretos)
 
