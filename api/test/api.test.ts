@@ -357,6 +357,42 @@ test("categoria: apaga só se estiver vazia; em uso ou com nome do mapa dá 409 
   for (const id of [comRegra, comOrcamento, comLanc]) assert.equal((await apagar(id)).status, 200);
 });
 
+test("mesclar categoria: leva lançamentos e regras, mantém a edição manual, o orçamento do destino e o total do mês", async () => {
+  const conta = novaConta("BANK"), cartao = novaConta("CREDIT");
+  const criar = async (nome: string, grupo: string) => (await chamar("POST", "/api/categorias", { nome, grupo })).d.id as number;
+  const mesclar = (de: number, destino: number) => chamar("POST", `/api/categorias/${de}/mesclar`, { destino });
+  const de = await criar("Origem", "financeiro"), para = await criar("Destino", "essencial"); // grupos diferentes, os dois são gasto
+  const regra = (await chamar("POST", "/api/regras", { padrao: "quitanda", categoria_id: de })).d.regra.id;
+  novoLanc(conta, "2018-02-01", -1000, de, { descricao_original: "Quitanda 1", regra_id: regra });
+  novoLanc(conta, "2018-02-02", -300, de, { descricao_original: "feira", categoria_manual: 1 });
+  novoLanc(cartao, "2018-02-03", 200, de, { descricao_original: "estorno", categoria_manual: 1 });
+  novoLanc(conta, "2018-02-04", -50, para, { descricao_original: "já era do destino", categoria_manual: 1 });
+  const orcar = (categoria_id: number, valor_centavos: number) => chamar("PUT", "/api/orcamento", { mes: "2018-02", categoria_id, valor_centavos });
+  await orcar(de, 111);
+  await orcar(para, 222);
+  const totais = async () => (({ entradas, saidas, pendentes }) => [entradas, saidas, pendentes])((await chamar("GET", "/api/resumo?mes=2018-02")).d);
+  const lancs = () => db.prepare("SELECT categoria_id AS c, categoria_manual AS m FROM lancamentos WHERE data LIKE '2018-02-%' ORDER BY data").all().map((l: any) => [l.c, l.m]);
+  const antes = await totais();
+  assert.deepEqual(antes, [0, 1150, 0]);
+
+  // recusas: nada muda
+  const recusadas = [await mesclar(de, RENDA), await mesclar(de, TRANSFERENCIA), await mesclar(MERCADO, para), await mesclar(de, de)];
+  assert.deepEqual(recusadas.map((r) => r.status), [409, 409, 409, 409]);
+  assert.deepEqual([(await mesclar(de, 9999)).status, (await mesclar(9999, para)).status, (await chamar("POST", `/api/categorias/${de}/mesclar`, {})).status], [404, 404, 400]);
+  assert.deepEqual(lancs(), [[de, 0], [de, 1], [de, 1], [para, 1]]);
+
+  const r = await mesclar(de, para);
+  assert.deepEqual([r.status, r.d.lancamentos, r.d.regras], [200, 3, 1]);
+  assert.deepEqual(lancs(), [[para, 0], [para, 1], [para, 1], [para, 1]]);
+  assert.deepEqual(await totais(), antes);
+  reaplicarRegras(); // a regra foi junto: reaplicar não desfaz
+  assert.deepEqual(lancs(), [[para, 0], [para, 1], [para, 1], [para, 1]]);
+  assert.ok(!(await chamar("GET", "/api/categorias")).d.some((c: any) => c.id === de));
+  const linha = (await chamar("GET", "/api/orcamento?mes=2018-02")).d.linhas.find((l: any) => l.categoria_id === para);
+  assert.deepEqual([linha.planejado, linha.realizado], [222, 1150]);
+  await chamar("DELETE", `/api/regras/${regra}`);
+});
+
 test("planejado vale dali em diante e não mexe no passado", async () => {
   const planejado = async (mes: string) =>
     (await chamar("GET", `/api/orcamento?mes=${mes}`)).d.linhas.find((l: any) => l.categoria_id === MERCADO).planejado;

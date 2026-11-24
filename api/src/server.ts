@@ -310,22 +310,22 @@ app.delete("/api/bens/:id", async (req) => {
 
 // ---------------- categorias e regras ----------------
 
-interface CategoriaComUsos { id: number; nome: string; grupo: string; cor: string | null; usos: number }
-// conta tudo que aponta para a categoria, inclusive lançamento ignorado ou REMOVIDO
-const CATEGORIAS_COM_USOS = `SELECT c.*, (SELECT COUNT(*) FROM lancamentos WHERE categoria_id = c.id)
-    + (SELECT COUNT(*) FROM regras WHERE categoria_id = c.id)
-    + (SELECT COUNT(*) FROM orcamentos WHERE categoria_id = c.id) AS usos
-  FROM categorias c`;
-const categoriaOu404 = (id: number) =>
-  ouNaoEncontrado(db.prepare(`${CATEGORIAS_COM_USOS} WHERE c.id = ?`).get(id) as unknown as CategoriaComUsos | undefined, "categoria");
+/** Com a contagem de tudo que aponta para a categoria, inclusive lançamento ignorado ou REMOVIDO. */
+const listarCategorias = () =>
+  (db.prepare(
+    `SELECT c.*, (SELECT COUNT(*) FROM lancamentos WHERE categoria_id = c.id) AS lancamentos,
+       (SELECT COUNT(*) FROM regras WHERE categoria_id = c.id) AS regras,
+       (SELECT COUNT(*) FROM orcamentos WHERE categoria_id = c.id) AS orcamentos
+     FROM categorias c ORDER BY grupo, nome`,
+  ).all() as { id: number; nome: string; grupo: string; cor: string | null; lancamentos: number; regras: number; orcamentos: number }[])
+    .map((c) => ({ ...c, usos: c.lancamentos + c.regras + c.orcamentos, fixa: NOMES_FIXOS.has(c.nome) }));
+const categoriaOu404 = (id: number) => ouNaoEncontrado(listarCategorias().find((c) => c.id === id), "categoria");
 const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
 const recusarNomeFixo = (nome: string) => {
   if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar nem renomear`);
 };
 
-app.get("/api/categorias", async () =>
-  (db.prepare(`${CATEGORIAS_COM_USOS} ORDER BY grupo, nome`).all() as unknown as CategoriaComUsos[]).map((c) => ({ ...c, fixa: NOMES_FIXOS.has(c.nome) })),
-);
+app.get("/api/categorias", async () => listarCategorias());
 
 const grupos = z.enum(["essencial", "estilo_de_vida", "financeiro", "renda", "transferencia"]);
 app.post("/api/categorias", async (req) => {
@@ -354,6 +354,27 @@ app.delete("/api/categorias/:id", async (req) => {
     db.prepare("DELETE FROM categorias WHERE id = ?").run(id);
     limparCacheCategorias();
     return { ok: true };
+  });
+});
+/** Gasto, renda ou transferência: é o que decide como a categoria entra no resumo (os três grupos de gasto contam igual). */
+const tipoDoGrupo = (grupo: string) => (grupo === "renda" || grupo === "transferencia" ? grupo : "gasto");
+/**
+ * Leva lançamentos (a edição manual continua manual) e regras para o destino e apaga a origem. Só entre categorias do mesmo
+ * tipo, para o total do mês não mudar. O orçamento da origem é perdido (cascade): fica o do destino.
+ */
+app.post("/api/categorias/:id/mesclar", async (req) => {
+  const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
+  const { destino } = z.object({ destino: z.number().int() }).parse(req.body);
+  return transacao(() => {
+    const de = categoriaOu404(id), para = categoriaOu404(destino);
+    if (de.id === para.id) throw conflito("escolha duas categorias diferentes");
+    recusarNomeFixo(de.nome);
+    if (tipoDoGrupo(de.grupo) !== tipoDoGrupo(para.grupo)) throw conflito("só dá para mesclar categorias do mesmo tipo: gasto, renda ou transferência");
+    db.prepare("UPDATE lancamentos SET categoria_id = ?, atualizado_em = datetime('now','localtime') WHERE categoria_id = ?").run(para.id, de.id);
+    db.prepare("UPDATE regras SET categoria_id = ? WHERE categoria_id = ?").run(para.id, de.id);
+    db.prepare("DELETE FROM categorias WHERE id = ?").run(de.id);
+    limparCacheCategorias();
+    return { ok: true, lancamentos: de.lancamentos, regras: de.regras };
   });
 });
 

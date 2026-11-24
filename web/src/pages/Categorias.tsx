@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, GRUPOS, type Categoria, type Regra } from "../lib/api";
+import { api, GRUPOS, type Categoria, type CategoriaComUsos, type Regra } from "../lib/api";
 import SelectCategoria from "../components/SelectCategoria";
 
 export default function Categorias() {
@@ -73,6 +73,7 @@ export default function Categorias() {
               </div>
             </div>
           ))}
+          {cats.data && <Mesclar categorias={cats.data} />}
         </div>
 
         <div className="painel">
@@ -103,6 +104,67 @@ export default function Categorias() {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Só se mescla gasto com gasto, renda com renda e transferência com transferência (senão mudaria o total do mês). */
+const tipo = (c: Categoria) => (c.grupo === "renda" || c.grupo === "transferencia" ? c.grupo : "gasto");
+
+function Mesclar({ categorias }: { categorias: CategoriaComUsos[] }) {
+  const qc = useQueryClient();
+  const [deId, setDe] = useState<number | null>(null);
+  const [paraId, setPara] = useState<number | null>(null);
+  const de = categorias.find((c) => c.id === deId && !c.fixa);
+  const destinos = de ? categorias.filter((c) => c.id !== de.id && tipo(c) === tipo(de)) : [];
+  const para = destinos.find((c) => c.id === paraId);
+  const mesclar = useMutation({
+    mutationFn: (v: { de: CategoriaComUsos; para: CategoriaComUsos }) => api.mesclarCategoria(v.de.id, v.para.id),
+    onSuccess: () => {
+      setDe(null);
+      setPara(null);
+    },
+    onSettled: () => qc.invalidateQueries(),
+  });
+
+  return (
+    <details className="mesclar">
+      <summary>Mesclar categorias</summary>
+      <p className="mudo pequeno">
+        Leva os lançamentos e as regras de uma categoria para outra do mesmo tipo e apaga a primeira. As que a categorização automática
+        usa não podem sair, só receber.
+      </p>
+      <form
+        className="linha-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!de || !para || mesclar.isPending) return;
+          const perde = de.orcamentos ? `\n\nO orçamento de "${de.nome}" será perdido; o de "${para.nome}" não muda.` : "";
+          if (confirm(`Mesclar "${de.nome}" em "${para.nome}"? ${de.lancamentos} lançamento(s) e ${de.regras} regra(s) vão para "${para.nome}", e "${de.nome}" deixa de existir. Não dá para desfazer.${perde}`))
+            mesclar.mutate({ de, para });
+        }}
+      >
+        <SelectCategoria
+          categorias={categorias.filter((c) => !c.fixa)}
+          valor={de?.id ?? null}
+          vazio="Esta categoria…"
+          rotulo="Categoria que sai"
+          onChange={(id) => {
+            setDe(id);
+            mesclar.reset();
+          }}
+        />
+        <SelectCategoria categorias={destinos} valor={para?.id ?? null} vazio="vai para…" rotulo="Categoria que fica" onChange={setPara} />
+        <button className="botao secundario" disabled={!de || !para || mesclar.isPending}>Mesclar</button>
+      </form>
+      <div className="pequeno" aria-live="polite">
+        {mesclar.data && (
+          <p className="ok">
+            Mesclada em {mesclar.variables?.para.nome}: {mesclar.data.lancamentos} lançamento(s) e {mesclar.data.regras} regra(s).
+          </p>
+        )}
+        {mesclar.error && <p className="erro">{mesclar.error.message}</p>}
+      </div>
+    </details>
   );
 }
 

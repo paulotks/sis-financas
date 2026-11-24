@@ -71,6 +71,7 @@ web/src/
 - **Migrações:** só acrescente um novo item ao fim de `MIGRACOES` em `db.ts`. Nunca edite uma migração que já existe — a base do Paulo já rodou.
 - `lancamentos.id` = id da transação na Pluggy (chave do dedupe). A sincronização **atualiza** dados do banco mas **preserva** o que é do usuário: `descricao`, categoria com `categoria_manual = 1`, `notas`, `tags`, `ignorado`.
 - Categoria: regra (texto *contido* na `descricao_original`, sem diferenciar maiúsculas) > movimento interno (`INTERNOS`) > categoria da Pluggy mapeada em `MAPA_PLUGGY` > `NULL` (pendente). Edição manual nunca é sobrescrita. A API reaplica tudo ao subir. Regra é sempre por texto *contido* (nunca igualdade) e repetir um texto troca a categoria da regra.
+- `NOMES_FIXOS` (nomes usados em `MAPA_PLUGGY` e `INTERNOS`): o código acha a categoria pelo nome, então a API recusa apagar, renomear ou mesclar (409). Apagar só categoria sem uso: `regras` e `orcamentos` têm `ON DELETE CASCADE`.
 - Movimento interno vem em **par** (+X e −X) e a Pluggy dá categoria diferente a cada perna (cofrinho do MP, débito automático de fatura). Só tirar do resumo quando as **duas** pernas saem juntas: tirar uma só distorce o mês. Pix no crédito do Nubank tem três pernas e fica de fora de propósito.
 - Fora do trial a Pluggy pode mandar `category: null`; o sync guarda a última categoria conhecida.
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura) fica **fora do resumo**, para não contar o mesmo gasto duas vezes.
