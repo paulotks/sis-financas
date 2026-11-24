@@ -21,8 +21,9 @@ Itens 1, 3, 13, 14, 15, 17 e 20 do [backlog](../backlog.md). Nenhum muda a estru
 
 ## 3. Barra lateral "Última: nunca"
 
-- **Causa provável (confirmar antes de mexer):** a consulta de conexões fica em `App.tsx` e vale para todas as rotas; `quando(null)` devolve
-  "nunca", então aparece enquanto carrega ou se a chamada falha. Reproduzir atrasando `/api/conexoes` com `initScript`.
+- **Causa (confirmada em 2026-11-24, com a resposta atrasada e com erro, nas 7 rotas):** a consulta de conexões fica em `App.tsx` e vale
+  para todas as rotas; `quando(null)` devolve "nunca", então aparece enquanto carrega ou se a chamada falha. Reproduz atrasando
+  `/api/conexoes` com `initScript`.
 - **Fazer:** enquanto carrega ou em erro, mostrar "…"; "nunca" só quando a API respondeu e não há sincronização.
 - **Aceite:** com a resposta atrasada, nenhuma rota mostra "nunca".
 

@@ -47,7 +47,8 @@ export default function App() {
           <button className="botao" disabled={sync.isPending || !conexoes.data?.length} onClick={() => sync.mutate()}>
             {sync.isPending ? "Sincronizando…" : "↻ Sincronizar"}
           </button>
-          <small>Última: {quando(ultimo)}</small>
+          {/* sem resposta da API não dá para dizer "nunca" */}
+          <small>Última: {conexoes.data ? quando(ultimo) : "…"}</small>
           {sync.data && (
             <small className="ok">
               +{sync.data.resultados.reduce((s, r) => s + r.novos, 0)} novos
