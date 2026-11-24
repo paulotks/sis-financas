@@ -443,6 +443,7 @@ app.get("/api/analises", async (req) => {
     meses, orcado_hoje: orcado_hoje || null,
     dia_a_dia: {
       dias: naAnalise(mes) ? porDia(mes) : [], anterior: naAnalise(mes_anterior) ? porDia(mes_anterior) : null, mes_anterior,
+      ja_lancado: totaisDoMes(mes, "PF").saidas, // com as parcelas de data futura: é o gasto do Resumo e do Orçamento
       orcado: regua.orcado || null, esperada: regua.esperada,
     },
     categorias, comprometido,

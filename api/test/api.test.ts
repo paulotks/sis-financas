@@ -975,6 +975,9 @@ test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o in
   assert.equal(fechado.dia_a_dia.dias.at(-1), r1.saidas);
   assert.equal(fechado.dia_a_dia.anterior.at(-1), r2.saidas);
   assert.equal(d.dia_a_dia.dias.length, Number((await chamar("GET", "/api/ritmo")).d.hoje.slice(8)));
+  novoLanc(novaConta("CREDIT"), `${somarMes(mes, 1)}-01`, -1, MERCADO); // mês seguinte não entra no já lançado
+  assert.equal(d.dia_a_dia.ja_lancado, r.saidas);
+  assert.equal((await analises()).dia_a_dia.ja_lancado, r.saidas);
   assert.equal((await analises(m3)).dia_a_dia.anterior, null); // o mês antes do início não entra
 
   const mercado = fechado.categorias.find((c: any) => c.categoria_id === MERCADO);

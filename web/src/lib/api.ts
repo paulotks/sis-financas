@@ -201,7 +201,7 @@ export interface Analises {
   inicio_definido: boolean;
   orcado_hoje: number | null;
   meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
-  dia_a_dia: { dias: number[]; anterior: number[] | null; mes_anterior: string; orcado: number | null; esperada: number | null };
+  dia_a_dia: { dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
   categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
   comprometido: { mes: string; parcelas: number; recorrentes: number; esperada: number | null }[];
 }

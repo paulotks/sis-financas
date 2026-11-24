@@ -215,7 +215,7 @@ export function criarServidor(base: string) {
             sobra: reais(m.sobra), guardado_acumulado: reais(m.acumulado),
           })),
           gasto_acumulado_por_dia: {
-            dias: d.dia_a_dia.dias.map(reais), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
+            dias: d.dia_a_dia.dias.map(reais), com_o_ja_lancado_ate_o_fim_do_mes: reais(d.dia_a_dia.ja_lancado), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
             orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada),
           },
           categorias: d.categorias.map((c: any) => ({

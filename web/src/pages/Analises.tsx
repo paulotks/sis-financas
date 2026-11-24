@@ -175,7 +175,7 @@ function Guardado({ d }: { d: Dados }) {
 
 /** B: gasto acumulado dia a dia. A frase diz em que dia a curva furou cada limite. */
 function DiaADia({ d }: { d: Dados }) {
-  const { dias, anterior, mes_anterior, orcado, esperada } = d.dia_a_dia;
+  const { dias, anterior, mes_anterior, ja_lancado, orcado, esperada } = d.dia_a_dia;
   const furou = (limite: number | null) => (limite === null ? 0 : dias.findIndex((v) => v > limite) + 1);
   const noOrcado = furou(orcado), naRenda = furou(esperada);
   const dados = Array.from({ length: Math.max(dias.length, anterior?.length ?? 0) }, (_, i) => ({ dia: i + 1, atual: dias[i] ?? null, anterior: anterior?.[i] ?? null }));
@@ -184,7 +184,9 @@ function DiaADia({ d }: { d: Dados }) {
   const [a, m] = d.mes.split("-").map(Number);
   const faltamDias = new Date(a, m, 0).getDate() - ultimo + 1; // contando hoje
   const limites = [["o orçado", orcado], ["a renda esperada", esperada]] as const;
-  const resta = limites.filter(([, v]) => v !== null && v >= gasto).map(([nome, v]) => `${dinheiro(v! - gasto)} até ${nome}`);
+  // com as parcelas já lançadas até o fim do mês, para bater com o Resumo e o Orçamento
+  const resta = limites.filter(([, v]) => v !== null && v >= ja_lancado).map(([nome, v]) => `${dinheiro(v! - ja_lancado)} até ${nome}`);
+  const soComParcelas = aberto ? limites.filter(([, v]) => v !== null && v >= gasto && v < ja_lancado).map(([nome]) => nome) : [];
   const rotulo = (value: string) => ({ value, position: "insideBottomLeft" as const, fill: COR.tinta, fontSize: 12 });
   return (
     <Grafico
@@ -193,7 +195,8 @@ function DiaADia({ d }: { d: Dados }) {
         <>
           {noOrcado > 0 && <>Passou do orçado no <b className="alerta">dia {noOrcado}</b>. </>}
           {naRenda > 0 && <>Passou da renda esperada no <b className="neg">dia {naRenda}</b>. </>}
-          {aberto && resta.length > 0 && <>{resta.length > 1 || !noOrcado ? "Restam " : "Ainda restam "}<b>{resta.join(" e ")}</b>, com {faltamDias === 1 ? "1 dia" : `${faltamDias} dias`} pela frente. </>}
+          {soComParcelas.length > 0 && <>Com as parcelas já lançadas, passa de <b className="neg">{soComParcelas.join(" e de ")}</b>. </>}
+          {aberto && resta.length > 0 && <>Restam <b>{resta.join(" e ")}</b>, já contando as parcelas lançadas, com {faltamDias === 1 ? "1 dia" : `${faltamDias} dias`} pela frente. </>}
           {!aberto && !noOrcado && !naRenda && resta.length > 0 && <>Não passou de nenhum limite. </>}
           {antes !== undefined && (
             <>{aberto ? `Até o dia ${ultimo}` : "No mês todo"}, {gasto > antes ? <b className="neg">{dinheiro(gasto - antes)} a mais</b> : <b>{dinheiro(antes - gasto)} a menos</b>} que {nomeDoMes(mes_anterior).toLowerCase()}.</>
@@ -289,6 +292,7 @@ function QuemEstourou({ d }: { d: Dados }) {
 function Comprometido({ d }: { d: Dados }) {
   const prox = d.comprometido[0];
   const total = prox.parcelas + prox.recorrentes;
+  const provaveis = prox.recorrentes > 0;
   const parcelas = soma(d.comprometido.map((m) => m.parcelas));
   const temRenda = d.comprometido.some((m) => m.esperada !== null);
   const CLARO = "color-mix(in srgb, #d95926 45%, #131316)";
@@ -297,9 +301,9 @@ function Comprometido({ d }: { d: Dados }) {
       titulo="Já comprometido nos próximos 12 meses"
       frase={
         <>
-          {nomeDoMes(prox.mes)} já começa devendo <b>{dinheiro(total)}</b>
+          {nomeDoMes(prox.mes)} já tem <b>{dinheiro(prox.parcelas)}</b> certos em parcelas{provaveis && <> e uns <b>{dinheiroCurto(prox.recorrentes)}</b> prováveis em recorrentes</>}
           {prox.esperada ? <>: <b className={total > prox.esperada / 2 ? "neg" : ""}>{Math.round((total / prox.esperada) * 100)}%</b> da renda esperada</> : ""}.
-          {" "}Só em parcelas, faltam {dinheiro(parcelas)} até {mesCurto(d.comprometido.at(-1)!.mes)}.{" "}
+          {" "}Em parcelas, faltam {dinheiro(parcelas)} até {mesCurto(d.comprometido.at(-1)!.mes)}.{" "}
           <Link to="/recorrentes">Revisar recorrentes →</Link>
         </>
       }
