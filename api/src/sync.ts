@@ -1,6 +1,6 @@
 import { agora, centavos, db, transacao } from "./db.js";
 import { env } from "./env.js";
-import { carregarRegras, sugerirCategoria } from "./categorizar.js";
+import { carregarRegras, reaplicarRegras, sugerirCategoria } from "./categorizar.js";
 import { registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy, type PConta, type PItem, type PTransacao } from "./pluggy.js";
 
@@ -251,6 +251,7 @@ export function sincronizar(itemId?: string, desde?: string): Promise<ResultadoS
       : (db.prepare("SELECT item_id FROM conexoes ORDER BY criado_em").all() as { item_id: string }[]).map((r) => r.item_id);
     const out: ResultadoSync[] = [];
     for (const id of ids) out.push(await sincronizarItem(id, desde));
+    transacao(() => reaplicarRegras()); // o Pix no crédito só se resolve com as três pernas na base
     registrarSaldos();
     return out;
   });

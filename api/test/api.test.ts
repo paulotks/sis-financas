@@ -219,7 +219,7 @@ test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual fo
     ["Débito automático total", "Transfer - Internal"],
   ])
     assert.equal(grupo(descricao, cp), "transferencia", `${descricao} / ${cp}`);
-  // Pix no crédito: tirar só esta perna contaria o gasto em dobro
+  // Pix no crédito: sozinha não sai (tirar só esta perna contaria o gasto em dobro); o teste das três pernas está adiante
   assert.equal(grupo("Valor adicionado na conta por cartão de crédito", "Transfer - Internal"), null);
   // regra do Paulo continua mandando
   const pet = { id: 1, padrao: "reservado belinha", sentido: null, conta_id: null, categoria_id: 8, descricao: null };
@@ -488,6 +488,78 @@ test("migração das regras: mesmas regras com os mesmos ids, valendo para tudo,
   assert.throws(() => m.exec("INSERT INTO regras (padrao, categoria_id, sentido) VALUES ('uber', 4, 'saida')"), /UNIQUE/);
   assert.equal((m.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   m.close();
+});
+
+test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da conta saem juntas e o resultado do mês não muda", async () => {
+  const conta = novaConta("BANK"), cartao = novaConta("CREDIT"), oculto = novaConta("CREDIT", { oculta: 1 }), outroBanco = novaConta("CREDIT", { item: ITEM2 });
+  let n = 0;
+  type Extra = Record<string, string | number>;
+  /** Insere as três pernas com o horário real: o Pix 0,5 s antes do "Valor adicionado" e a cobrança 3 s depois. */
+  const operacao = (hora: string, valor: number, o: { pix?: Extra; cobranca?: Extra | null; cartao?: string; tarifa?: number; parcelas?: number } = {}) => {
+    const t = Date.parse(hora), id = `pix${++n}`;
+    const perna = (sufixo: string, c: string, ms: number, v: number, extra: Extra, compra?: object) =>
+      novoLanc(c, hora.slice(0, 10), v, null, { id: id + sufixo, bruto: JSON.stringify({ date: new Date(ms).toISOString(), ...compra }), ...extra });
+    perna("e", conta, t, valor, { descricao_original: "Valor adicionado na conta por cartão de crédito | Valor adicionado para PIX no Crédito", categoria_pluggy: "Transfer - Internal" });
+    perna("s", conta, t - 500, -valor, { descricao_original: "Transferência enviada|Fulano", categoria_pluggy: "Transfers", ...o.pix });
+    if (o.cobranca !== null) {
+      const total = o.parcelas ?? 1, compra = total > 1 ? { creditCardMetadata: { purchaseDate: new Date(t + 3000).toISOString() } } : undefined;
+      for (let p = 1; p <= total; p++)
+        perna(p > 1 ? `c${p}` : "c", o.cartao ?? cartao, t + 3000 + (p - 1) * 31 * 86_400_000, -Math.round((valor * (o.tarifa ?? 1.03)) / total),
+          { descricao_original: "Pagamento de pix", categoria_pluggy: "Transfer - PIX", ...(total > 1 && { parcela: p, total_parcelas: total }), ...o.cobranca }, compra);
+    }
+    return id;
+  };
+  const nome = (id: string) => (db.prepare("SELECT c.nome FROM lancamentos l LEFT JOIN categorias c ON c.id = l.categoria_id WHERE l.id = ?").get(id) as { nome: string | null }).nome;
+  const pernas = (id: string) => ["e", "s", "c"].map((s) => nome(id + s));
+  const mes = async (m: string) => (({ entradas, saidas }) => [entradas, saidas, entradas - saidas])((await chamar("GET", `/api/resumo?mes=${m}`)).d);
+  const FORA = "Transferência entre contas", manual = (categoria_id: number) => ({ categoria_id, categoria_manual: 1 });
+
+  const regra = (await chamar("POST", "/api/regras", { padrao: "beltrana xyz", categoria_id: 7 })).d.regra.id; // antes das operações: criar regra reaplica tudo
+  // cada formato de cobrança num mês, para o total do mês mostrar só aquela operação
+  const semNome = operacao("2016-01-10T12:00:00Z", 10000, { pix: { categoria_pluggy: "Groceries" } });
+  const nomeSemCategoria = operacao("2016-02-10T23:59:59Z", 10000, { pix: { categoria_pluggy: "Healthcare" }, cobranca: { descricao_original: "Fulano", data: "2016-02-11" } });
+  const nomeComCategoria = operacao("2016-03-10T12:00:00Z", 10000, { pix: { categoria_pluggy: "Internet" }, cobranca: { descricao_original: "Fulano", categoria_pluggy: "Digital services" } });
+  const porRegra = operacao("2016-04-10T12:00:00Z", 10000, { pix: { descricao_original: "Transferência enviada|Beltrana XYZ" }, cobranca: { descricao_original: "Beltrana XYZ", categoria_pluggy: "Transfers" } });
+  const parcelada = operacao("2016-05-10T12:00:00Z", 10000, { pix: { categoria_pluggy: "Groceries" }, parcelas: 2, tarifa: 1.1 });
+  db.prepare("UPDATE lancamentos SET data = '2016-06-10' WHERE id = ?").run(`${parcelada}c2`);
+  // mesmo valor, mesmo dia: cada cobrança herda do seu Pix
+  const gemeas = [operacao("2016-07-10T10:00:00Z", 10000, { pix: { categoria_pluggy: "Healthcare" } }), operacao("2016-07-10T13:00:00Z", 10000, { pix: { categoria_pluggy: "Groceries" } })];
+  const cobrancaManual = operacao("2016-08-10T12:00:00Z", 10000, { pix: { categoria_pluggy: "Groceries" }, cobranca: manual(13) });
+  // não mexe: sem cobrança, em cartão oculto ou de outro banco, valor que não bate, perna editada, ignorada ou já fora do resumo
+  const intocadas = [
+    operacao("2016-09-01T12:00:00Z", 10000, { cobranca: null }),
+    operacao("2016-09-02T12:00:00Z", 10000, { cartao: oculto }),
+    operacao("2016-09-03T12:00:00Z", 10000, { cartao: outroBanco }),
+    operacao("2016-09-04T12:00:00Z", 10000, { tarifa: 0.9 }),
+    operacao("2016-09-05T12:00:00Z", 10000, { pix: manual(7) }),
+    operacao("2016-09-06T12:00:00Z", 10000, { pix: { ignorado: 1 } }),
+    operacao("2016-09-07T12:00:00Z", 10000, { cobranca: { ignorado: 1 } }),
+    operacao("2016-09-08T12:00:00Z", 10000, { cobranca: manual(TRANSFERENCIA) }),
+    operacao("2016-09-09T12:00:00Z", 10000, { pix: { categoria_pluggy: "Same person transfer", categoria_id: TRANSFERENCIA } }),
+    operacao("2016-09-10T12:00:00Z", 10000, { cobranca: { status: "REMOVIDO" } }),
+  ];
+  const meses = ["2016-01", "2016-02", "2016-03", "2016-04", "2016-05", "2016-06", "2016-07", "2016-08", "2016-09"];
+  const antes = await Promise.all(meses.map(mes)); // recém-inseridas: as três pernas contando
+
+  await sincronizar(ITEM2); // a sincronização também resolve
+  assert.deepEqual(pernas(semNome), [FORA, FORA, "Mercado"]);
+  assert.deepEqual(pernas(nomeSemCategoria), [FORA, FORA, "Saúde"]);
+  assert.deepEqual(pernas(nomeComCategoria), [FORA, FORA, "Assinaturas"]);
+  assert.deepEqual(pernas(porRegra), [FORA, FORA, "Educação"]); // a regra pega o Pix e a cobrança: antes o gasto dobrava
+  assert.deepEqual([lanc(`${porRegra}s`).regra_id, lanc(`${porRegra}c`).regra_id], [null, regra]);
+  assert.deepEqual([...pernas(parcelada), nome(`${parcelada}c2`)], [FORA, FORA, "Mercado", "Mercado"]);
+  assert.deepEqual(gemeas.map(pernas), [[FORA, FORA, "Saúde"], [FORA, FORA, "Mercado"]]);
+  assert.deepEqual(pernas(cobrancaManual), [FORA, FORA, "Lazer"]);
+  for (const id of intocadas) assert.equal(nome(`${id}e`), null, id);
+  assert.deepEqual(pernas(intocadas[4]), [null, "Educação", null]);
+
+  const depois = await Promise.all(meses.map(mes));
+  assert.deepEqual(depois.map((m) => m[2]), antes.map((m) => m[2])); // resultado igual em todos os meses
+  assert.deepEqual([antes[0], depois[0]], [[10000, 20300, -10300], [0, 10300, -10300]]);
+  assert.deepEqual([depois[4], depois[5]], [[0, 5500, -5500], [0, 5500, -5500]]); // tarifa e parcela no mês de cada uma
+  assert.equal(reaplicarRegras(), 0); // de novo: nada muda e nada conta
+  await chamar("DELETE", `/api/regras/${regra}`);
+  db.prepare("DELETE FROM lancamentos WHERE id LIKE 'pix%'").run();
 });
 
 test("planejado vale dali em diante e não mexe no passado", async () => {

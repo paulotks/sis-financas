@@ -101,7 +101,7 @@ const MAPA_PLUGGY: [string, string][] = [
 /**
  * Movimento interno que vem em par (+X e -X). A Pluggy dá categorias diferentes às duas pernas (Internal, Investments,
  * Salary, Clothing…), então aqui vale a descrição: ou as duas saem do resumo, ou nenhuma.
- * "Valor adicionado" (Pix no crédito do Nubank) fica de fora de propósito: tirar só essa perna contaria o gasto em dobro.
+ * "Valor adicionado" (Pix no crédito do Nubank) tem três pernas e depende das outras duas: ver pixNoCredito.
  */
 const INTERNOS: [RegExp, string][] = [
   [/^dinheiro (reservado|retirado)\b/, "Transferência entre contas"], // cofrinhos do Mercado Pago
@@ -181,16 +181,78 @@ export function contarParecidos(alcance: Alcance) {
   };
 }
 
+interface Linha extends Movimento {
+  id: string;
+  categoria_id: number | null;
+  regra_id: number | null;
+  categoria_manual: number;
+  ignorado: number;
+  status: string | null;
+  parcela: number | null;
+  total_parcelas: number | null;
+  conta_tipo: string | null;
+  item_id: string;
+  pessoa: string;
+  oculta: number;
+  momento: string; // com hora; nas parcelas é a data da compra, igual em todas
+}
+
+/**
+ * Pix no crédito do Nubank: (1) +X entra na conta, (2) o Pix de −X sai dela e (3) o cartão cobra X mais a tarifa. O gasto é a (3), então
+ * (1) e (2) saem do resumo, sempre juntas, e a (3) sem categoria própria herda a que a (2) teria. Vale acima das regras.
+ * Devolve só o que muda. Não mexe se falta a (3) ou se alguma perna já está fora do resumo: assim nunca muda o resultado do mês.
+ * ponytail: as pernas são casadas pelo horário (1 s entre elas nos dados reais); se o banco parar de mandar a hora, vale a 1ª do mesmo dia.
+ */
+function pixNoCredito(linhas: Linha[], categoriaDe: (l: Linha) => number | null) {
+  const trocas = new Map<string, number | null>();
+  const transferencias = new Set((db.prepare("SELECT id FROM categorias WHERE grupo = 'transferencia'").all() as { id: number }[]).map((c) => c.id));
+  const fora = (l: Linha) => l.ignorado === 1 || transferencias.has(categoriaDe(l) ?? 0);
+  const vivas = linhas.filter((l) => l.status !== "REMOVIDO");
+  const usadas = new Set<string>();
+  const maisPerto = (a: Linha, minutos: number, serve: (l: Linha) => boolean) => {
+    const distancia = (l: Linha) => Math.abs(Date.parse(l.momento) - Date.parse(a.momento));
+    const achada = vivas
+      .filter((l) => !usadas.has(l.id) && serve(l) && distancia(l) <= minutos * 60_000)
+      .sort((x, y) => distancia(x) - distancia(y))[0];
+    if (achada) usadas.add(achada.id);
+    return achada;
+  };
+  const entradas = vivas.filter((l) => l.conta_tipo === "BANK" && l.valor_centavos > 0 && /^valor adicionado na conta por cartão de crédito/i.test(l.descricao_original ?? ""));
+  for (const entrou of entradas.sort((a, b) => (a.momento < b.momento ? -1 : 1))) {
+    const saiu = maisPerto(entrou, 1, (l) => l.conta_id === entrou.conta_id && l.valor_centavos === -entrou.valor_centavos);
+    const cobranca = maisPerto(entrou, 15, (l) => {
+      const tarifa = (-l.valor_centavos * (l.total_parcelas || 1)) / entrou.valor_centavos; // 1 = sem tarifa
+      return l.conta_tipo === "CREDIT" && l.item_id === entrou.item_id && l.pessoa === entrou.pessoa && !l.oculta && (l.parcela ?? 1) === 1 && tarifa >= 1 && tarifa <= 1.5;
+    });
+    if (!saiu || !cobranca || entrou.categoria_manual || saiu.categoria_manual || entrou.ignorado || fora(saiu) || fora(cobranca)) continue;
+    const transferencia = categoriaPorNome("Transferência entre contas");
+    trocas.set(entrou.id, transferencia).set(saiu.id, transferencia);
+    const parcelas = vivas.filter((l) =>
+      l === cobranca || (cobranca.total_parcelas! > 1 && l.conta_id === cobranca.conta_id && l.momento === cobranca.momento && l.total_parcelas === cobranca.total_parcelas));
+    for (const l of parcelas) if (!l.categoria_manual && categoriaDe(l) === null) trocas.set(l.id, categoriaDe(saiu));
+  }
+  return trocas;
+}
+
 /** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
 export function reaplicarRegras(): number {
   const regras = carregarRegras();
-  const alvo = db
-    .prepare("SELECT id, descricao_original, categoria_pluggy, valor_centavos, conta_id, categoria_id, regra_id FROM lancamentos WHERE categoria_manual = 0")
-    .all() as unknown as (Movimento & { id: string; categoria_id: number | null; regra_id: number | null })[];
+  const linhas = db
+    .prepare(
+      `SELECT l.id, l.descricao_original, l.categoria_pluggy, l.valor_centavos, l.conta_id, l.categoria_id, l.regra_id, l.categoria_manual,
+         l.ignorado, l.status, l.parcela, l.total_parcelas, ct.tipo AS conta_tipo, ct.item_id, ct.pessoa, ct.oculta,
+         COALESCE(json_extract(l.bruto, '$.creditCardMetadata.purchaseDate'), json_extract(l.bruto, '$.date'), l.data) AS momento
+       FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id`,
+    )
+    .all() as unknown as Linha[];
+  const alvo = linhas.filter((l) => !l.categoria_manual);
+  const sugestoes = new Map(alvo.map((l) => [l.id, sugerirCategoria(l, regras)]));
+  // antes de comparar com o gravado, e não num passo depois: senão as pernas iriam e voltariam a cada vez, inflando a contagem
+  const trocas = pixNoCredito(linhas, (l) => (l.categoria_manual ? l.categoria_id : sugestoes.get(l.id)!.categoria_id));
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
   for (const l of alvo) {
-    const s = sugerirCategoria(l, regras);
+    const s = trocas.has(l.id) ? { categoria_id: trocas.get(l.id)!, regra_id: null } : sugestoes.get(l.id)!;
     if (s.categoria_id !== l.categoria_id || s.regra_id !== l.regra_id) {
       upd.run(s.categoria_id, s.regra_id, l.id);
       if (s.categoria_id !== l.categoria_id) n++;

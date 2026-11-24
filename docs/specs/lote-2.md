@@ -74,12 +74,15 @@ Três pernas: **(1)** "Valor adicionado…" entra na conta (+X), **(2)** o Pix s
 - **Regras:**
   - Só tirar o par se existe a (3), no cartão visível do mesmo banco e da mesma pessoa; senão o gasto some.
   - (2) ou (3) já em transferência: não mexer na operação. Assim este item **nunca muda o resultado de um mês**, só tira o inchaço.
-  - Qualquer perna editada à mão ou ignorada: não mexer na operação.
+  - (1) ou (2) editada à mão, ou qualquer uma ignorada: não mexer na operação. (3) editada à mão só fica como está, e o par sai mesmo assim:
+    categorizar a cobrança é o uso normal, e com a regra anterior ("qualquer perna") cada correção traria o gasto em dobro de volta.
   - Vale **acima** das regras do Paulo para essas pernas (hoje regra vence movimento interno).
   - Precisa de várias linhas ao mesmo tempo: não cabe em `sugerirCategoria`. Fica **dentro** de `reaplicarRegras` (calcula as trocas antes de
     comparar com o gravado; um passo depois dele faria as pernas irem e voltarem e inflaria o "recategorizados"), e `sincronizar` passa a
     chamar `reaplicarRegras` no fim. O que (3) herda é a categoria que (2) *teria*, não a gravada: depois da 1ª vez a gravada é transferência.
 - **Atualizar junto:** "fica de fora de propósito" no `CLAUDE.md`, em `CONVENCOES` e no comentário de `INTERNOS`.
+- **Ensaio na cópia (2026-11-24):** 25 das 26 operações resolvidas (a de 2026-03-16 ficou de fora, como acima); entradas e saídas caíram no
+  mesmo valor em 9 meses, nenhum resultado mudou, 8 cobranças herdaram a categoria, nenhuma edição manual mudou.
 - **Testes:** os três formatos de (3), parcelada, sem (3), duas operações de mesmo valor no mesmo dia, perna manual, (2) já em transferência, rodar duas vezes.
 
 ## 2. Estorno: correção à mão com um clique (M, sem migração)
