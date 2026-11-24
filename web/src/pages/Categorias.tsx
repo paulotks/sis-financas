@@ -62,14 +62,16 @@ export default function Categorias() {
             cuja descrição original contenha o texto, menos os que você editou à mão.
           </p>
           {(regras.error ?? apagar.error) && <div className="aviso erro">{(regras.error ?? apagar.error)!.message}</div>}
-          <table className="tabela compacta">
+          <table className="tabela compacta regras">
             <tbody>
               {regras.data?.length === 0 && <tr><td className="vazio">Nenhuma regra ainda.</td></tr>}
               {regras.data?.map((r) => (
                 <tr key={r.id}>
-                  <td><code>{r.padrao}</code>{r.descricao && <div className="sub">→ {r.descricao}</div>}</td>
+                  <td>
+                    <code>{r.padrao}</code>
+                    <div className="sub">{r.usos} uso(s){r.descricao && ` → ${r.descricao}`}</div>
+                  </td>
                   <td>{r.categoria}</td>
-                  <td className="mudo num">{r.usos} uso(s)</td>
                   <td>
                     <button className="icone-botao" title="Apagar regra" onClick={() => apagar.mutate(r.id)}>✕</button>
                   </td>
