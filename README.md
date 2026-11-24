@@ -36,6 +36,25 @@ npm start          # tudo em http://127.0.0.1:3333
 npm test           # Pluggy falsa e base temporária; não usa credenciais nem a base real
 ```
 
+## Assistente no Claude Desktop (MCP local)
+
+O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API da tela. Precisa do app rodando (`npm start`).
+
+1. `npm run build`.
+2. Feche o Claude Desktop por completo e acrescente em `mcpServers`, no `claude_desktop_config.json`:
+   ```json
+   "financas": { "command": "C:/nvm4w/nodejs/node.exe", "args": ["D:/sis-financas/api/dist/mcp-stdio.js"] }
+   ```
+   Se a API usar outra porta, some `"env": { "PORT": "..." }`.
+3. Abra o Claude Desktop e peça: "use o financas e chame estado".
+
+Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
+
+- **Lê:** estado, resumo, orçamento, lançamentos, pendentes agrupados, categorias, regras, prévia de regra, recorrentes, patrimônio e contas.
+- **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, recorrente e sincronização. Deixe a aprovação dessas em "perguntar sempre".
+- **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens.
+- O que ele lê passa pela conversa do Claude, na conta em que o Desktop está logado.
+
 ## Segurança
 
 - `PLUGGY_CLIENT_ID` e `PLUGGY_CLIENT_SECRET` ficam só no `.env`, que está no `.gitignore`. O navegador recebe apenas o Connect Token, que vale 30 minutos.

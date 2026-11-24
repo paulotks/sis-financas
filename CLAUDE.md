@@ -31,6 +31,7 @@ api/src/
   recorrentes.ts  detecta cobranças mensais (função pura)
   patrimonio.ts   soma das posições e foto diária dos saldos
   server.ts       rotas Fastify + zod; serve web/dist se existir
+  mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
@@ -46,6 +47,15 @@ web/src/
 - A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem fora de localhost:5173/3333. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe.
 - `data/` (a base) e `.env` nunca vão para o Git. Antes de commitar, confira o `git status`.
 - Validar toda entrada com zod; SQL sempre com parâmetros (`?`), nunca concatenando valor.
+
+## MCP do app (`api/src/mcp.ts`)
+
+- Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
+- Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
+- Sem conectar banco, apagar, trocar PF/PJ ou bens (o teste confere a lista de ferramentas). PF é o padrão.
+- `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro.
+- Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
+- SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
 
 ## Convenções de dados
 
