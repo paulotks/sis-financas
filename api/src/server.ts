@@ -6,7 +6,7 @@ import { db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
-import { detectarRecorrentes, type Gasto } from "./recorrentes.js";
+import { chaveDe, detectarRecorrentes, type Gasto } from "./recorrentes.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
 
@@ -144,6 +144,7 @@ app.get("/api/lancamentos", async (req) => {
       categoria: z.coerce.number().int().optional(),
       busca: z.string().max(100).optional(),
       pendentes: z.enum(["1", "0"]).optional(),
+      estornos: z.enum(["1", "0"]).optional(),
       pessoa: z.enum(["PF", "PJ"]).optional(),
     })
     .parse(req.query);
@@ -154,6 +155,11 @@ app.get("/api/lancamentos", async (req) => {
   if (q.categoria) (onde.push("l.categoria_id = ?"), vals.push(q.categoria));
   if (q.pessoa) (onde.push("ct.pessoa = ?"), vals.push(q.pessoa));
   if (q.pendentes === "1") onde.push("l.categoria_id IS NULL AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'");
+  if (q.estornos === "1")
+    onde.push(
+      `ct.tipo = 'CREDIT' AND l.valor_centavos > 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
+       AND COALESCE(l.categoria_id, 0) NOT IN (SELECT id FROM categorias WHERE grupo = 'transferencia')`,
+    );
   if (q.busca) {
     onde.push("(l.descricao LIKE ? OR l.descricao_original LIKE ? OR l.notas LIKE ?)");
     const b = `%${q.busca}%`;
@@ -189,6 +195,25 @@ app.patch("/api/lancamentos/:id", async (req) => {
   if (d.ignorado !== undefined) (sets.push("ignorado = ?"), vals.push(d.ignorado ? 1 : 0));
   db.prepare(`UPDATE lancamentos SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
   return formatarLanc(ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as Record<string, unknown>);
+});
+
+/** De qual compra veio um crédito no cartão: até 5 candidatas do mesmo cartão. Só mostra; quem escolhe é o Paulo. */
+app.get("/api/lancamentos/:id/compras", async (req) => {
+  const { id } = z.object({ id: z.string().min(1).max(100) }).parse(req.params);
+  type L = { conta_id: string; conta_tipo: string; data: string; descricao_original: string | null; valor_centavos: number };
+  const credito = ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as unknown as L;
+  if (credito.conta_tipo !== "CREDIT" || credito.valor_centavos <= 0) throw Object.assign(new Error("só vale para crédito em cartão"), { statusCode: 400 });
+  // maior ou igual: estorno pode ser parcial
+  const compras = db.prepare(
+    `${SELECT_LANC} WHERE l.conta_id = ? AND l.valor_centavos <= ? AND l.data BETWEEN date(?, '-120 days') AND ? AND l.status IS NOT 'REMOVIDO'
+     ORDER BY l.data DESC, l.rowid DESC`,
+  ).all(credito.conta_id, -credito.valor_centavos, credito.data, credito.data) as unknown as L[];
+  const palavras = (l: L) => new Set(chaveDe(l.descricao_original ?? "").split(" ").filter((p) => p.length >= 3));
+  const doCredito = palavras(credito);
+  const emComum = (l: L) => [...palavras(l)].filter((p) => doCredito.has(p)).length;
+  const igual = (l: L) => Number(l.valor_centavos === -credito.valor_centavos);
+  // a ordem por data vem do SQL e o sort é estável
+  return compras.sort((a, b) => igual(b) - igual(a) || emComum(b) - emComum(a)).slice(0, 5).map((l) => formatarLanc(l as unknown as Record<string, unknown>));
 });
 
 app.get("/api/meses", async () =>

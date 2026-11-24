@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, mesAtual, nomePluggy, type Categoria, type Lancamento } from "../lib/api";
+import ComprasDoEstorno from "../components/ComprasDoEstorno";
 import OferecerRegra from "../components/OferecerRegra";
 import SelectCategoria from "../components/SelectCategoria";
 import SeletorMes from "../components/SeletorMes";
@@ -15,6 +16,7 @@ export default function Lancamentos() {
     categoria: params.get("categoria") ? Number(params.get("categoria")) : undefined,
     busca: params.get("busca") ?? undefined,
     pendentes: params.get("pendentes") === "1",
+    estornos: params.get("estornos") === "1",
     pessoa: params.get("pessoa") ?? "PF",
   };
   const set = (k: string, v: string | null) => {
@@ -31,6 +33,7 @@ export default function Lancamentos() {
   }, [filtros.busca]);
 
   const [oferta, setOferta] = useState<Lancamento | null>(null); // acabou de ter a categoria corrigida: oferece a regra
+  const [estorno, setEstorno] = useState<string | null>(null); // crédito com as compras candidatas abertas
   const [aviso, setAviso] = useState<string | null>(null);
   useEffect(() => {
     if (!aviso) return;
@@ -45,12 +48,16 @@ export default function Lancamentos() {
   const contas = useQuery({ queryKey: ["contas"], queryFn: api.contas });
 
   const editar = useMutation({
-    mutationFn: ({ id, d }: { id: string; d: Parameters<typeof api.editarLancamento>[1] }) => api.editarLancamento(id, d),
-    onSuccess: (lancamento, { d }) => {
+    mutationFn: ({ id, d }: { id: string; d: Parameters<typeof api.editarLancamento>[1]; semRegra?: boolean }) => api.editarLancamento(id, d),
+    onSuccess: (lancamento, { d, semRegra }) => {
       qc.setQueryData<{ itens: Lancamento[]; total: number }>(chave, (old) =>
         old ? { ...old, itens: old.itens.map((l) => (l.id === lancamento.id ? lancamento : l)) } : old,
       );
-      if (d.categoria_id !== undefined) setOferta(d.categoria_id && lancamento.descricao_original ? lancamento : null);
+      if (d.categoria_id !== undefined) setOferta(d.categoria_id && !semRegra && lancamento.descricao_original ? lancamento : null);
+      if (semRegra) {
+        setEstorno(null);
+        setAviso(`Estorno em ${lancamento.categoria}.`);
+      }
       // outros filtros em cache ficam velhos; a lista aberta não recarrega (para a linha não pular da tela)
       qc.invalidateQueries({ queryKey: ["lancamentos"], refetchType: "none" });
       qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "lancamentos" });
@@ -106,6 +113,10 @@ export default function Lancamentos() {
           <input type="checkbox" checked={filtros.pendentes} onChange={(e) => set("pendentes", e.target.checked ? "1" : null)} />
           Só sem categoria
         </label>
+        <label className="check" title="Crédito em cartão que não é pagamento de fatura nem transferência">
+          <input type="checkbox" name="estornos" checked={filtros.estornos} onChange={(e) => set("estornos", e.target.checked ? "1" : null)} />
+          Só estornos
+        </label>
         <label className="check">
           <input type="checkbox" checked={!!params.get("todos")} onChange={(e) => set("todos", e.target.checked ? "1" : null)} />
           Todos os meses
@@ -136,7 +147,21 @@ export default function Lancamentos() {
             )}
             {itens.map((l) => (
               <Fragment key={l.id}>
-                <Linha l={l} categorias={categorias.data ?? []} onSalvar={(d) => editar.mutate({ id: l.id, d })} />
+                <Linha
+                  l={l}
+                  categorias={categorias.data ?? []}
+                  onSalvar={(d) => editar.mutate({ id: l.id, d })}
+                  aberto={estorno === l.id}
+                  onEstorno={() => setEstorno(estorno === l.id ? null : l.id)}
+                />
+                {estorno === l.id && (
+                  <tr>
+                    <td colSpan={6}>
+                      {/* sem oferecer regra: o texto do estorno pegaria estornos de outras compras */}
+                      <ComprasDoEstorno l={l} onFechar={() => setEstorno(null)} onUsar={(c) => editar.mutate({ id: l.id, d: { categoria_id: c.categoria_id }, semRegra: true })} />
+                    </td>
+                  </tr>
+                )}
                 {oferta?.id === l.id && (
                   <tr>
                     <td colSpan={6}>
@@ -171,8 +196,13 @@ export default function Lancamentos() {
   );
 }
 
-function Linha({ l, categorias, onSalvar }: {
+const ehEstorno = (l: Lancamento) =>
+  l.conta_tipo === "CREDIT" && l.valor_centavos > 0 && l.categoria_grupo !== "transferencia" && !l.ignorado && l.status !== "REMOVIDO";
+
+function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
   l: Lancamento;
+  aberto: boolean;
+  onEstorno: () => void;
   categorias: Categoria[];
   onSalvar: (d: { descricao?: string; categoria_id?: number | null; ignorado?: boolean }) => void;
 }) {
@@ -203,6 +233,7 @@ function Linha({ l, categorias, onSalvar }: {
           {l.total_parcelas && l.total_parcelas > 1 && <span className="selo">{l.parcela}/{l.total_parcelas}</span>}
           {l.status === "PENDING" && <span className="selo">pendente no banco</span>}
           {l.status === "REMOVIDO" && <span className="selo" title="O banco não devolve mais este lançamento; não entra no resumo">removido pelo banco</span>}
+          {ehEstorno(l) && <button className="link" aria-expanded={aberto} onClick={onEstorno}>De qual compra?</button>}
         </div>
       </td>
       <td className="mudo">{l.conta}</td>

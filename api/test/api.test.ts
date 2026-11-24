@@ -562,6 +562,43 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
   db.prepare("DELETE FROM lancamentos WHERE id LIKE 'pix%'").run();
 });
 
+test("estorno: o filtro acha só os créditos de cartão e as compras candidatas vêm na ordem certa", async () => {
+  const cartao = novaConta("CREDIT"), outro = novaConta("CREDIT"), banco = novaConta("BANK");
+  const por = (id: string, conta: string, data: string, valor: number, categoria: number | null, texto: string, extra: Record<string, string | number> = {}) =>
+    novoLanc(conta, data, valor, categoria, { id, descricao_original: texto, descricao: texto, categoria_manual: 1, ...extra });
+  por("est", cartao, "2015-06-30", 5000, 11, "Estorno Loja Azul");
+  por("est-transf", cartao, "2015-06-30", 5000, TRANSFERENCIA, "Pagamento recebido");
+  por("est-ign", cartao, "2015-06-30", 5000, 11, "x", { ignorado: 1 });
+  por("est-rem", cartao, "2015-06-30", 5000, 11, "x", { status: "REMOVIDO" });
+  por("est-sem", cartao, "2015-06-29", 999900, null, "Crédito sem categoria");
+  por("pix", banco, "2015-06-30", 5000, 11, "Pix recebido");
+  const filtrados = async (q: string) => { const { itens, total } = (await chamar("GET", `/api/lancamentos?estornos=1${q}`)).d; assert.equal(total, itens.length); return itens.map((l: any) => l.id); };
+  assert.deepEqual(await filtrados("&mes=2015-06"), ["est", "est-sem"]);
+  assert.ok((await filtrados("")).includes("est")); // sem mês = todos
+
+  por("parcial-velha", cartao, "2015-03-10", -9000, 10, "Loja Azul");
+  por("parcial-nova", cartao, "2015-06-20", -8000, 13, "Padaria");
+  por("parcial-azul", cartao, "2015-05-01", -9900, 10, "LOJA AZUL *123");
+  por("igual", cartao, "2015-04-01", -5000, null, "Outra");
+  por("igual-azul", cartao, "2015-03-20", -5000, 10, "Loja Azul");
+  por("menor", cartao, "2015-06-25", -4999, 10, "Loja Azul");
+  por("outro-cartao", outro, "2015-06-25", -5000, 10, "Loja Azul");
+  por("antiga", cartao, "2015-03-01", -5000, 10, "Loja Azul"); // 121 dias antes
+  por("no-prazo", cartao, "2015-03-02", -5001, 13, "Outra"); // 120 dias antes: entra, mas fica fora das 5
+  por("depois", cartao, "2015-07-01", -5000, 10, "Loja Azul");
+  por("removida", cartao, "2015-06-25", -5000, 10, "Loja Azul", { status: "REMOVIDO" });
+  const compras = async (id: string) => (await chamar("GET", `/api/lancamentos/${id}/compras`)).d.map((l: any) => l.id);
+  assert.deepEqual(await compras("est"), ["igual-azul", "igual", "parcial-azul", "parcial-velha", "parcial-nova"]);
+  db.prepare("DELETE FROM lancamentos WHERE id IN ('parcial-nova', 'parcial-velha')").run();
+  assert.deepEqual(await compras("est"), ["igual-azul", "igual", "parcial-azul", "no-prazo"]);
+  assert.deepEqual(await compras("est-sem"), []);
+
+  assert.equal((await chamar("GET", "/api/lancamentos/igual/compras")).status, 400); // compra
+  assert.equal((await chamar("GET", "/api/lancamentos/pix/compras")).status, 400); // entrada em conta
+  assert.equal((await chamar("GET", "/api/lancamentos/nao-existe/compras")).status, 404);
+  db.prepare("DELETE FROM lancamentos WHERE data LIKE '2015-%'").run();
+});
+
 test("planejado vale dali em diante e não mexe no passado", async () => {
   const planejado = async (mes: string) =>
     (await chamar("GET", `/api/orcamento?mes=${mes}`)).d.linhas.find((l: any) => l.categoria_id === MERCADO).planejado;

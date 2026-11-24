@@ -21,6 +21,7 @@ export interface Lancamento {
   categoria_id: number | null;
   categoria: string | null;
   categoria_cor: string | null;
+  categoria_grupo: Categoria["grupo"] | null;
   categoria_manual: boolean;
   categoria_pluggy: string | null;
   comerciante: string | null;
@@ -187,15 +188,17 @@ export const api = {
     req<Conta>("PATCH", `/api/contas/${id}`, d),
 
   meses: () => req<string[]>("GET", "/api/meses"),
-  lancamentos: (f: { mes?: string; conta?: string; categoria?: number; busca?: string; pendentes?: boolean; pessoa?: string }) =>
+  lancamentos: (f: { mes?: string; conta?: string; categoria?: number; busca?: string; pendentes?: boolean; estornos?: boolean; pessoa?: string }) =>
     req<{ itens: Lancamento[]; total: number }>(
       "GET",
-      `/api/lancamentos${qs({ ...f, pendentes: f.pendentes ? "1" : undefined })}`,
+      `/api/lancamentos${qs({ ...f, pendentes: f.pendentes ? "1" : undefined, estornos: f.estornos ? "1" : undefined })}`,
     ),
   editarLancamento: (
     id: string,
     d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean },
   ) => req<Lancamento>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
+
+  comprasDoEstorno: (id: string) => req<Lancamento[]>("GET", `/api/lancamentos/${encodeURIComponent(id)}/compras`),
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
 
