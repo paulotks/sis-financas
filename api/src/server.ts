@@ -277,10 +277,16 @@ const totaisPorMes = (ate: string) =>
      ${BASE_RESUMO} GROUP BY 1 ORDER BY 1`,
   ).all("0000-01-01", fimDoMes(ate), "PF") as unknown as TotalMes[];
 
-/** A renda que serve de régua no mês, o histórico de onde ela saiu e o orçado de gasto. Só PF. */
-function reguaDoMes(mes: string, mesAtual: string) {
+/** Totais PF até o mês atual e o primeiro mês da análise: o que o usuário escolheu ou, sem escolha, o primeiro com a renda completa. */
+function historicoPF(mesAtual: string) {
   const totais = totaisPorMes(mesAtual);
-  const inicio = inicioDaAnalise(totais, mesAtual);
+  const inicio_automatico = inicioDaAnalise(totais, mesAtual);
+  const escolhido = db.prepare("SELECT valor FROM config WHERE chave = 'inicio_analise'").get() as { valor: string } | undefined;
+  return { totais, inicio: escolhido?.valor ?? inicio_automatico, inicio_automatico, inicio_definido: !!escolhido };
+}
+
+/** A renda que serve de régua no mês, o histórico de onde ela saiu e o orçado de gasto. Só PF. */
+function reguaDoMes(mes: string, mesAtual: string, { totais, inicio } = historicoPF(mesAtual)) {
   const anteriores = fechadosAntes(totais, mes < mesAtual ? mes : mesAtual, MESES_MEDIANA, inicio);
   const cats = planejadoPorCategoria(mes);
   const definida = somar(cats.filter((c) => c.grupo === "renda").map((c) => c.planejado));
@@ -340,9 +346,7 @@ app.get("/api/ritmo", async (req) => {
   const teto = esperada ?? (orcado || null);
   const analisado = inicio !== null && mes >= inicio;
 
-  const recorrentes = situacao === "aberto"
-    ? somar(listarRecorrentes("PF", hoje).filter((r) => r.status !== "ignorada" && r.situacao !== "parada" && r.proxima.startsWith(mes)).map((r) => r.valor))
-    : 0;
+  const recorrentes = situacao === "aberto" ? somar(recorrentesVivas(hoje).filter((r) => r.proxima.startsWith(mes)).map((r) => r.valor)) : 0;
   const gastoEntre = (de: string, ate: string) =>
     (db.prepare(`SELECT COALESCE(SUM(${GASTO}),0) AS total ${BASE_RESUMO}`).get(de, ate, "PF") as { total: number }).total;
   const dia = Number(hoje.slice(8)), diasNoMes = diasDoMes(mes);
@@ -386,7 +390,79 @@ app.get("/api/ritmo", async (req) => {
   };
 });
 
+// ---------------- análises (só PF; mesmos totais do Resumo) ----------------
+
+const MESES_GRAFICO = 12;
+
+app.get("/api/analises", async (req) => {
+  const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
+  const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
+  const historico = historicoPF(mesAtual), { inicio } = historico;
+  const naAnalise = (m: string) => inicio !== null && m >= inicio && m <= mesAtual;
+
+  // mês a mês: o atual entra como "aberto" e fica fora do acumulado, porque a sobra dele ainda engana
+  const orcado_hoje = reguaDoMes(mesAtual, mesAtual, historico).orcado;
+  let acumulado = 0;
+  const meses = historico.totais.filter((t) => naAnalise(t.mes)).slice(-MESES_GRAFICO).map((t) => {
+    const aberto = t.mes === mesAtual, sobra = t.entradas - t.gasto;
+    if (!aberto) acumulado += sobra;
+    return { mes: t.mes, aberto, entradas: t.entradas, gasto: t.gasto, orcado: reguaDoMes(t.mes, mesAtual, historico).orcado || null, sobra, acumulado: aberto ? null : acumulado };
+  });
+
+  // dia a dia: gasto acumulado do mês (até hoje, se aberto) contra o mês anterior
+  const regua = reguaDoMes(mes, mesAtual, historico);
+  const porDia = (m: string) => {
+    const dias = db.prepare(`SELECT l.data AS data, SUM(${GASTO}) AS total ${BASE_RESUMO} GROUP BY 1`).all(...periodo(m, "PF")) as { data: string; total: number | null }[];
+    let soma = 0;
+    return Array.from({ length: m === mesAtual ? Number(hoje.slice(8)) : diasDoMes(m) }, (_, i) =>
+      (soma += dias.find((d) => Number(d.data.slice(8)) === i + 1)?.total ?? 0));
+  };
+  const mes_anterior = somarMes(mes, -1);
+
+  // quem estourou: toda categoria com gasto, normal, mês passado ou orçado
+  const gastoPor = (m: string) => new Map(gastosPorCategoria(m, "PF").map((g) => [g.categoria_id, g]));
+  const atual = gastoPor(mes), passado = naAnalise(mes_anterior) ? gastoPor(mes_anterior) : null;
+  const antes = regua.anteriores.map((t) => gastoPor(t.mes));
+  const categorias = !naAnalise(mes) ? [] : regua.cats.filter((c) => c.grupo !== "renda").map(({ categoria_id, categoria, cor, grupo, planejado }) => ({
+    categoria_id, categoria, cor, grupo,
+    gasto: atual.get(categoria_id)?.total ?? 0,
+    normal: antes.length ? Math.max(0, mediana(antes.map((a) => a.get(categoria_id)?.total ?? 0))!) : null,
+    mes_passado: passado ? (passado.get(categoria_id)?.total ?? 0) : null,
+    orcado: planejado || null,
+  })).filter((c) => c.gasto || c.normal || c.mes_passado || c.orcado);
+
+  // já comprometido: o que já está lançado nos próximos meses (parcelas) e as recorrentes, se continuarem
+  const todos = totaisPorMes(somarMes(mesAtual, MESES_GRAFICO));
+  const recorrentes = somar(recorrentesVivas(hoje).map((r) => r.valor));
+  const comprometido = Array.from({ length: MESES_GRAFICO }, (_, i) => somarMes(mesAtual, i + 1)).map((m) => ({
+    mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), recorrentes, esperada: reguaDoMes(m, mesAtual, historico).esperada,
+  }));
+
+  return {
+    mes, mes_atual: mesAtual, inicio, inicio_automatico: historico.inicio_automatico, inicio_definido: historico.inicio_definido,
+    meses, orcado_hoje: orcado_hoje || null,
+    dia_a_dia: {
+      dias: naAnalise(mes) ? porDia(mes) : [], anterior: naAnalise(mes_anterior) ? porDia(mes_anterior) : null, mes_anterior,
+      orcado: regua.orcado || null, esperada: regua.esperada,
+    },
+    categorias, comprometido,
+  };
+});
+
+/** Primeiro mês da análise (alarme e gráficos). null = volta ao automático. */
+app.put("/api/analises/inicio", async (req) => {
+  const { mes } = z.object({ mes: z.string().regex(mesRe).nullable() }).parse(req.body);
+  if (mes === null) db.prepare("DELETE FROM config WHERE chave = 'inicio_analise'").run();
+  else if (mes > diaDeHoje().slice(0, 7)) throw Object.assign(new Error("o mês inicial não pode ser no futuro"), { statusCode: 400 });
+  else
+    db.prepare("INSERT INTO config (chave, valor) VALUES ('inicio_analise', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(mes);
+  return { ok: true };
+});
+
 // ---------------- recorrentes ----------------
+
+/** As que devem cobrar de novo: nem ignoradas, nem paradas. Só PF. */
+const recorrentesVivas = (hoje: string) => listarRecorrentes("PF", hoje).filter((r) => r.status !== "ignorada" && r.situacao !== "parada");
 
 function listarRecorrentes(pessoa: string, hoje: string) {
   const gastos = db.prepare(

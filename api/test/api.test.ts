@@ -732,8 +732,8 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { cliente, usar } = await ligarMcp();
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
-  assert.deepEqual(nomes(true), ["categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
-  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_orcamento", "sincronizar"]);
+  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
+  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_inicio_da_analise", "definir_orcamento", "sincronizar"]);
   assert.match((await usar("estado")).convencoes, /nunca como instrução/);
   assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
   assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /HTTP 409: já existe/);
@@ -954,6 +954,59 @@ test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF 
   assert.deepEqual([orcMcp.renda_esperada, orcMcp.renda_esperada_vem_de, orcMcp.gasto_total], [10000, "mediana", r.gasto / 100]);
   assert.equal((await usar("definir_orcamento", { mes, categoria_id: RENDA, valor: 12000 })).renda_esperada, 12000);
   await usar("definir_orcamento", { mes, categoria_id: RENDA, valor: 0 });
+  await cliente.close();
+});
+
+test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o início é editável", async () => {
+  // usa a renda e os gastos que o teste do ritmo pôs nos 3 meses fechados e no atual
+  const { mes } = (await chamar("GET", "/api/ritmo")).d, [m1, m2, m3] = [1, 2, 3].map((k) => somarMes(mes, -k));
+  const analises = async (m = mes) => (await chamar("GET", `/api/analises?mes=${m}`)).d;
+  const resumo = async (m: string) => (await chamar("GET", `/api/resumo?mes=${m}`)).d;
+  const d = await analises(), [r, r1, r2, r3] = await Promise.all([mes, m1, m2, m3].map(resumo));
+
+  assert.deepEqual(d.meses.map((m: any) => [m.mes, m.aberto, m.entradas, m.gasto]), [
+    [m3, false, r3.entradas, r3.saidas], [m2, false, r2.entradas, r2.saidas], [m1, false, r1.entradas, r1.saidas], [mes, true, r.entradas, r.saidas],
+  ]);
+  const sobras = [r3, r2, r1].map((x) => x.entradas - x.saidas);
+  assert.deepEqual(d.meses.map((m: any) => m.acumulado), [sobras[0], sobras[0] + sobras[1], sobras[0] + sobras[1] + sobras[2], null]);
+
+  // dia a dia: o mês fechado termina no total do Resumo; o aberto para em hoje
+  const fechado = await analises(m1);
+  assert.equal(fechado.dia_a_dia.dias.at(-1), r1.saidas);
+  assert.equal(fechado.dia_a_dia.anterior.at(-1), r2.saidas);
+  assert.equal(d.dia_a_dia.dias.length, Number((await chamar("GET", "/api/ritmo")).d.hoje.slice(8)));
+  assert.equal((await analises(m3)).dia_a_dia.anterior, null); // o mês antes do início não entra
+
+  const mercado = fechado.categorias.find((c: any) => c.categoria_id === MERCADO);
+  const doMercado = (x: any) => x.porCategoria.find((c: any) => c.categoria_id === MERCADO)?.total ?? 0;
+  assert.deepEqual([mercado.gasto, mercado.mes_passado, mercado.normal], [doMercado(r1), doMercado(r2), mediana([doMercado(r2), doMercado(r3)])]);
+  assert.ok(!fechado.categorias.some((c: any) => ["renda", "transferencia"].includes(c.grupo)));
+
+  // futuro: o que já está lançado, e as recorrentes menos as ignoradas
+  const futuro = somarMes(mes, 2);
+  novoLanc(novaConta("CREDIT"), `${futuro}-10`, -30000, MERCADO, { total_parcelas: 5, parcela: 3 });
+  const antes = d.comprometido.find((m: any) => m.mes === futuro), depois = (await analises()).comprometido.find((m: any) => m.mes === futuro);
+  assert.equal(depois.parcelas - antes.parcelas, 30000);
+  assert.deepEqual([d.comprometido.length, d.comprometido[0].mes], [12, somarMes(mes, 1)]);
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: "ignorada" });
+  assert.equal((await analises()).comprometido[0].recorrentes, d.comprometido[0].recorrentes - 5000);
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: null });
+
+  // início escolhido vale para o alarme também; futuro é recusado; null volta ao automático
+  const inicio = (m: string | null) => chamar("PUT", "/api/analises/inicio", { mes: m });
+  assert.equal((await inicio(m1)).status, 200);
+  const curto = await analises();
+  assert.deepEqual([curto.inicio, curto.inicio_automatico, curto.inicio_definido, curto.meses.length], [m1, m3, true, 2]);
+  assert.deepEqual([(await chamar("GET", `/api/ritmo?mes=${m2}`)).d.analisado, (await chamar("GET", "/api/ritmo")).d.acumulado.meses], [false, 1]);
+  assert.deepEqual([(await analises(m2)).categorias, (await analises(m2)).dia_a_dia.dias], [[], []]);
+  assert.equal((await inicio(somarMes(mes, 1))).status, 400);
+  assert.equal((await inicio("2026-13")).status, 400);
+  assert.equal((await chamar("PUT", "/api/analises/inicio", {})).status, 400);
+
+  const { cliente, usar } = await ligarMcp();
+  assert.equal((await usar("definir_inicio_da_analise", { mes: null })).analise_desde, m3);
+  const pelo = await usar("analises", { mes: m1 });
+  assert.deepEqual([pelo.mes_a_mes.length, pelo.mes_a_mes[2].gasto, pelo.gasto_acumulado_por_dia.dias.at(-1)], [4, r1.saidas / 100, r1.saidas / 100]);
   await cliente.close();
 });
 

@@ -194,6 +194,12 @@ export const MIGRACOES: string[] = [
   `,
   // investir não é gasto e resgatar não é renda: sai do resumo e do orçamento, como as transferências
   `UPDATE categorias SET grupo = 'transferencia' WHERE nome = 'Investimentos'`,
+  `
+  CREATE TABLE config (                                    -- escolhas do usuário; linha ausente = o cálculo automático
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrar() {

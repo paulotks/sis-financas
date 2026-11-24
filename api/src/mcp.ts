@@ -23,6 +23,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção; mês fechado: gastou mais do que entrou). A projeção é estimativa:
   diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
+- Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
+  "comprometido", parcelas são certas e recorrentes são prováveis (podem ter falso positivo).
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
@@ -192,6 +194,34 @@ export function criarServidor(base: string) {
             entrou: reais(r.acumulado.entradas), gasto: reais(r.acumulado.gasto), sobra: reais(r.acumulado.sobra),
           },
           acima_do_normal: r.acima.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
+        };
+      }),
+  );
+
+  servidor.registerTool(
+    "analises",
+    {
+      description: "Os dados da página Análises (só PF): renda × orçado × gasto e guardado mês a mês, gasto acumulado dia a dia contra o mês anterior, cada categoria contra o normal, o mês passado e o orçado, e o que já está comprometido nos próximos 12 meses. mes escolhe o mês do dia a dia e das categorias; sem ele, o atual.",
+      inputSchema: { mes: mes.optional() },
+      annotations: LEITURA,
+    },
+    (a) =>
+      tentar(async () => {
+        const d = await ler("/api/analises", { mes: a.mes });
+        return {
+          mes: d.mes, analise_desde: d.inicio, analise_desde_definida_pelo_paulo: d.inicio_definido, orcado_hoje: reais(d.orcado_hoje),
+          mes_a_mes: d.meses.map((m: any) => ({
+            mes: m.mes, ...(m.aberto && { em_andamento: true }), entrou: reais(m.entradas), gasto: reais(m.gasto), orcado: reais(m.orcado),
+            sobra: reais(m.sobra), guardado_acumulado: reais(m.acumulado),
+          })),
+          gasto_acumulado_por_dia: {
+            dias: d.dia_a_dia.dias.map(reais), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
+            orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada),
+          },
+          categorias: d.categorias.map((c: any) => ({
+            categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), mes_passado: reais(c.mes_passado), orcado: reais(c.orcado),
+          })),
+          comprometido: d.comprometido.map((m: any) => ({ mes: m.mes, parcelas: reais(m.parcelas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
         };
       }),
   );
@@ -451,6 +481,20 @@ export function criarServidor(base: string) {
         if (r) return { ok: true, mes: a.mes, categoria: r.categoria, renda_esperada: reais(r.planejado), entrou: reais(r.recebido) };
         const l = o.linhas.find((x: any) => x.categoria_id === a.categoria_id);
         return { ok: true, mes: a.mes, ...(l && { categoria: l.categoria, planejado: reais(l.planejado), gasto: reais(l.realizado) }) };
+      }),
+  );
+
+  servidor.registerTool(
+    "definir_inicio_da_analise",
+    {
+      description: "Primeiro mês que entra no alarme e nas análises (antes dele a renda está incompleta). null volta ao cálculo automático. Muda o veredito dos meses: só com o ok do Paulo.",
+      inputSchema: { mes: mes.nullable() },
+      annotations: TROCA,
+    },
+    (a) =>
+      tentar(async () => {
+        await chamar("PUT", "/api/analises/inicio", { mes: a.mes });
+        return { ok: true, analise_desde: (await ler("/api/analises")).inicio };
       }),
   );
 
