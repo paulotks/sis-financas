@@ -18,8 +18,8 @@ npm start          # produção local: tudo em http://127.0.0.1:3333
 npm run app:parar | app:iniciar | app:reiniciar   # o app de uso diário (tarefa do Windows, inicia no logon)
 ```
 
-**O app de uso diário já ocupa a 3333** (tarefa agendada `sis-financas`, `app-windows.ps1`), rodando `dist`:
-- Para usar `npm run dev`: `npm run app:parar` antes e `npm run app:iniciar` no fim. Com ele no ar, o Vite falaria com a API compilada e a mudança na API não apareceria.
+**O app de uso diário roda sempre**, em http://meu-financeiro.localhost (porta 80; tarefa agendada `sis-financas`, `app-windows.ps1`), usando `dist`:
+- Para usar `npm run dev` (3333/5173): `npm run app:parar` antes e `npm run app:iniciar` no fim. As portas não brigam, mas os dois gravam na mesma base. Com o app parado, o MCP do Claude Desktop fica fora do ar (ele fala com a porta 80).
 - `dist` é o que está em uso e `migrar()` roda a cada início na base real: **build na pasta principal só a partir do `main`**; branch com migração, só em worktree (ver Fluxo de trabalho).
 - Depois de um build: `npm run app:reiniciar`. Mudou `mcp.ts`: reiniciar também o Claude Desktop.
 
@@ -50,7 +50,7 @@ web/src/
 
 - `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` ficam **só** no `.env` da raiz (no `.gitignore`). Nunca no front, em log, em commit ou no chat. Não leia nem exiba os valores.
 - O navegador só recebe o Connect Token (vale 30 min), criado em `POST /api/pluggy/connect-token`.
-- A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem fora de localhost:5173/3333. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe.
+- A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem que não seja `localhost`, `127.0.0.1` ou `meu-financeiro.localhost`, na 5173 ou na porta da API. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe: nome novo aqui só se terminar em `.localhost` (reservado, ninguém registra).
 - `data/` (a base) e `.env` nunca vão para o Git. Antes de commitar, confira o `git status`.
 - Validar toda entrada com zod; SQL sempre com parâmetros (`?`), nunca concatenando valor.
 

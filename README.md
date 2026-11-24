@@ -25,14 +25,14 @@ Abra http://127.0.0.1:5173. Vá em **Conexões → Conectar banco**, escolha **M
 
 ### Uso diário: inicia com o Windows
 
-O app sobe sozinho no logon, sem janela, pela tarefa agendada `sis-financas`. Abra **http://127.0.0.1:3333**.
+O app sobe sozinho no logon, sem janela, pela tarefa agendada `sis-financas`. Abra **http://meu-financeiro.localhost** (Chrome e Edge resolvem o nome sozinhos; em outro programa use `http://127.0.0.1`).
 
 ```powershell
 npm run build          # uma vez, e a cada atualização do código
 npm run app:instalar   # uma vez: registra a tarefa (não precisa de administrador)
 npm run app:iniciar    # sobe agora, sem esperar o próximo logon
 npm run app:reiniciar  # depois de um build
-npm run app:parar      # antes do npm run dev (os dois usam a porta 3333)
+npm run app:parar      # antes do npm run dev (os dois gravam na mesma base)
 npm run app:remover    # desfaz
 ```
 

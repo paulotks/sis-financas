@@ -16,8 +16,10 @@ reaplicarRegras(); // mudança no mapa de categorias passa a valer também para 
 export const app = Fastify({ logger: { level: "info", transport: undefined } });
 
 // Só aceita escrita vinda do próprio PC (front em dev na 5173 ou servido pela própria API).
+// ".localhost" é reservado: ninguém registra esse domínio, então não abre brecha para DNS rebinding.
+const NOMES = ["localhost", "127.0.0.1", "meu-financeiro.localhost"];
 const ORIGENS = new Set(
-  [5173, env.porta].flatMap((p) => [`http://localhost:${p}`, `http://127.0.0.1:${p}`]),
+  [5173, env.porta].flatMap((p) => NOMES.map((n) => new URL(`http://${n}:${p}`).origin)), // .origin tira o ":80", como o navegador
 );
 const HOSTS = new Set([...ORIGENS].map((o) => new URL(o).host));
 app.addHook("onRequest", async (req, reply) => {

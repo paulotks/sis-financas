@@ -261,6 +261,15 @@ test("API: host e origem de fora são recusados; erro de dados não vira 500", a
   assert.equal((await chamar("GET", "/api/saude")).status, 200);
   assert.equal((await chamar("GET", "/api/lancamentos", undefined, { host: `evil.com:${PORTA}` })).status, 403);
   assert.equal((await chamar("POST", "/api/sync", {}, { origin: "http://evil.com" })).status, 403);
+  // o nome amigável entra; parecido com ele, não. Escrita com corpo inválido: 400 = passou pelo hook, 403 = barrada
+  const nome = `meu-financeiro.localhost:${PORTA}`;
+  assert.equal((await chamar("GET", "/api/saude", undefined, { host: nome })).status, 200);
+  assert.equal((await chamar("POST", "/api/regras", {}, { host: nome, origin: `http://${nome}` })).status, 400);
+  for (const host of [`evil.localhost:${PORTA}`, `meu-financeiro.localhost.evil.com:${PORTA}`, `x.meu-financeiro.localhost:${PORTA}`, "meu-financeiro.localhost:1"]) {
+    assert.equal((await chamar("GET", "/api/saude", undefined, { host })).status, 403, host);
+    assert.equal((await chamar("POST", "/api/regras", {}, { origin: `http://${host}` })).status, 403, host);
+  }
+  assert.equal((await chamar("POST", "/api/regras", {}, { origin: `https://${nome}` })).status, 403);
   assert.equal((await chamar("POST", "/api/categorias", { nome: "Pet", grupo: "essencial" })).status, 409);
   assert.equal((await chamar("PATCH", "/api/lancamentos/a2", { categoria_id: 9999 })).status, 400);
   assert.equal((await chamar("PATCH", `/api/contas/${ITEM2}`, { pessoa: "PJ" })).status, 404);
