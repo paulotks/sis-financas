@@ -131,6 +131,14 @@ export interface Orcamento {
   sem_categoria: number;
 }
 
+/** O que uma regra pegaria; nos exemplos, o que já tem categoria vem primeiro (é o que ela trocaria). */
+export interface PreviaRegra {
+  total: number;
+  pendentes: number;
+  descricoes: number;
+  exemplos: { descricao: string | null; categoria: string | null; qtd: number }[];
+}
+
 export interface Regra {
   id: number;
   padrao: string;
@@ -195,7 +203,7 @@ export const api = {
   categorias: () => req<Categoria[]>("GET", "/api/categorias"),
   criarCategoria: (d: { nome: string; grupo: Categoria["grupo"]; cor?: string }) => req<Categoria>("POST", "/api/categorias", d),
   regras: () => req<Regra[]>("GET", "/api/regras"),
-  previaRegra: (padrao: string) => req<{ total: number; pendentes: number }>("GET", `/api/regras/previa${qs({ padrao })}`),
+  previaRegra: (padrao: string) => req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao })}`),
   criarRegra: (d: { padrao: string; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
   apagarRegra: (id: number) => req<{ ok: boolean; recategorizados: number }>("DELETE", `/api/regras/${id}`),
 };
