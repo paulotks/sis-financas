@@ -116,16 +116,32 @@ export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: str
   return { categoria_id: null, regra_id: null, descricao: null };
 }
 
-/** Quantos lançamentos uma regra com esse texto pegaria (fora os editados à mão): mesma comparação de sugerirCategoria. */
+/**
+ * Quantos lançamentos uma regra com esse texto pegaria (fora os editados à mão): mesma comparação de sugerirCategoria.
+ * Nos exemplos, o que já tem categoria vem primeiro: é o que a regra trocaria.
+ */
 export function contarParecidos(padrao: string) {
   const texto = padrao.toLowerCase();
   const parecidos = (
-    db.prepare("SELECT descricao_original, categoria_id FROM lancamentos WHERE categoria_manual = 0").all() as {
-      descricao_original: string | null;
-      categoria_id: number | null;
-    }[]
+    db.prepare(
+      `SELECT l.descricao_original, l.categoria_id, c.nome AS categoria
+       FROM lancamentos l LEFT JOIN categorias c ON c.id = l.categoria_id WHERE l.categoria_manual = 0`,
+    ).all() as { descricao_original: string | null; categoria_id: number | null; categoria: string | null }[]
   ).filter((l) => (l.descricao_original ?? "").toLowerCase().includes(texto));
-  return { total: parecidos.length, pendentes: parecidos.filter((l) => l.categoria_id === null).length };
+  const grupos = new Map<string, { descricao: string | null; categoria: string | null; qtd: number }>();
+  for (const l of parecidos) {
+    const chave = `${l.categoria_id}|${l.descricao_original}`;
+    const g = grupos.get(chave) ?? { descricao: l.descricao_original, categoria: l.categoria, qtd: 0 };
+    g.qtd++;
+    grupos.set(chave, g);
+  }
+  const exemplos = [...grupos.values()].sort((a, b) => Number(a.categoria === null) - Number(b.categoria === null) || b.qtd - a.qtd);
+  return {
+    total: parecidos.length,
+    pendentes: parecidos.filter((l) => l.categoria_id === null).length,
+    descricoes: exemplos.length,
+    exemplos: exemplos.slice(0, 20),
+  };
 }
 
 /** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */

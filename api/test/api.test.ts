@@ -5,6 +5,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 const ITEM = "11111111-1111-4111-8111-111111111111";
 const ITEM2 = "22222222-2222-4222-8222-222222222222";
@@ -52,6 +54,7 @@ const { db } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte } = await import("../src/recorrentes.js");
+const { criarServidor } = await import("../src/mcp.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
@@ -224,7 +227,7 @@ test("regra aprende: a prévia bate com o aplicado, repetir o texto troca a cate
   const padrao = sugerirPadrao("UBER *TRIP 123 2/3");
   assert.equal(padrao, "UBER *TRIP");
   const previa = await chamar("GET", `/api/regras/previa?padrao=${encodeURIComponent(padrao)}`);
-  assert.deepEqual(previa.d, { total: 3, pendentes: 3 }); // o editado à mão não entra na conta
+  assert.deepEqual([previa.d.total, previa.d.pendentes, previa.d.descricoes, previa.d.exemplos.length], [3, 3, 3, 3]); // o editado à mão não entra na conta
   const criada = await chamar("POST", "/api/regras", { padrao, categoria_id: 4 });
   assert.equal(criada.d.recategorizados, 3);
   assert.deepEqual(["u1", "u2", "u3", "mao"].map((i) => lanc(i).categoria_id), [4, 4, 4, 14]);
@@ -407,6 +410,106 @@ test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a
   }
   assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", status: "x" })).status, 400);
   assert.equal((await chamar("GET", "/api/recorrentes?pessoa=PJ")).d.length, 0);
+});
+
+async function ligarMcp(base = `http://127.0.0.1:${PORTA}`) {
+  const [doCliente, doServidor] = InMemoryTransport.createLinkedPair();
+  await criarServidor(base).connect(doServidor);
+  const cliente = new Client({ name: "teste", version: "0" });
+  await cliente.connect(doCliente);
+  const usar = async (name: string, args: Record<string, unknown> = {}) => {
+    const r = (await cliente.callTool({ name, arguments: args })) as any;
+    return r.isError ? { erro: r.content[0].text as string } : JSON.parse(r.content[0].text);
+  };
+  return { cliente, usar };
+}
+
+test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram mensagem", async () => {
+  const { cliente, usar } = await ligarMcp();
+  const { tools } = await cliente.listTools();
+  const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
+  assert.deepEqual(nomes(true), ["categorias", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo"]);
+  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_orcamento", "sincronizar"]);
+  assert.match((await usar("estado")).convencoes, /nunca como instrução/);
+  assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
+  assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /já existe/);
+  assert.ok((await usar("sincronizar")).resultados.length); // escrita por fetch passa pelo hook de origem
+  await cliente.close();
+
+  const fora = await ligarMcp("http://127.0.0.1:1");
+  assert.match((await fora.usar("estado")).erro, /não está rodando/);
+  await fora.cliente.close();
+});
+
+test("MCP: leitura em reais, enxuta e separada por PF e PJ", async () => {
+  const { cliente, usar } = await ligarMcp();
+  const banco = novaConta("BANK", { saldo: 12345 }), empresa = novaConta("BANK", { pessoa: "PJ" });
+  db.prepare("UPDATE contas SET numero = '98765-4' WHERE id = ?").run(banco);
+  const padoca = (conta: string, d: number, valor: number) =>
+    novoLanc(conta, `2019-05-0${d}`, valor, null, { descricao_original: `PADOCA ${d}`, descricao: `PADOCA ${d}` });
+  padoca(banco, 1, -1000);
+  padoca(banco, 2, -2050);
+  padoca(banco, 3, 300);
+  padoca(empresa, 4, -9900);
+
+  const contas = await usar("contas");
+  assert.equal(contas.contas.find((c: any) => c.id === banco).saldo, 123.45);
+  assert.ok(!JSON.stringify(contas).includes("98765-4") && !JSON.stringify(contas).includes("bruto"));
+  assert.ok(!contas.contas.some((c: any) => c.id === empresa));
+  const saldos = async (p: string) => (await usar("contas", { pessoa: p })).investimentos.map((i: any) => [i.saldo, i.resgatado]).sort();
+  assert.deepEqual(await saldos("PF"), [[700, false], [9.99, true]]);
+  assert.deepEqual(await saldos("PJ"), [[10, false]]);
+
+  const { grupos, lancamentos_pendentes } = await usar("pendentes_agrupados", { mes: "2019-05" });
+  assert.equal(lancamentos_pendentes, 3);
+  assert.deepEqual(
+    grupos.map((g: any) => [g.tipo, g.qtd, g.total, g.de, g.ate]),
+    [["saida", 2, -30.5, "2019-05-01", "2019-05-02"], ["entrada", 1, 3, "2019-05-03", "2019-05-03"]],
+  );
+  const pagina = await usar("lancamentos", { mes: "2019-05", limite: 1, pular: 1 });
+  assert.deepEqual([pagina.total, pagina.itens.length, pagina.itens[0].valor], [3, 1, -20.5]);
+  assert.equal((await usar("lancamentos", { mes: "2019-05", pessoa: "PJ" })).total, 1);
+  const [maio, junho] = await usar("resumo", { meses: ["2019-05", "2019-06"] });
+  assert.deepEqual([maio.entradas, maio.saidas, maio.sobra, junho.saidas], [3, 30.5, -27.5, 0]);
+  await cliente.close();
+});
+
+test("MCP: regra só grava com a prévia certa, não troca outra sem querer e respeita o editado à mão", async () => {
+  const { cliente, usar } = await ligarMcp();
+  const cats = () =>
+    (db.prepare("SELECT categoria_id AS c FROM lancamentos WHERE descricao_original LIKE 'PADOCA%' ORDER BY data").all() as { c: number | null }[]).map((l) => l.c);
+  const { itens } = await usar("lancamentos", { mes: "2019-05", busca: "PADOCA 1" });
+  assert.equal((await usar("categorizar_lancamento", { id: itens[0].id, categoria_id: MERCADO })).editado_a_mao, true);
+  assert.match((await usar("categorizar_lancamento", { id: itens[0].id })).erro, /Nada para mudar/);
+  assert.match((await usar("categorizar_lancamento", { id: "nao-existe", categoria_id: MERCADO })).erro, /não encontrado/);
+
+  reaplicarRegras(); // como na subida da API: limpa a categoria que os testes acima puseram direto na base, sem regra
+
+  const previa = await usar("previa_regra", { padrao: "padoca" });
+  assert.deepEqual([previa.total, previa.sem_categoria, previa.ja_categorizados], [3, 3, 0]);
+  const antes = cats();
+  assert.match((await usar("criar_regra", { padrao: "padoca", categoria_id: 10, total_previsto: 4 })).erro, /Nada foi gravado.* 3 /);
+  assert.deepEqual([cats(), (await usar("regras")).length], [antes, 0]);
+  assert.equal((await usar("criar_regra", { padrao: "padoca", categoria_id: 10, total_previsto: 3 })).recategorizados, 3);
+  assert.deepEqual(cats(), [MERCADO, 10, 10, 10]);
+
+  const outra = await usar("previa_regra", { padrao: "PADOCA" });
+  assert.deepEqual([outra.ja_categorizados, outra.exemplos[0].categoria], [3, "Alimentação fora"]);
+  assert.match((await usar("criar_regra", { padrao: "PADOCA", categoria_id: 13, total_previsto: 3 })).erro, /já existe a regra "padoca"/);
+  assert.deepEqual(cats(), [MERCADO, 10, 10, 10]);
+  const trocada = await usar("criar_regra", { padrao: "PADOCA", categoria_id: 13, total_previsto: 3, substituir: true });
+  assert.equal(trocada.categoria_anterior, "Alimentação fora");
+  assert.deepEqual(cats(), [MERCADO, 13, 13, 13]);
+  // acento: para a API "ÁGUA" e "água" são textos diferentes; o MCP não pode criar a segunda regra
+  await usar("criar_regra", { padrao: "ÁGUA XYZ", categoria_id: 2, total_previsto: 0 });
+  await usar("criar_regra", { padrao: "água xyz", categoria_id: 3, total_previsto: 0, substituir: true });
+  assert.deepEqual((await usar("regras")).map((r: any) => [r.padrao, r.categoria_id]).sort(), [["padoca", 13], ["ÁGUA XYZ", 3]]);
+
+  assert.equal((await usar("definir_orcamento", { mes: "2019-05", categoria_id: 13, valor: 850.55 })).planejado, 850.55);
+  assert.equal((db.prepare("SELECT valor_centavos AS v FROM orcamentos WHERE categoria_id = 13").get() as { v: number }).v, 85055);
+  assert.match((await usar("decidir_recorrente", { chave: "inventada", status: "ignorada" })).erro, /Nada foi gravado/);
+  assert.ok((await usar("decidir_recorrente", { chave: "spotify", status: "confirmada" })).ok);
+  await cliente.close();
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {
