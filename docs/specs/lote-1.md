@@ -1,4 +1,4 @@
-# Lote 1: correções rápidas (A INICIAR)
+# Lote 1: correções rápidas (FEITO em 2026-11-24)
 
 Itens 1, 3, 13, 14, 15, 17 e 20 do [backlog](../backlog.md). Nenhum muda a estrutura do banco. As linhas citadas são de 2026-11-24.
 
@@ -83,31 +83,31 @@ exigência de o texto estar num lançamento específico. `POST /api/regras` **tr
 ## 17. Traduzir as categorias da Pluggy
 
 - **Situação:** 296 pendentes PF. Cerca de 70 saem só com o mapa; 170 são Pix ou transferência (nada a traduzir) e 50 são "Services", genérico.
-- **Fazer:** novos termos em `MAPA_PLUGGY` (`categorizar.ts`). Proposta, que o Paulo confirma antes de aplicar:
+- **Fazer:** novos termos em `MAPA_PLUGGY` (`categorizar.ts`). Confirmado pelo Paulo em 2026-11-24:
 
-| Pluggy | Pendentes | Categoria proposta |
+| Pluggy | Pendentes | Categoria |
 |---|---|---|
 | Houseware | 14 | Compras |
-| Bookstore | 14 | Compras (ou Educação) |
+| Bookstore | 14 | Compras |
 | Office supplies | 11 | Compras |
-| Tax on financial operations | 9 | Impostos e taxas |
-| Food and drinks | 8 | Alimentação fora (ou Mercado) |
-| Accomodation (grafia da Pluggy) | 4 | Lazer |
+| Tax on financial operations (IOF) | 9 | Impostos e taxas |
+| Food and drinks | 8 | Alimentação fora |
+| Accomodation (grafia da Pluggy; a documentação escreve Accommodation: mapear as duas) | 4 | Lazer |
 | Automotive | 3 | Transporte |
-| Kids and toys | 2 | Compras (ou Família) |
-| Account fees | 2 | Impostos e taxas |
+| Kids and toys | 2 | Compras |
+| Account fees (os 2 de hoje são "Pagamento de conta", não tarifa; o Paulo preferiu mapear) | 2 | Impostos e taxas |
 | Lottery, Gambling | 2 | Lazer |
 | Cinema, theater and concerts | 1 | Lazer |
 
 - **Não mapear** `Transfer - PIX`, `Transfers` nem `Transfer - Internal`. Os 26 pendentes de `Transfer - Internal` são todos a perna
-  "Valor adicionado" do Pix no crédito (item 4): tirar uma perna só distorce o mês. `Services`, `Insurance` e `Entrepreneurial activities`
-  ficam pendentes.
-- **Colisões:** vale o primeiro termo *contido*. Conferir a lista completa de categorias no MCP `pluggy-docs` e pôr os casos no teste
-  "categorias da Pluggy caem no lugar certo".
+  "Valor adicionado" do Pix no crédito (item 4): tirar uma perna só distorce o mês. `Services`, `Insurance`, `Entrepreneurial activities`,
+  `Transfer - Foreign Exchange` (2) e `Cashback` (1) ficam pendentes. O `Cashback` é crédito em cartão: com categoria, passaria a abater.
+- **Colisões:** vale o primeiro termo *contido*. Conferida a lista completa no MCP `pluggy-docs`: nenhum termo novo pega
+  outra categoria. Casos (inclusive os que ficam pendentes) no teste "categorias da Pluggy caem no lugar certo".
 - **Rótulo:** o que continuar pendente aparece em inglês ("? Transfer - PIX"). Pequeno dicionário no front só para os que sobram.
 - **Aceitar em lote: não fazer.** O mapa já aplica sozinho; depois dele não sobra sugestão para aceitar.
-- **Efeito esperado:** reclassifica meses passados. O total de gasto do mês não muda, exceto por crédito em cartão que ganhar categoria e
-  passar a abater. Comparar o Resumo antes e depois na cópia da base e mostrar ao Paulo; backup em `data/` antes do merge.
+- **Efeito esperado:** reclassifica meses passados. Entradas e saídas ficam **idênticas** em todos os meses: nenhum dos 70 é crédito em
+  cartão, então só mudam os pendentes e a divisão por categoria. Comparar o Resumo antes e depois na cópia da base e mostrar ao Paulo; backup em `data/` antes do merge.
 
 ## Pronto quando
 

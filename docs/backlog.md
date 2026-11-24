@@ -8,7 +8,7 @@ Regra destes docs: o repositório vai para o GitHub, então **sem nomes de pesso
 Tamanho: **P** pequeno, **M** médio, **G** grande. **Base** = muda o banco de dados (migração) ou regrava categorias da base real:
 fazer em worktree com cópia da base (ver "Fluxo de trabalho" no `CLAUDE.md`).
 
-## Lote 1: A INICIAR
+## Lote 1: FEITO (2026-11-24)
 
 Spec: [specs/lote-1.md](specs/lote-1.md). Rápido e sem migração. Ordem sugerida: 14, 3, 15, 20, 1, 13, 17.
 
@@ -19,7 +19,7 @@ Spec: [specs/lote-1.md](specs/lote-1.md). Rápido e sem migração. Ordem sugeri
 | 13 | Categorias e regras: criar regra na tela, apagar e mesclar categoria | M | não | feito (2026-11-24) |
 | 14 | Painel Regras: categoria visível, sem rolagem horizontal | P | não | feito (2026-11-24) |
 | 15 | Mostrar "dados do banco de…" | P | não | feito (2026-11-24) |
-| 17 | Traduzir as categorias da Pluggy | P | regrava categorias | a iniciar |
+| 17 | Traduzir as categorias da Pluggy | P | regrava categorias | feito (2026-11-24) |
 | 20 | Alerta de cartão acima de 80% do limite | P | não | feito (2026-11-24) |
 
 ## Lote 2: PRÓXIMO (números corretos)

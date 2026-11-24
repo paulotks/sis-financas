@@ -177,8 +177,30 @@ test("categorias da Pluggy caem no lugar certo", () => {
     ["Interests charged", "Juros e dívidas"],
     ["Sports goods", "Compras"],
     ["Credit card payment", "Pagamento de fatura"],
+    ["Houseware", "Compras"],
+    ["Bookstore", "Compras"],
+    ["Office supplies", "Compras"],
+    ["Kids and toys", "Compras"],
+    ["Tax on financial operations", "Impostos e taxas"],
+    ["Account fees", "Impostos e taxas"],
+    ["Food and drinks", "Alimentação fora"],
+    ["Accomodation", "Lazer"],
+    ["Accommodation", "Lazer"],
+    ["Lottery", "Lazer"],
+    ["Gambling", "Lazer"],
+    ["Cinema, theater and concerts", "Lazer"],
+    ["Automotive", "Transporte"],
+    // ficam pendentes de propósito: genéricas, transferência (Pix no crédito tem três pernas) e crédito que passaria a abater
+    ["Transfer - PIX", null],
+    ["Transfers", null],
+    ["Transfer - Internal", null],
+    ["Transfer - Foreign Exchange", null],
+    ["Services", null],
+    ["Insurance", null],
+    ["Entrepreneurial activities", null],
+    ["Cashback", null],
   ])
-    assert.equal(nome(pluggy), nossa, pluggy);
+    assert.equal(nome(pluggy!), nossa, pluggy!);
 });
 
 test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual for a categoria da Pluggy", () => {

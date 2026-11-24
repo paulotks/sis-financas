@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, mesAtual, type Categoria, type Lancamento } from "../lib/api";
+import { api, dataCurta, dinheiro, mesAtual, nomePluggy, type Categoria, type Lancamento } from "../lib/api";
 import OferecerRegra from "../components/OferecerRegra";
 import SelectCategoria from "../components/SelectCategoria";
 import SeletorMes from "../components/SeletorMes";
@@ -210,7 +210,7 @@ function Linha({ l, categorias, onSalvar }: {
         <SelectCategoria
           categorias={categorias}
           valor={l.categoria_id}
-          vazio={l.categoria_pluggy ? `? ${l.categoria_pluggy}` : "Sem categoria"}
+          vazio={l.categoria_pluggy ? `? ${nomePluggy(l.categoria_pluggy)}` : "Sem categoria"}
           cor={l.categoria_cor}
           onChange={(id) => onSalvar({ categoria_id: id })}
         />

@@ -250,6 +250,17 @@ export const somarMes = (mes: string, delta: number) => {
 };
 export const hoje = () => new Date().toLocaleDateString("sv"); // "sv" = AAAA-MM-DD local; em UTC o dia virava às 21h
 export const mesAtual = () => hoje().slice(0, 7);
+/** Só as categorias da Pluggy que ficam pendentes (as outras viram categoria nossa no mapa). Nomes da documentação em português. */
+const PLUGGY_PT: Record<string, string> = {
+  "Transfer - PIX": "Transferência - PIX",
+  "Transfer - Internal": "Transferência - Interna",
+  "Transfer - Foreign Exchange": "Transferência - Câmbio",
+  Transfers: "Transferências",
+  Services: "Serviços",
+  Insurance: "Seguro",
+  "Entrepreneurial activities": "Atividades empreendedoras",
+};
+export const nomePluggy = (categoria: string) => PLUGGY_PT[categoria] ?? categoria;
 export const GRUPOS: Record<Categoria["grupo"], string> = {
   essencial: "Essencial",
   estilo_de_vida: "Estilo de vida",
