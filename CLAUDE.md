@@ -1,8 +1,8 @@
 # CLAUDE.md — sis-financas
 
 Sistema financeiro **pessoal** do Paulo, alimentado por **Open Finance via Pluggy (Meu Pluggy)**.
-Roda só no PC dele (Windows, "vegapunk"). Repositório **privado**: github.com/paulotks/sis-financas
-(conta pessoal; **nunca** na org Liberdade-Medica).
+Roda só no PC dele (Windows). Repositório **público**, compartilhado com amigos: github.com/paulotks/sis-financas
+Contexto pessoal (bancos, PC, pastas, notas) fica em `CLAUDE.local.md`, fora do Git: nunca copie de lá para arquivo versionado.
 
 Responda em **português**. Explique decisões em linguagem simples, sem jargão desnecessário.
 
@@ -51,7 +51,8 @@ web/src/
 - `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` ficam **só** no `.env` da raiz (no `.gitignore`). Nunca no front, em log, em commit ou no chat. Não leia nem exiba os valores.
 - O navegador só recebe o Connect Token (vale 30 min), criado em `POST /api/pluggy/connect-token`.
 - A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem que não seja `localhost`, `127.0.0.1` ou `meu-financeiro.localhost`, na 5173 ou na porta da API. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe: nome novo aqui só se terminar em `.localhost` (reservado, ninguém registra).
-- `data/` (a base) e `.env` nunca vão para o Git. Antes de commitar, confira o `git status`.
+- `data/` (a base), `.env` e `CLAUDE.local.md` nunca vão para o Git. Antes de commitar, confira o `git status`.
+- O repositório é público: nada de nome de pessoa, saldo, valor, extrato, contagem ou data de lançamento real, em arquivo nenhum nem em mensagem de commit.
 - Validar toda entrada com zod; SQL sempre com parâmetros (`?`), nunca concatenando valor.
 
 ## MCP do app (`api/src/mcp.ts`)
@@ -79,20 +80,20 @@ web/src/
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
 - **Recorrentes** (`recorrentes.ts`): detecção refeita a cada leitura; a tabela `recorrencias` guarda só a decisão (confirmada/ignorada) por `chave` (descrição original sem acento, número e símbolo).
-- Contas têm `pessoa` PF/PJ. Inter Empresas = PJ (TRKS Studio, empresa do Paulo) e não entra no orçamento da casa. O resumo filtra por pessoa.
+- Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe
 
-- Conector **MeuPluggy** (gratuito para o titular, até 5 conexões). Bancos conectados: Inter Empresas (PJ), Mercado Pago, Caixa, Nubank, PicPay.
+- Conector **MeuPluggy** (gratuito para o titular, até 5 conexões).
 - `POST /connect_token`: `clientUserId` vai **dentro de `options`**; `itemId` na raiz só para reconectar.
 - Transações: usar **`GET /v2/transactions`** (cursor; `next` é a query string pronta, `?accountId=...&after=...`: anexar ao caminho, nunca mandar inteira em `after`). O `/transactions` v1 é removido em **31/12/2026**.
 - A Pluggy cria lançamentos com **data passada** e parcelas com **data futura** (`PENDING`), e ao fechar a fatura pode **apagar e recriar** um lançamento com outro id. Por isso a sincronização relê a janela toda e `removerSumidos` (`sync.ts`) tira o antigo, passando a edição do usuário para o substituto. Editado sem substituto vira `status = 'REMOVIDO'`: fica na lista e **não soma** (toda consulta de totais precisa excluir).
 - `date` vem em UTC (a documentação manda converter para GMT-3). Hoje usamos só a parte da data: conferir com dados reais se lançamento feito depois das 21h cai no dia seguinte.
 - Itens do MeuPluggy **não** aceitam refresh pela API; a Pluggy atualiza 1x/dia. Nem o widget (`updateItem`) atualiza o item proxy: reautorizar banco = refazer no meu.pluggy.ai (atualiza sozinho a cada 24h). Limite gratuito: 5 conexões ativas do mesmo titular (a tela Conexões mostra n/5). Widget fixado em v2.7.0.
 - Faturas (`/bills`) e investimentos (`/investments`) podem não existir para alguns bancos: tratar `ErroPluggy` e seguir.
-- Cofrinhos do Mercado Pago não aparecem como conta nem em `/investments` (vazio nos 5 bancos em 2026-11-23). No extrato vêm em par (+X/−X). Até virem, entram como linha manual em `bens`.
+- Cofrinhos do Mercado Pago não aparecem como conta nem em `/investments` (vazio em todos os bancos testados até 2026-11-23). No extrato vêm em par (+X/−X). Até virem, entram como linha manual em `bens`.
 - O ambiente de nuvem do Claude (Cowork) **não alcança** api.pluggy.ai. Teste real só no PC do Paulo. Para testes automatizados, use um servidor falso via `PLUGGY_API_URL`.
-- Cartões **fora** do Open Finance (Bradescard, C&A Pay, Pefisa, Midway) precisarão de lançamento manual (próxima fase).
+- Cartões **fora** do Open Finance precisarão de lançamento manual (próxima fase).
 
 ## Ferramentas MCP do projeto (usar sempre que necessário)
 
@@ -110,13 +111,13 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Sistema antigo (não mexer daqui)
 
-- `C:\Users\paulo\Claude\financeiro\` (Python + `financeiro.db` + painel). Continua em uso até o novo cobrir tudo.
-- Tem ~200 regras de categoria e o catálogo de assinaturas. Plano: importar **só regras e assinaturas** para cá, por um script opcional e explícito. O histórico de lançamentos fica lá.
+- Python + `financeiro.db` + painel (caminho em `CLAUDE.local.md`). Continua em uso até o novo cobrir tudo.
+- Tem as regras de categoria e o catálogo de assinaturas. Plano: importar **só regras e assinaturas** para cá, por um script opcional e explícito. O histórico de lançamentos fica lá.
 - Este projeto nunca escreve na `financeiro.db`.
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 e 2 feitos; o próximo lote ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nada de nome de pessoa, saldo ou valor em `docs/` (vai para o GitHub).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 e 2 feitos; o próximo lote ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)
@@ -139,4 +140,4 @@ O Paulo não gostou do front antigo por **navegação** e **pouca edição na te
   5. Confira com `evaluate_script` o que importa (texto, botão desabilitado, links) e diga ao Paulo o que foi visto.
   Nunca dispare ações que gravam (Sincronizar, Conectar banco, salvar) contra a base real só para testar.
 - Commits pequenos, mensagem em português.
-- Decisões e andamento ficam no Obsidian do Paulo: `01 Projetos/Integração Open Finance (Pluggy).md` (vault em `C:\Users\paulo\OneDrive\Documentos\Obsidian Vault`). Registre lá o que for decidido.
+- Decisões e andamento ficam no Obsidian do Paulo (nota e vault em `CLAUDE.local.md`). Registre lá o que for decidido.

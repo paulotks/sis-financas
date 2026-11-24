@@ -1,6 +1,6 @@
 # Lote 2: números corretos (FEITO em 2026-11-24)
 
-Itens 7, 5, 4 e 2 do [backlog](../backlog.md), **nesta ordem**. Contagens tiradas da base em 2026-11-24, só leitura.
+Itens 7, 5, 4 e 2 do [backlog](../backlog.md), **nesta ordem**. Conferido na base em 2026-11-24, só leitura.
 
 7, 5 e 4 em worktree (sem `.env`), com cópia da base (`VACUUM INTO`) e backup em `data/` antes do merge: o 7 tem migração, e o 5 e o 4 regravam
 categorias ou mudam totais de meses passados. Para esses três, comparar o Resumo de todos os meses antes e depois e mostrar ao Paulo.
@@ -14,7 +14,7 @@ O 2 só lê e edita pela tela.
 
 ## 7. Regra com direção e conta (M, migração)
 
-- **Por que primeiro:** uma regra por texto pega entrada e saída. Hoje só 1 regra pega os dois sentidos, mas com o item 5 a entrada dela
+- **Por que primeiro:** uma regra por texto pega entrada e saída. Hoje é raro uma regra pegar os dois sentidos, mas com o item 5 a entrada dela
   passaria a abater o gasto da categoria.
 - **Banco:** `regras` ganha `sentido` (`saida`, `entrada` ou nulo = os dois) e `conta_id` (nulo = todas). O `UNIQUE (padrao)` atual impede a
   mesma regra com sentidos diferentes, e o SQLite não remove `UNIQUE` de tabela: **recriar a tabela** na migração, mantendo os ids
@@ -30,7 +30,7 @@ O 2 só lê e edita pela tela.
 - **Tela:** escolha "entrada / saída / os dois" no formulário do 13a e no `OferecerRegra` (sugerir o sentido do lançamento corrigido; o sentido
   oposto não é oferecido). Regra por conta só se cria pelo MCP; a lista de regras mostra sentido e conta.
 - **MCP:** mesmo texto com alcance que se cruza (ex.: já existe a regra geral e vem uma só de saída) também exige `substituir`.
-- **Ensaio na cópia (2026-11-24):** versão 4 → 5, 35 regras idênticas, nenhum lançamento mudou, Resumo idêntico em todos os meses.
+- **Ensaio na cópia (2026-11-24):** versão 4 → 5, regras idênticas, nenhum lançamento mudou, Resumo idêntico em todos os meses.
 - **Testes:** repetir o mesmo texto sem sentido troca a regra em vez de duplicar; mesmo texto com sentidos diferentes convive; regra de saída não toca entrada; regra por conta não toca outra; regras antigas
   continuam iguais depois da migração; prévia = aplicado.
 
@@ -38,16 +38,14 @@ O 2 só lê e edita pela tela.
 
 - **Hoje:** só crédito em **cartão** com categoria de gasto abate (`GASTO` em `server.ts:208`). Entrada em conta com categoria de gasto conta
   como Entrada.
-- **Armadilha:** das 618 entradas em conta PF com categoria de gasto, **595 são Investimentos** (583 rendimentos diários, 11 de correção
-  monetária, 1 liberação) e 12 são centavos em Juros e dívidas. Só 11 são reembolsos de verdade, 4 deles no grupo financeiro
-  (Cartões não conectados). Filtrar por grupo, portanto, erra para um dos lados.
+- **Armadilha:** quase todas as entradas em conta PF com categoria de gasto são **Investimentos** (rendimentos diários e correção
+  monetária). Poucas são reembolsos de verdade, e parte destes está no grupo financeiro (Cartões não conectados). Filtrar por grupo, portanto, erra para um dos lados.
 - **Fazer (D1):** em `MAPA_PLUGGY`, `proceeds interests` → Renda. Depois, em `GASTO`, tirar a exigência `ct.tipo = 'CREDIT'`
   (a condição `cat.grupo <> 'renda'` continua, e sem categoria segue sem abater). O rendimento continua como Entrada, como hoje.
   O teste "categorias da Pluggy caem no lugar certo" espera Investimentos: mudar de propósito.
-- **Efeito:** entradas e saídas caem no mesmo valor; o resultado do mês não muda. `GASTO` vale também para PJ, que hoje não tem nenhuma
-  entrada em conta com categoria de gasto.
+- **Efeito:** entradas e saídas caem no mesmo valor; o resultado do mês não muda. `GASTO` vale também para PJ.
 - **Atualizar junto:** texto do rodapé do Resumo, `CONVENCOES` em `mcp.ts`, "Totais do mês" no `CLAUDE.md`, teste do orçamento e Resumo.
-- **Ensaio na cópia (2026-11-24):** 594 rendimentos viraram Renda; entradas e saídas caíram no mesmo valor em 12 meses e nenhum resultado de
+- **Ensaio na cópia (2026-11-24):** os rendimentos viraram Renda; entradas e saídas caíram no mesmo valor em cada mês afetado e nenhum resultado de
   mês mudou. Uma categoria pode ficar **negativa** no mês em que o reembolso cai (gasto num mês, reembolso no outro): é o esperado.
 
 ## 4. Pix no crédito do Nubank (M)
@@ -55,19 +53,19 @@ O 2 só lê e edita pela tela.
 Três pernas: **(1)** "Valor adicionado…" entra na conta (+X), **(2)** o Pix sai da conta (−X), **(3)** a cobrança no cartão (−X mais tarifa).
 
 - **Problema hoje:** (2) e (3) contam como gasto e (1) como entrada. Entradas e saídas ficam infladas; o resultado do mês está certo.
-  O impacto é pequeno: 26 operações, de jan a set/26.
+  O impacto é pequeno.
 - **Achados na base:**
-  - (1) e (2) casam **exatamente** (mesma conta, mesmo dia, mesmo valor) em 26 de 26.
-  - (3) só tem o texto "Pagamento de pix" em 16, até o início de maio. Em 10, mais recentes, vem com o **nome da pessoa**.
-  - **O horário identifica as três pernas em 26 de 26** (achado ao implementar; a versão anterior desta spec casava por dia). No `bruto`,
+  - (1) e (2) casam **exatamente** (mesma conta, mesmo dia, mesmo valor) em todas as operações.
+  - (3) só tem o texto "Pagamento de pix" nas operações mais antigas. Nas recentes, vem com o **nome da pessoa**.
+  - **O horário identifica as três pernas em todas** (achado ao implementar; a versão anterior desta spec casava por dia). No `bruto`,
     `date` (ou `creditCardMetadata.purchaseDate`, quando existe) tem hora: (2) fica a menos de 1 s de (1), e o segundo candidato de mesmo
-    valor só aparece mais de 22 min depois. (3) vem 1 a 7 s depois em 25, e 417 s em 1; o candidato errado mais próximo está a 95 min.
-    Casar por dia errava em 2026-06-23 (duas operações de mesmo valor) e partiria uma operação na meia-noite UTC.
-  - Tarifa entre 1,6% e 13% (as maiores são parceladas, 1/2 e 1/3).
-  - Em 3 operações (3) traz o nome mas não tem categoria própria, e (2) tem: sem herdar, o gasto viraria "Sem categoria".
-  - Em 1 operação (2026-03-16) (2) **já** está fora do resumo por uma regra do Paulo (transferência, e o dinheiro voltou no mesmo dia).
-  - Como (3) traz o nome da pessoa, uma **regra por nome pega (2) e (3)** e o gasto dobra na categoria. Em 1 caso as duas já estão na
-    mesma categoria; cresce a cada regra por pessoa.
+    valor só aparece mais de 22 min depois. (3) quase sempre vem segundos depois, às vezes minutos; o candidato errado mais próximo está a mais de 1 h.
+    Casar por dia errava com duas operações de mesmo valor no dia e partiria uma operação na meia-noite UTC.
+  - Tarifa de poucos por cento a mais de 10% (as maiores são parceladas).
+  - Às vezes (3) traz o nome mas não tem categoria própria, e (2) tem: sem herdar, o gasto viraria "Sem categoria".
+  - Pode acontecer de (2) **já** estar fora do resumo por uma regra do Paulo (transferência).
+  - Como (3) traz o nome da pessoa, uma **regra por nome pega (2) e (3)** e o gasto dobra na categoria. O problema
+    cresce a cada regra por pessoa.
 - **Fazer (D2):** saem do resumo (1) e (2), o par exato, e fica (3). A tarifa e as parcelas entram naturalmente, no mês de cada uma.
   Quando (3) não tem categoria própria (regra ou mapa), herda a que (2) teria; as parcelas seguintes também (mesma `purchaseDate`).
   Descartado: ficar com (2) e tirar (3), porque a tarifa sumiria.
@@ -81,15 +79,15 @@ Três pernas: **(1)** "Valor adicionado…" entra na conta (+X), **(2)** o Pix s
     comparar com o gravado; um passo depois dele faria as pernas irem e voltarem e inflaria o "recategorizados"), e `sincronizar` passa a
     chamar `reaplicarRegras` no fim. O que (3) herda é a categoria que (2) *teria*, não a gravada: depois da 1ª vez a gravada é transferência.
 - **Atualizar junto:** "fica de fora de propósito" no `CLAUDE.md`, em `CONVENCOES` e no comentário de `INTERNOS`.
-- **Ensaio na cópia (2026-11-24):** 25 das 26 operações resolvidas (a de 2026-03-16 ficou de fora, como acima); entradas e saídas caíram no
-  mesmo valor em 9 meses, nenhum resultado mudou, 8 cobranças herdaram a categoria, nenhuma edição manual mudou.
+- **Ensaio na cópia (2026-11-24):** todas as operações resolvidas, menos a que já estava em transferência (como acima); entradas e saídas caíram no
+  mesmo valor, nenhum resultado mudou, cobranças sem categoria herdaram a do Pix, nenhuma edição manual mudou.
 - **Testes:** os três formatos de (3), parcelada, sem (3), duas operações de mesmo valor no mesmo dia, perna manual, (2) já em transferência, rodar duas vezes.
 
 ## 2. Estorno: correção à mão com um clique (M, sem migração)
 
 - **Hoje:** o estorno categorizado abate, mas na categoria que a Pluggy deu a ele, que pode não ser a da compra.
-- **Por que não automático (D3):** de 30 créditos em cartão fora de transferência, só 10 têm exatamente uma compra de mesmo valor no mesmo
-  cartão (120 dias antes) e 5 desses mudariam de categoria. O resto é estorno parcial, vários candidatos, ou não é estorno (desconto de
+- **Por que não automático (D3):** só uma parte dos créditos em cartão fora de transferência tem exatamente uma compra de mesmo valor no mesmo
+  cartão (120 dias antes). O resto é estorno parcial, vários candidatos, ou não é estorno (desconto de
   antecipação, juros projetados, crédito do emissor). Quem decide é o Paulo; o sistema só mostra os candidatos.
 - **Achar:** filtro "Só estornos" em Lançamentos (na API, `estornos=1`): crédito em cartão, fora do grupo transferência, sem ignorado nem
   REMOVIDO. Combina com "Todos os meses".

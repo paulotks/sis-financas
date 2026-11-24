@@ -222,8 +222,8 @@ test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual fo
   // Pix no crédito: sozinha não sai (tirar só esta perna contaria o gasto em dobro); o teste das três pernas está adiante
   assert.equal(grupo("Valor adicionado na conta por cartão de crédito", "Transfer - Internal"), null);
   // regra do Paulo continua mandando
-  const pet = { id: 1, padrao: "reservado belinha", sentido: null, conta_id: null, categoria_id: 8, descricao: null };
-  assert.equal(sugerirCategoria(mov("Dinheiro reservado Belinha", "Transfer - Internal"), [pet]).categoria_id, 8);
+  const pet = { id: 1, padrao: "reservado pet", sentido: null, conta_id: null, categoria_id: 8, descricao: null };
+  assert.equal(sugerirCategoria(mov("Dinheiro reservado Pet", "Transfer - Internal"), [pet]).categoria_id, 8);
 });
 
 test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza o que já estava", async () => {

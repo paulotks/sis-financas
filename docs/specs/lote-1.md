@@ -69,7 +69,7 @@ exigência de o texto estar num lançamento específico. `POST /api/regras` **tr
 - Recusar também os nomes usados em `MAPA_PLUGGY` e `INTERNOS`: o código acha a categoria pelo **nome**, e sem ela o mapa passa a devolver
   "sem categoria". Vale o mesmo para renomear (`PATCH` já permite hoje; a tela não oferece).
 - Chamar `limparCacheCategorias()`. Botão ✕ no chip com confirmação, só em categoria sem uso (devolver `usos` em `GET /api/categorias`).
-- Caso real: as 4 categorias criadas por engano (ids 22 a 25) têm zero lançamentos, regras e orçamento. Quem apaga é o Paulo, pela tela.
+- Caso real: categorias criadas por engano, sem lançamento, regra nem orçamento. Quem apaga é o Paulo, pela tela.
 
 **13c. Mesclar categoria.** `POST /api/categorias/:id/mesclar { destino }`, numa transação: move lançamentos (sem mexer em
 `categoria_manual`) e regras, depois apaga a origem. Mesmas recusas de nome do 13b.
@@ -82,34 +82,34 @@ exigência de o texto estar num lançamento específico. `POST /api/regras` **tr
 
 ## 17. Traduzir as categorias da Pluggy
 
-- **Situação:** 296 pendentes PF. Cerca de 70 saem só com o mapa; 170 são Pix ou transferência (nada a traduzir) e 50 são "Services", genérico.
+- **Situação:** parte dos pendentes sai só com o mapa; o resto é Pix ou transferência (nada a traduzir) ou "Services", genérico.
 - **Fazer:** novos termos em `MAPA_PLUGGY` (`categorizar.ts`). Confirmado pelo Paulo em 2026-11-24:
 
-| Pluggy | Pendentes | Categoria |
-|---|---|---|
-| Houseware | 14 | Compras |
-| Bookstore | 14 | Compras |
-| Office supplies | 11 | Compras |
-| Tax on financial operations (IOF) | 9 | Impostos e taxas |
-| Food and drinks | 8 | Alimentação fora |
-| Accomodation (grafia da Pluggy; a documentação escreve Accommodation: mapear as duas) | 4 | Lazer |
-| Automotive | 3 | Transporte |
-| Kids and toys | 2 | Compras |
-| Account fees (os 2 de hoje são "Pagamento de conta", não tarifa; o Paulo preferiu mapear) | 2 | Impostos e taxas |
-| Lottery, Gambling | 2 | Lazer |
-| Cinema, theater and concerts | 1 | Lazer |
+| Pluggy | Categoria |
+|---|---|
+| Houseware | Compras |
+| Bookstore | Compras |
+| Office supplies | Compras |
+| Tax on financial operations (IOF) | Impostos e taxas |
+| Food and drinks | Alimentação fora |
+| Accomodation (grafia da Pluggy; a documentação escreve Accommodation: mapear as duas) | Lazer |
+| Automotive | Transporte |
+| Kids and toys | Compras |
+| Account fees (aparece em "Pagamento de conta", que não é tarifa; mapear mesmo assim) | Impostos e taxas |
+| Lottery, Gambling | Lazer |
+| Cinema, theater and concerts | Lazer |
 
-- **Não mapear** `Transfer - PIX`, `Transfers` nem `Transfer - Internal`. Os 26 pendentes de `Transfer - Internal` são todos a perna
+- **Não mapear** `Transfer - PIX`, `Transfers` nem `Transfer - Internal`. Os pendentes de `Transfer - Internal` são todos a perna
   "Valor adicionado" do Pix no crédito (item 4): tirar uma perna só distorce o mês. `Services`, `Insurance`, `Entrepreneurial activities`,
-  `Transfer - Foreign Exchange` (2) e `Cashback` (1) ficam pendentes. O `Cashback` é crédito em cartão: com categoria, passaria a abater.
+  `Transfer - Foreign Exchange` e `Cashback` ficam pendentes. O `Cashback` é crédito em cartão: com categoria, passaria a abater.
 - **Colisões:** vale o primeiro termo *contido*. Conferida a lista completa no MCP `pluggy-docs`: nenhum termo novo pega
   outra categoria. Casos (inclusive os que ficam pendentes) no teste "categorias da Pluggy caem no lugar certo".
 - **Rótulo:** o que continuar pendente aparece em inglês ("? Transfer - PIX"). Pequeno dicionário no front só para os que sobram.
 - **Aceitar em lote: não fazer.** O mapa já aplica sozinho; depois dele não sobra sugestão para aceitar.
-- **Efeito esperado:** reclassifica meses passados. Entradas e saídas ficam **idênticas** em todos os meses: nenhum dos 70 é crédito em
+- **Efeito esperado:** reclassifica meses passados. Entradas e saídas ficam **idênticas** em todos os meses: nenhum deles é crédito em
   cartão, então só mudam os pendentes e a divisão por categoria. Comparar o Resumo antes e depois na cópia da base e mostrar ao Paulo; backup em `data/` antes do merge.
 
 ## Pronto quando
 
 `npm run typecheck`, `npm test` e `npm run build` sem erro; telas vistas no navegador; `npm run app:reiniciar`; status trocado no
-[backlog](../backlog.md); linha no Log da nota do projeto no Obsidian.
+[backlog](../backlog.md).
