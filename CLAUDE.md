@@ -115,6 +115,8 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lote 1 a iniciar, lote 2 próximo), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nada de nome de pessoa, saldo ou valor em `docs/` (vai para o GitHub).
+
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)
 3. Faturas e parcelas futuras (projeção)

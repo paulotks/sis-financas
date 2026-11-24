@@ -1,0 +1,92 @@
+# Lote 2: números corretos (PRÓXIMO)
+
+Itens 7, 5, 4 e 2 do [backlog](../backlog.md), **nesta ordem**. Contagens tiradas da base em 2026-11-24, só leitura.
+
+7, 5 e 4 em worktree (sem `.env`), com cópia da base (`VACUUM INTO`) e backup em `data/` antes do merge: o 7 tem migração, e o 5 e o 4 regravam
+categorias ou mudam totais de meses passados. Para esses três, comparar o Resumo de todos os meses antes e depois e mostrar ao Paulo.
+O 2 só lê e edita pela tela.
+
+## Decisões do Paulo (2026-11-24)
+
+- **D1 (item 5):** rendimento de conta (o "Rendimentos" diário) **vira Renda**.
+- **D2 (item 4):** no Pix no crédito, o gasto é a **cobrança no cartão**, com a tarifa junto.
+- **D3 (item 2):** **não** corrigir estorno automaticamente; criar uma forma de **facilitar a correção à mão**.
+
+## 7. Regra com direção e conta (M, migração)
+
+- **Por que primeiro:** uma regra por texto pega entrada e saída. Hoje só 1 regra pega os dois sentidos, mas com o item 5 a entrada dela
+  passaria a abater o gasto da categoria.
+- **Banco:** `regras` ganha `sentido` (`saida`, `entrada` ou nulo = os dois) e `conta_id` (nulo = todas). O `UNIQUE (padrao)` atual impede a
+  mesma regra com sentidos diferentes, e o SQLite não remove `UNIQUE` de tabela: **recriar a tabela** na migração, mantendo os ids
+  (`lancamentos.regra_id` aponta para eles, sem chave estrangeira). Novo índice único por expressão:
+  `(padrao COLLATE NOCASE, COALESCE(sentido,''), COALESCE(conta_id,''))`. Sem o `COALESCE`, o SQLite trata nulos como diferentes e deixaria
+  criar duas regras iguais "para tudo". Pelo mesmo motivo, a busca em `POST /api/regras` usa `IS ?`, não `= ?`.
+- **Código:** `sugerirCategoria` passa a receber valor e conta. Chamadores: `sync.ts` (`salvarTransacoes`), `reaplicarRegras` e os testes.
+  `contarParecidos` e a prévia precisam do mesmo filtro, senão a prévia não bate com o aplicado (há teste para isso).
+- **Desempate:** prioridade, depois a mais específica (com sentido ou conta), depois o texto mais longo.
+- **API e MCP:** `POST /api/regras` procura a regra existente por texto + sentido + conta. `previa_regra` e `criar_regra` ganham os dois campos
+  opcionais; `total_previsto` e `substituir` **não afrouxam**. Atualizar `CONVENCOES`.
+- **Tela:** escolha "entrada / saída / os dois" no formulário do 13a e no `OferecerRegra` (sugerir o sentido do lançamento corrigido).
+- **Testes:** repetir o mesmo texto sem sentido troca a regra em vez de duplicar; mesmo texto com sentidos diferentes convive; regra de saída não toca entrada; regra por conta não toca outra; regras antigas
+  continuam iguais depois da migração; prévia = aplicado.
+
+## 5. Reembolso em conta abate a categoria (P no código)
+
+- **Hoje:** só crédito em **cartão** com categoria de gasto abate (`GASTO` em `server.ts:208`). Entrada em conta com categoria de gasto conta
+  como Entrada.
+- **Armadilha:** das 618 entradas em conta PF com categoria de gasto, **595 são Investimentos** (583 rendimentos diários, 11 de correção
+  monetária, 1 liberação) e 12 são centavos em Juros e dívidas. Só 11 são reembolsos de verdade, 4 deles no grupo financeiro
+  (Cartões não conectados). Filtrar por grupo, portanto, erra para um dos lados.
+- **Fazer (D1):** em `MAPA_PLUGGY`, `proceeds interests` → Renda. Depois, em `GASTO`, tirar a exigência `ct.tipo = 'CREDIT'`
+  (a condição `cat.grupo <> 'renda'` continua, e sem categoria segue sem abater). O rendimento continua como Entrada, como hoje.
+  O teste "categorias da Pluggy caem no lugar certo" espera Investimentos: mudar de propósito.
+- **Efeito:** entradas e saídas caem no mesmo valor; o resultado do mês não muda. `GASTO` vale também para PJ, que hoje não tem nenhuma
+  entrada em conta com categoria de gasto.
+- **Atualizar junto:** texto do rodapé do Resumo, `CONVENCOES` em `mcp.ts`, "Totais do mês" no `CLAUDE.md`, teste do orçamento e Resumo.
+
+## 4. Pix no crédito do Nubank (M)
+
+Três pernas: **(1)** "Valor adicionado…" entra na conta (+X), **(2)** o Pix sai da conta (−X), **(3)** a cobrança no cartão (−X mais tarifa).
+
+- **Problema hoje:** (2) e (3) contam como gasto e (1) como entrada. Entradas e saídas ficam infladas; o resultado do mês está certo.
+  O impacto é pequeno: 26 operações, de jan a set/26.
+- **Achados na base:**
+  - (1) e (2) casam **exatamente** (mesma conta, mesmo dia, mesmo valor) em 26 de 26.
+  - (3) só tem o texto "Pagamento de pix" em 16, até o início de maio. Em 9, mais recentes, vem com o **nome da pessoa**; em 1 não foi achada.
+  - Tarifa entre 1,6% e 13% (as maiores são parceladas, 1/2 e 1/3); há dias com mais de um candidato parecido.
+  - Como (3) traz o nome da pessoa, uma **regra por nome pega (2) e (3)** e o gasto dobra na categoria. Em 1 caso as duas já estão na
+    mesma categoria; cresce a cada regra por pessoa.
+- **Fazer (D2):** saem do resumo (1) e (2), o par exato, e fica (3). A tarifa e as parcelas entram naturalmente, no mês de cada uma.
+  Quando (3) não traz o nome, herda a categoria de (2). Descartado: ficar com (2) e tirar (3), porque (3) é o par incerto e a tarifa sumiria.
+- **Regras:**
+  - Só tirar o par se existe alguma (3) possível no dia; senão o gasto some. Basta existir (o total fica certo mesmo sem saber qual é);
+    achar a (3) exata só serve para herdar a categoria quando ela vem como "Pagamento de pix".
+  - Qualquer perna editada à mão: não mexer na operação.
+  - Vale **acima** das regras do Paulo para essas pernas (hoje regra vence movimento interno).
+  - Precisa de várias linhas ao mesmo tempo: não cabe em `sugerirCategoria`. Rodar no fim de `reaplicarRegras` **e** no fim de `sincronizar`
+    (a sincronização não chama `reaplicarRegras`). Tem que dar o mesmo resultado se rodar de novo, sem inflar o "recategorizados".
+- **Atualizar junto:** "fica de fora de propósito" no `CLAUDE.md`, em `CONVENCOES` e no comentário de `INTERNOS`.
+- **Testes:** os três formatos de (3), parcelada, sem (3), dois candidatos no mesmo dia, perna manual, rodar duas vezes.
+
+## 2. Estorno: correção à mão com um clique (M, sem migração)
+
+- **Hoje:** o estorno categorizado abate, mas na categoria que a Pluggy deu a ele, que pode não ser a da compra.
+- **Por que não automático (D3):** de 30 créditos em cartão fora de transferência, só 10 têm exatamente uma compra de mesmo valor no mesmo
+  cartão (120 dias antes) e 5 desses mudariam de categoria. O resto é estorno parcial, vários candidatos, ou não é estorno (desconto de
+  antecipação, juros projetados, crédito do emissor). Quem decide é o Paulo; o sistema só mostra os candidatos.
+- **Achar:** filtro "Só estornos" em Lançamentos (na API, `estornos=1`): crédito em cartão, fora do grupo transferência, sem ignorado nem
+  REMOVIDO. Combina com "Todos os meses".
+- **Corrigir:** na linha do crédito, botão "De qual compra?", que abre até 5 candidatas (data, descrição, valor, categoria). Clicar usa a
+  categoria da compra pelo `PATCH /api/lancamentos/:id` que já existe (vira edição manual, então regra nenhuma desfaz).
+- **Candidatas:** `GET /api/lancamentos/:id/compras`: mesmo cartão, saída, até 120 dias antes, valor **maior ou igual** ao do crédito (cobre
+  estorno parcial). Ordem: valor igual, depois palavras da descrição em comum, depois a mais recente. Compra sem categoria aparece, mas sem
+  o botão de usar.
+- **Cuidado:** hoje toda troca de categoria abre o `OferecerRegra`. Neste caminho **não** abrir: regra com o texto do estorno pegaria estornos
+  de outras compras.
+- **Testes:** só o mesmo cartão e dentro do prazo; valor igual vem primeiro; parcial aparece; lançamento que não é crédito em cartão dá 400.
+- **Fazer depois do item 17**, que muda a categoria de várias compras. O MCP não ganha ferramenta nova.
+
+## Pronto quando
+
+O mesmo do [lote 1](lote-1.md), mais: migração ensaiada na cópia (versão e integridade conferidas), Resumo antes × depois mostrado ao Paulo e
+backup da base real em `data/`.
