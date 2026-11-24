@@ -42,8 +42,8 @@ api/src/
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual)
-  pages/                Resumo, Lancamentos, Orcamento, Recorrentes, Contas (com patrimônio), Categorias, Conexoes
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
+  pages/                Resumo, Lancamentos, Orcamento, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -79,7 +79,7 @@ web/src/
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura, Investimentos) fica **fora do resumo**: não é gasto nem renda. Guardado = entradas − saídas.
 - **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Entrada (em conta ou cartão) com categoria de gasto é **estorno ou reembolso e abate** a categoria; sem categoria não abate (pode ser renda ou fatura paga). Rendimento de conta (`proceeds interests`) é Renda.
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
-- **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
+- **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
 - **Recorrentes** (`recorrentes.ts`): detecção refeita a cada leitura; a tabela `recorrencias` guarda só a decisão (confirmada/ignorada) por `chave` (descrição original sem acento, número e símbolo).
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
@@ -106,7 +106,7 @@ Configuradas em `.mcp.json` (escopo do projeto). Na primeira vez que abrir a pas
   Não confie em memória nem em snippet antigo; a Pluggy muda rápido. Exemplos que já quebraram: a URL do widget no snippet oficial dava 404, e `/transactions` v1 sai do ar em 31/12/2026.
   Este MCP **não** acessa os dados bancários do Paulo; só a documentação.
 - **`context7`** (`https://mcp.context7.com/mcp`): documentação atualizada de bibliotecas e frameworks.
-  **Consulte antes** de usar ou atualizar APIs de Fastify, `@fastify/static`, zod, `node:sqlite`, React, React Router, TanStack Query, Vite e TypeScript, sobretudo ao subir de versão major ou quando houver dúvida de sintaxe.
+  **Consulte antes** de usar ou atualizar APIs de Fastify, `@fastify/static`, zod, `node:sqlite`, React, React Router, TanStack Query, Recharts, Vite e TypeScript, sobretudo ao subir de versão major ou quando houver dúvida de sintaxe.
   Fluxo: resolver o ID da biblioteca e depois buscar a documentação do tópico específico.
 
 Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentação oficial na web. Não invente API.
@@ -119,7 +119,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 3 feitos; o próximo é o 4, página Análises), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 4 feitos; o próximo ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)

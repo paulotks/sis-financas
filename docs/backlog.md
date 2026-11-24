@@ -46,18 +46,18 @@ Spec: [specs/lote-3.md](specs/lote-3.md). Tem migração: worktree com cópia da
 | 25 | Topo do Orçamento contra a renda | P | não | feito (2026-11-24) |
 | 26 | MCP em dia com o sistema | M | não | feito (2026-11-24) |
 
-## Lote 4: página Análises (depois do 3)
+## Lote 4: FEITO (2026-11-24, página Análises)
 
 Spec: [specs/lote-4.md](specs/lote-4.md).
 
 | # | Melhoria | Tam. | Base | Status |
 |---|---|---|---|---|
-| 27 | A. Renda × orçado × gasto por mês | M | não | |
-| 28 | B. Gasto acumulado dia a dia | M | não | |
-| 29 | C. Guardado por mês e acumulado | P | não | |
-| 30 | E. Quem estourou: categoria contra média, mês passado ou orçado | M | não | |
-| 31 | G. Próximos meses já comprometidos | M | não | |
-| 32 | Mês inicial da análise editável, e MCP | P | migração | |
+| 27 | A. Renda × orçado × gasto por mês | M | não | feito (2026-11-24) |
+| 28 | B. Gasto acumulado dia a dia | M | não | feito (2026-11-24) |
+| 29 | C. Guardado por mês e acumulado | P | não | feito (2026-11-24) |
+| 30 | E. Quem estourou: categoria contra média, mês passado ou orçado | M | não | feito (2026-11-24) |
+| 31 | G. Próximos meses já comprometidos | M | não | feito (2026-11-24) |
+| 32 | Mês inicial da análise editável, e MCP | P | migração | feito (2026-11-24) |
 
 ## Depois (na fila, ainda sem spec)
 

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dadosVelhos, quando } from "./lib/api";
@@ -10,10 +11,13 @@ import Contas from "./pages/Contas";
 import Conexoes from "./pages/Conexoes";
 import Categorias from "./pages/Categorias";
 
+const Analises = lazy(() => import("./pages/Analises")); // a biblioteca de gráficos só carrega nesta página
+
 const MENU = [
   { to: "/resumo", rotulo: "Resumo", icone: "◎" },
   { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡" },
   { to: "/orcamento", rotulo: "Orçamento", icone: "◔" },
+  { to: "/analises", rotulo: "Análises", icone: "▥" },
   { to: "/recorrentes", rotulo: "Recorrentes", icone: "∞" },
   { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
   { to: "/categorias", rotulo: "Categorias e regras", icone: "◇" },
@@ -78,6 +82,7 @@ export default function App() {
           <Route path="/resumo" element={<Resumo />} />
           <Route path="/lancamentos" element={<Lancamentos />} />
           <Route path="/orcamento" element={<Orcamento />} />
+          <Route path="/analises" element={<Suspense fallback={<p className="mudo">Carregando…</p>}><Analises /></Suspense>} />
           <Route path="/recorrentes" element={<Recorrentes />} />
           <Route path="/contas" element={<Contas />} />
           <Route path="/categorias" element={<Categorias />} />

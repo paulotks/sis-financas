@@ -192,6 +192,20 @@ export interface Regra {
   usos: number;
 }
 
+/** Página Análises: só PF, mesmos totais do Resumo. Nulo = não há o que comparar. */
+export interface Analises {
+  mes: string;
+  mes_atual: string;
+  inicio: string | null;
+  inicio_automatico: string | null;
+  inicio_definido: boolean;
+  orcado_hoje: number | null;
+  meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
+  dia_a_dia: { dias: number[]; anterior: number[] | null; mes_anterior: string; orcado: number | null; esperada: number | null };
+  categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
+  comprometido: { mes: string; parcelas: number; recorrentes: number; esperada: number | null }[];
+}
+
 async function req<T>(metodo: string, url: string, corpo?: unknown): Promise<T> {
   const r = await fetch(url, {
     method: metodo,
@@ -244,6 +258,9 @@ export const api = {
   apagarBem: (id: number) => req<{ ok: true }>("DELETE", `/api/bens/${id}`),
 
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
+
+  analises: (mes: string) => req<Analises>("GET", `/api/analises${qs({ mes })}`),
+  definirInicio: (mes: string | null) => req<{ ok: true }>("PUT", "/api/analises/inicio", { mes }),
 
   orcamento: (mes: string) => req<Orcamento>("GET", `/api/orcamento${qs({ mes })}`),
   salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<{ ok: true }>("PUT", "/api/orcamento", d),

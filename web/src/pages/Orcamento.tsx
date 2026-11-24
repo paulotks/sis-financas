@@ -13,7 +13,7 @@ export default function Orcamento() {
   const q = useQuery({ queryKey: ["orcamento", mes], queryFn: () => api.orcamento(mes) });
   const salvar = useMutation({
     mutationFn: api.salvarOrcamento,
-    onSettled: () => Promise.all([["orcamento"], ["ritmo"]].map((queryKey) => qc.invalidateQueries({ queryKey }))), // muda também os meses seguintes
+    onSettled: () => Promise.all([["orcamento"], ["ritmo"], ["analises"]].map((queryKey) => qc.invalidateQueries({ queryKey }))), // muda também os meses seguintes
   });
 
   const linhas = q.data?.linhas ?? [];
