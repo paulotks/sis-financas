@@ -22,7 +22,7 @@ Spec: [specs/lote-1.md](specs/lote-1.md). Rápido e sem migração. Ordem sugeri
 | 17 | Traduzir as categorias da Pluggy | P | regrava categorias | feito (2026-11-24) |
 | 20 | Alerta de cartão acima de 80% do limite | P | não | feito (2026-11-24) |
 
-## Lote 2: PRÓXIMO (números corretos)
+## Lote 2: FEITO (2026-11-24, números corretos)
 
 Spec: [specs/lote-2.md](specs/lote-2.md). A ordem importa: 7 → 5 → 4 → 2. As decisões D1 a D3 foram tomadas em 2026-11-24 (no topo da spec).
 
@@ -58,4 +58,4 @@ Fora desta revisão (na nota do projeto no Obsidian): atualizar `zod` 4 e `@fast
 
 - Um item por commit. Ao terminar, troque o status aqui por `feito (AAAA-MM-DD)` **no mesmo commit** e registre no Log da nota do projeto no Obsidian.
 - O que a implementação descobrir de diferente corrige a spec, não fica só no chat.
-- Lote 2 só depois do lote 1 no `main`.
+- Um lote só começa com o anterior no `main`.

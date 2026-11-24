@@ -41,7 +41,7 @@ api/src/
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, OferecerRegra (corrigiu a categoria -> cria regra com um clique)
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno
   pages/                Resumo, Lancamentos, Orcamento, Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
@@ -116,7 +116,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lote 1 feito, lote 2 próximo), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nada de nome de pessoa, saldo ou valor em `docs/` (vai para o GitHub).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 e 2 feitos; o próximo lote ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nada de nome de pessoa, saldo ou valor em `docs/` (vai para o GitHub).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)

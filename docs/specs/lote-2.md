@@ -1,4 +1,4 @@
-# Lote 2: números corretos (PRÓXIMO)
+# Lote 2: números corretos (FEITO em 2026-11-24)
 
 Itens 7, 5, 4 e 2 do [backlog](../backlog.md), **nesta ordem**. Contagens tiradas da base em 2026-11-24, só leitura.
 
