@@ -86,7 +86,7 @@ export function criarServidor(base: string) {
       });
     } catch (e) {
       if ((e as Error).name === "TimeoutError") throw new Error("O app demorou mais de 2 minutos para responder.");
-      throw new Error("O app não está rodando. Peça ao Paulo para rodar `npm start` em D:\\sis-financas.");
+      throw new Error("O app não está rodando. Peça ao Paulo para rodar `npm run app:iniciar` em D:\\sis-financas.");
     }
     const d = (await res.json().catch(() => null)) as any;
     if (!res.ok) throw new Error(`${d?.erro ?? `HTTP ${res.status}`}${d?.detalhes ? `: ${JSON.stringify(d.detalhes)}` : ""}`);

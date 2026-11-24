@@ -15,7 +15,13 @@ npm run typecheck  # tsc nos dois workspaces — rodar antes de todo commit
 npm test           # sincronização e API contra uma Pluggy falsa (base temporária)
 npm run build      # compila api/dist e web/dist
 npm start          # produção local: tudo em http://127.0.0.1:3333
+npm run app:parar | app:iniciar | app:reiniciar   # o app de uso diário (tarefa do Windows, inicia no logon)
 ```
+
+**O app de uso diário já ocupa a 3333** (tarefa agendada `sis-financas`, `app-windows.ps1`), rodando `dist`:
+- Para usar `npm run dev`: `npm run app:parar` antes e `npm run app:iniciar` no fim. Com ele no ar, o Vite falaria com a API compilada e a mudança na API não apareceria.
+- `dist` é o que está em uso e `migrar()` roda a cada início na base real: **build na pasta principal só a partir do `main`**; branch com migração, só em worktree (ver Fluxo de trabalho).
+- Depois de um build: `npm run app:reiniciar`. Mudou `mcp.ts`: reiniciar também o Claude Desktop.
 
 Node **22.13+** (usa `node:sqlite`, sem dependência nativa).
 
@@ -122,7 +128,7 @@ O Paulo não gostou do front antigo por **navegação** e **pouca edição na te
 
 - Antes de commitar: `npm run typecheck`, `npm test` e `npm run build` sem erro.
 - **Mudou o front? Valide no navegador com o MCP `chrome-devtools`** antes de commitar (os testes automáticos não cobrem a tela):
-  1. `npm run dev` (se as portas 5173/3333 já estiverem ocupadas, o servidor já roda: só use-o; o Vite recarrega sozinho).
+  1. `npm run app:parar` e `npm run dev` (se a 5173 já estiver ocupada, o dev já roda: só use-o; o Vite recarrega sozinho). No fim, `npm run app:iniciar`.
      **Vai mexer em `db.ts`?** O `npm run dev` é `tsx watch` sobre a base real: salvar uma migração a aplica na hora, e ela não pode mais ser editada. Trabalhe num worktree (sem `.env`), com uma cópia da base (`VACUUM INTO`) e `npm run build` + `PORT=3344 npm start`; antes do merge, backup em `data/`.
   2. `navigate_page` na rota alterada, `take_snapshot` e `take_screenshot` (tela cheia).
   3. `list_console_messages`: nenhum erro ou aviso novo.

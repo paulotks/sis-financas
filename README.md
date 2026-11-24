@@ -23,12 +23,22 @@ npm run dev
 
 Abra http://127.0.0.1:5173. Vá em **Conexões → Conectar banco**, escolha **MeuPluggy** e autorize os bancos, um de cada vez. Cada conexão já faz a primeira sincronização, buscando 365 dias por padrão (`SYNC_DIAS_INICIAIS`).
 
-### Uso diário sem modo dev
+### Uso diário: inicia com o Windows
+
+O app sobe sozinho no logon, sem janela, pela tarefa agendada `sis-financas`. Abra **http://127.0.0.1:3333**.
 
 ```powershell
-npm run build
-npm start          # tudo em http://127.0.0.1:3333
+npm run build          # uma vez, e a cada atualização do código
+npm run app:instalar   # uma vez: registra a tarefa (não precisa de administrador)
+npm run app:iniciar    # sobe agora, sem esperar o próximo logon
+npm run app:reiniciar  # depois de um build
+npm run app:parar      # antes do npm run dev (os dois usam a porta 3333)
+npm run app:remover    # desfaz
 ```
+
+- O log do último início fica em `data/app.log`. Se o servidor cair, ele não volta sozinho: `npm run app:iniciar`.
+- A tarefa roda o que está em `api/dist` e `web/dist`, e as migrações rodam a cada início, **na base real**: só compile na pasta principal a partir do `main`.
+- `npm start` continua valendo para rodar numa janela.
 
 ### Testes
 
@@ -38,7 +48,7 @@ npm test           # Pluggy falsa e base temporária; não usa credenciais nem a
 
 ## Assistente no Claude Desktop (MCP local)
 
-O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API da tela. Precisa do app rodando (`npm start`).
+O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API da tela. Precisa do app rodando (ele sobe com o Windows; ver "Uso diário").
 
 1. `npm run build`.
 2. Feche o Claude Desktop por completo e acrescente em `mcpServers`, no `claude_desktop_config.json`:

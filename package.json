@@ -13,6 +13,11 @@
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev -w api\" \"npm:dev -w web\"",
     "build": "npm run build -w api && npm run build -w web",
     "start": "npm run start -w api",
+    "app:instalar": "powershell -NoProfile -ExecutionPolicy Bypass -File app-windows.ps1 instalar",
+    "app:iniciar": "powershell -NoProfile -ExecutionPolicy Bypass -File app-windows.ps1 iniciar",
+    "app:parar": "powershell -NoProfile -ExecutionPolicy Bypass -File app-windows.ps1 parar",
+    "app:reiniciar": "powershell -NoProfile -ExecutionPolicy Bypass -File app-windows.ps1 reiniciar",
+    "app:remover": "powershell -NoProfile -ExecutionPolicy Bypass -File app-windows.ps1 remover",
     "typecheck": "npm run typecheck -w api && npm run typecheck -w web",
     "test": "npm test -w api"
   },
