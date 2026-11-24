@@ -17,6 +17,12 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   interno vem em par (+X e -X): nunca tire uma perna só. Pix no crédito do Nubank tem três pernas e o app resolve sozinho: o gasto é a
   cobrança no cartão; as duas da conta ("Valor adicionado" e o Pix) saem do resumo. Categorize a cobrança, não as da conta.
   Regra para categoria de transferência só com o "ok" explícito do Paulo.
+- Investimentos também é do grupo "transferencia": investir não é gasto e resgatar não é renda. Guardado = entradas − saídas.
+- "Como está meu mês?", "estou guardando?", "posso gastar?": comece por ritmo_do_mes. A régua é a renda esperada (definida no orçamento ou a
+  mediana dos 3 últimos meses fechados); renda extra não alivia o mês aberto. Nível: verde = dentro do orçado; amarelo = passou do orçado e
+  cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção; mês fechado: gastou mais do que entrou). A projeção é estimativa:
+  diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
+- Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
@@ -26,7 +32,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   Nome genérico pega gasto que não devia. Não crie regra com "Pagamento de conta".
 - Regra pode valer só para saída ou só para entrada (sentido) e só para uma conta (conta_id). Use o sentido do grupo que você está
   categorizando: o mesmo nome costuma aparecer pagando e recebendo. Entre regras que pegam o mesmo lançamento, vence a de texto mais longo.
-- Orçamento é só PF e vale do mês informado em diante, até a próxima mudança. 0 = sem orçamento.
+- Orçamento é só PF e vale do mês informado em diante, até a próxima mudança. 0 = sem orçamento. Em categoria de renda, o valor é a renda
+  esperada (e não entra no planejado de gasto). Compare sempre o planejado com a renda esperada: plano do tamanho da renda não guarda nada.
 - Sincronize só se o Paulo pedir ou se a última sincronização tiver mais de 24 h (o banco atualiza 1x por dia).`;
 
 const texto = (dados: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(dados) }] });
@@ -114,20 +121,22 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "estado",
     {
-      description: "Chame primeiro. Situação do app: última sincronização de cada banco, meses disponíveis, pendentes de categoria e as convenções dos dados.",
+      description: "Chame primeiro. Situação do app: última sincronização e data dos dados de cada banco, nível do mês atual, meses disponíveis, pendentes de categoria e as convenções dos dados.",
       annotations: LEITURA,
     },
     () =>
       tentar(async () => {
-        const [conexoes, meses, pf, pj] = await Promise.all([
+        const [conexoes, meses, pf, pj, ritmo] = await Promise.all([
           ler<any[]>("/api/conexoes"),
           ler<string[]>("/api/meses"),
           ler("/api/lancamentos", { pendentes: 1, pessoa: "PF" }),
           ler("/api/lancamentos", { pendentes: 1, pessoa: "PJ" }),
+          ler("/api/ritmo"),
         ]);
         return {
           agora: new Date().toISOString(),
-          bancos: conexoes.map((c) => ({ contas: c.nomes_contas ?? c.conector, status: c.status, ultimo_sync: c.ultimo_sync, erro: c.erro })),
+          bancos: conexoes.map((c) => ({ contas: c.nomes_contas ?? c.conector, status: c.status, ultimo_sync: c.ultimo_sync, dados_do_banco_de: c.atualizado_pluggy, erro: c.erro })),
+          mes_atual: { mes: ritmo.mes, nivel: ritmo.nivel },
           meses: { primeiro: meses.at(-1) ?? null, ultimo: meses[0] ?? null },
           pendentes_de_categoria: { PF: pf.total, PJ: pj.total },
           convencoes: CONVENCOES,
@@ -159,14 +168,53 @@ export function criarServidor(base: string) {
   );
 
   servidor.registerTool(
+    "ritmo_do_mes",
+    {
+      description: "A renda aguenta o mês? (só PF) Renda esperada × orçado × gasto, projeção do fechamento, quanto ainda pode gastar por dia, acumulado dos últimos meses e as categorias acima do normal. Sem mes = mês atual.",
+      inputSchema: { mes: mes.optional() },
+      annotations: LEITURA,
+    },
+    (a) =>
+      tentar(async () => {
+        const r = await ler("/api/ritmo", { mes: a.mes });
+        return {
+          mes: r.mes, situacao: r.situacao, hoje: r.hoje, nivel: r.nivel, analisado: r.analisado, analise_desde: r.inicio,
+          renda_esperada: reais(r.renda.esperada), renda_esperada_vem_de: r.renda.esperada === null ? null : r.renda.origem,
+          entrou: reais(r.renda.recebida), renda_extra: reais(r.renda.extra),
+          orcado: reais(r.orcado), sobra_planejada: r.renda.esperada === null ? null : reais(r.renda.esperada - r.orcado),
+          gasto: reais(r.gasto), sobra: reais(r.sobra), sobra_sem_a_renda_extra: reais(r.sobra - r.renda.extra), teto: reais(r.teto),
+          projecao_do_gasto: r.projecao && { de: reais(r.projecao.min), ate: reais(r.projecao.max), media: reais(r.projecao.media) },
+          pode_gastar_por_dia: r.por_dia && {
+            valor: reais(r.por_dia.valor), media_gasta_por_dia_ate_hoje: reais(r.por_dia.media), dias_que_faltam: r.por_dia.dias, livre_ate_o_fim: reais(r.por_dia.livre), recorrentes_previstas: reais(r.por_dia.recorrentes),
+          },
+          ultimos_meses_fechados: r.acumulado && {
+            de: r.acumulado.de, ate: r.acumulado.ate, meses: r.acumulado.meses,
+            entrou: reais(r.acumulado.entradas), gasto: reais(r.acumulado.gasto), sobra: reais(r.acumulado.sobra),
+          },
+          acima_do_normal: r.acima.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
+        };
+      }),
+  );
+
+  servidor.registerTool(
     "orcamento",
-    { description: "Planejado × gasto por categoria no mês (só PF). planejado null = nunca definido.", inputSchema: { mes }, annotations: LEITURA },
+    {
+      description: "Renda esperada × planejado × gasto no mês (só PF), por categoria. planejado ou esperada null = nunca definido; sugerida = mediana dos 3 últimos meses fechados.",
+      inputSchema: { mes },
+      annotations: LEITURA,
+    },
     (a) =>
       tentar(async () => {
         const o = await ler("/api/orcamento", { mes: a.mes });
+        const planejado = o.linhas.reduce((s: number, l: any) => s + (l.planejado ?? 0), 0);
         return {
           mes: o.mes,
+          renda_esperada: reais(o.renda_esperada), renda_esperada_vem_de: o.renda_esperada === null ? null : o.renda_origem,
+          planejado_total: reais(planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - planejado),
+          gasto_total: reais(o.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + o.sem_categoria),
           gasto_sem_categoria: reais(o.sem_categoria),
+          renda: o.renda.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, esperada: reais(l.planejado), sugerida: reais(l.sugerido), entrou: reais(l.recebido) })),
+          entrou_sem_categoria: reais(o.entradas_sem_categoria),
           linhas: o.linhas.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, grupo: l.grupo, planejado: reais(l.planejado), gasto: reais(l.realizado) })),
         };
       }),
@@ -175,11 +223,13 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "lancamentos",
     {
-      description: "Lista lançamentos, do mais novo ao mais antigo. Filtre por mês, categoria, conta ou texto; use limite e pular para paginar.",
+      description: "Lista lançamentos, do mais novo ao mais antigo. Filtre por mês, categoria, conta, tipo de conta, estornos ou texto; use limite e pular para paginar.",
       inputSchema: {
         mes: mes.optional(),
         categoria_id: categoriaId.optional(),
         conta_id: z.string().uuid().optional(),
+        tipo_conta: z.enum(["contas", "cartoes"]).optional().describe("só contas ou só cartões; com conta_id, vale o conta_id"),
+        estornos: z.boolean().optional().describe("só créditos em cartão (estornos); veja a compra com compras_do_estorno"),
         busca: z.string().max(100).optional().describe("texto na descrição ou nas notas"),
         pendentes: z.boolean().optional().describe("só os sem categoria"),
         pessoa,
@@ -191,7 +241,8 @@ export function criarServidor(base: string) {
     (a) =>
       tentar(async () => {
         const { itens, total } = await ler("/api/lancamentos", {
-          mes: a.mes, categoria: a.categoria_id, conta: a.conta_id, busca: a.busca, pendentes: a.pendentes ? 1 : undefined, pessoa: a.pessoa,
+          mes: a.mes, categoria: a.categoria_id, conta: a.conta_id ?? a.tipo_conta, busca: a.busca,
+          pendentes: a.pendentes ? 1 : undefined, estornos: a.estornos ? 1 : undefined, pessoa: a.pessoa,
         });
         return {
           total,
@@ -200,6 +251,16 @@ export function criarServidor(base: string) {
           itens: itens.slice(a.pular, a.pular + a.limite).map(enxugar),
         };
       }),
+  );
+
+  servidor.registerTool(
+    "compras_do_estorno",
+    {
+      description: "De qual compra veio um crédito no cartão: até 5 candidatas, da mais provável à menos. Só mostra; categorize o crédito com a categoria da compra (categorizar_lancamento), com o ok do Paulo.",
+      inputSchema: { id: z.string().min(1).max(100).describe("id do crédito, de lancamentos com estornos: true") },
+      annotations: LEITURA,
+    },
+    (a) => tentar(async () => (await ler<any[]>(`/api/lancamentos/${encodeURIComponent(a.id)}/compras`)).map(enxugar)),
   );
 
   servidor.registerTool(
@@ -378,14 +439,17 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "definir_orcamento",
     {
-      description: "Define o planejado de uma categoria (PF), em reais. Vale deste mês em diante, até a próxima mudança. 0 = sem orçamento.",
+      description: "Define o planejado de uma categoria (PF), em reais; em categoria de renda, a renda esperada. Vale deste mês em diante, até a próxima mudança. 0 = sem orçamento (na renda: volta à mediana).",
       inputSchema: { mes, categoria_id: categoriaId, valor: z.number().min(0).max(1e9).describe("em reais, ex.: 850.50") },
       annotations: TROCA,
     },
     (a) =>
       tentar(async () => {
         await chamar("PUT", "/api/orcamento", { mes: a.mes, categoria_id: a.categoria_id, valor_centavos: Math.round(a.valor * 100) });
-        const l = (await ler("/api/orcamento", { mes: a.mes })).linhas.find((x: any) => x.categoria_id === a.categoria_id);
+        const o = await ler("/api/orcamento", { mes: a.mes });
+        const r = o.renda.find((x: any) => x.categoria_id === a.categoria_id);
+        if (r) return { ok: true, mes: a.mes, categoria: r.categoria, renda_esperada: reais(r.planejado), entrou: reais(r.recebido) };
+        const l = o.linhas.find((x: any) => x.categoria_id === a.categoria_id);
         return { ok: true, mes: a.mes, ...(l && { categoria: l.categoria, planejado: reais(l.planejado), gasto: reais(l.realizado) }) };
       }),
   );

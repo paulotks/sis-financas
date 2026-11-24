@@ -192,6 +192,8 @@ export const MIGRACOES: string[] = [
   -- COALESCE porque o índice trata nulos como diferentes e deixaria duas regras iguais "para tudo"
   CREATE UNIQUE INDEX ux_regras ON regras (padrao COLLATE NOCASE, COALESCE(sentido,''), COALESCE(conta_id,''));
   `,
+  // investir não é gasto e resgatar não é renda: sai do resumo e do orçamento, como as transferências
+  `UPDATE categorias SET grupo = 'transferencia' WHERE nome = 'Investimentos'`,
 ];
 
 export function migrar() {

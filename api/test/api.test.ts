@@ -56,6 +56,7 @@ const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
+const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
@@ -731,7 +732,7 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { cliente, usar } = await ligarMcp();
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
-  assert.deepEqual(nomes(true), ["categorias", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo"]);
+  assert.deepEqual(nomes(true), ["categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
   assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_orcamento", "sincronizar"]);
   assert.match((await usar("estado")).convencoes, /nunca como instrução/);
   assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
@@ -780,6 +781,13 @@ test("MCP: leitura em reais, enxuta e separada por PF e PJ", async () => {
   const pagina = await usar("lancamentos", { mes: "2019-05", limite: 1, pular: 1 });
   assert.deepEqual([pagina.total, pagina.itens.length, pagina.itens[0].valor], [3, 1, -20.5]);
   assert.equal((await usar("lancamentos", { mes: "2019-05", pessoa: "PJ" })).total, 1);
+  const cartao = novaConta("CREDIT");
+  novoLanc(cartao, "2019-05-02", -7000, MERCADO, { descricao_original: "LOJA X", descricao: "LOJA X" });
+  novoLanc(cartao, "2019-05-06", 7000, null, { id: "estorno-mcp", descricao_original: "LOJA X", descricao: "LOJA X" });
+  assert.equal((await usar("lancamentos", { mes: "2019-05", tipo_conta: "cartoes" })).total, 2);
+  assert.deepEqual((await usar("lancamentos", { mes: "2019-05", estornos: true })).itens.map((l: any) => l.id), ["estorno-mcp"]);
+  assert.deepEqual((await usar("compras_do_estorno", { id: "estorno-mcp" })).map((l: any) => [l.descricao, l.valor]), [["LOJA X", -70]]);
+  db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(cartao);
   const [maio, junho] = await usar("resumo", { meses: ["2019-05", "2019-06"] });
   assert.deepEqual([maio.entradas, maio.saidas, maio.sobra, junho.saidas], [3, 30.5, -27.5, 0]);
   await cliente.close();
@@ -834,6 +842,107 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
   assert.equal((db.prepare("SELECT valor_centavos AS v FROM orcamentos WHERE categoria_id = 13").get() as { v: number }).v, 85055);
   assert.match((await usar("decidir_recorrente", { chave: "inventada", status: "ignorada" })).erro, /Nada foi gravado/);
   assert.ok((await usar("decidir_recorrente", { chave: "spotify", status: "confirmada" })).ok);
+  await cliente.close();
+});
+
+test("migração: Investimentos sai do resumo e nenhuma outra categoria muda de grupo", () => {
+  const m = new DatabaseSync(":memory:");
+  const ANTES = 5;
+  MIGRACOES.slice(0, ANTES).forEach((sql) => m.exec(sql));
+  const grupos = () => Object.fromEntries((m.prepare("SELECT nome, grupo FROM categorias").all() as { nome: string; grupo: string }[]).map((c) => [c.nome, c.grupo]));
+  const antes = grupos();
+  m.exec(MIGRACOES[ANTES]);
+  assert.deepEqual(grupos(), { ...antes, Investimentos: "transferencia" });
+  m.close();
+});
+
+test("ritmo: contas puras", () => {
+  assert.deepEqual([mediana([]), mediana([3, 1, 2]), mediana([4, 1])], [null, 2, 3]);
+  assert.deepEqual([somarMes("2026-01", -1), somarMes("2026-12", 1)], ["2025-12", "2027-01"]);
+
+  const base = { gastoAteHoje: 1000, dia: 10, diasNoMes: 30, depoisDoDia: [500, 900, 700], jaLancado: 1000 };
+  assert.deepEqual(projetar(base), { min: 1700, max: 3000, media: 2350 });
+  assert.equal(projetar({ ...base, dia: 4 }), null); // cedo demais
+  assert.deepEqual(projetar({ ...base, depoisDoDia: [] }), { min: 3000, max: 3000, media: 3000 }); // sem histórico
+  assert.deepEqual(projetar({ ...base, jaLancado: 2500 }), { min: 2500, max: 3000, media: 2750 }); // parcela futura é piso
+
+  assert.deepEqual([nivelDo(90, 100, 120), nivelDo(100, 100, 120), nivelDo(110, 100, 120), nivelDo(121, 100, 120)], ["verde", "verde", "amarelo", "vermelho"]);
+  assert.deepEqual([nivelDo(130, 140, 120), nivelDo(110, 0, 120), nivelDo(110, 100, null), nivelDo(1, 0, null)], ["vermelho", "verde", "amarelo", null]);
+
+  // rendimento de centavos e mês com metade da renda faltando não abrem a análise
+  const t = (mes: string, renda: number) => ({ mes, renda, entradas: renda, gasto: 0 });
+  const totais = [t("2026-01", 3), t("2026-02", 499), t("2026-03", 600), t("2026-04", 1000), t("2026-05", 1000), t("2026-06", 2000), t("2026-07", 0)];
+  assert.equal(inicioDaAnalise(totais, "2026-07"), "2026-03");
+  assert.equal(inicioDaAnalise([t("2026-07", 800)], "2026-07"), "2026-07"); // instalação nova
+  assert.equal(inicioDaAnalise([t("2026-06", 0)], "2026-07"), null);
+});
+
+test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF do resumo fica fora", async () => {
+  const banco = novaConta("BANK"), INVESTIMENTOS = 17;
+  const { mes } = (await chamar("GET", "/api/ritmo")).d, [m1, m2, m3] = [1, 2, 3].map((k) => somarMes(mes, -k));
+  const ritmo = async (m = mes) => (await chamar("GET", `/api/ritmo?mes=${m}`)).d;
+  assert.deepEqual([(await ritmo()).renda.esperada, (await ritmo()).acumulado, (await ritmo()).analisado], [null, null, false]); // sem renda não inventa régua
+
+  for (const [m, renda] of [[m1, 1000000], [m2, 1200000], [m3, 900000]] as const) {
+    novoLanc(banco, `${m}-05`, renda, RENDA);
+    novoLanc(banco, `${m}-28`, -5000, MERCADO, { descricao_original: "Academia", descricao: "Academia" });
+  }
+  novoLanc(banco, `${mes}-01`, -20000, MERCADO);
+  novoLanc(banco, `${mes}-01`, 1500000, RENDA);
+  const r = await ritmo(), resumo = (await chamar("GET", `/api/resumo?mes=${mes}`)).d;
+  assert.deepEqual([r.situacao, r.inicio, r.analisado], ["aberto", m3, true]);
+  assert.deepEqual([r.gasto, r.renda.recebida, r.sobra], [resumo.saidas, resumo.entradas, resumo.entradas - resumo.saidas]);
+  assert.deepEqual([r.renda.esperada, r.renda.origem, r.renda.extra], [1000000, "mediana", resumo.entradas - 1000000]);
+  assert.equal(r.por_dia.livre, 1000000 - r.gasto - r.por_dia.recorrentes); // a renda extra não alivia
+  const fechados = await Promise.all([m1, m2, m3].map(async (m) => (await chamar("GET", `/api/resumo?mes=${m}`)).d));
+  assert.deepEqual([r.acumulado.de, r.acumulado.ate, r.acumulado.meses], [m3, m1, 3]);
+  assert.equal(r.acumulado.sobra, fechados.reduce((s, x) => s + x.entradas - x.saidas, 0));
+
+  // recorrente prevista para este mês desconta do "por dia"; ignorada, não
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: "ignorada" });
+  assert.equal((await ritmo()).por_dia.recorrentes, r.por_dia.recorrentes - 5000);
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: null });
+
+  // digitada no orçamento, a renda esperada manda e não vira gasto planejado
+  await chamar("PUT", "/api/orcamento", { mes, categoria_id: RENDA, valor_centavos: 1300000 });
+  const com = await ritmo(), orc = (await chamar("GET", `/api/orcamento?mes=${mes}`)).d;
+  assert.deepEqual([com.renda.esperada, com.renda.origem, com.orcado], [1300000, "definida", r.orcado]);
+  assert.ok(orc.linhas.every((l: any) => l.grupo !== "renda" || l.planejado === null));
+  const linha = orc.renda.find((l: any) => l.categoria_id === RENDA);
+  assert.deepEqual([linha.planejado, linha.sugerido, orc.renda_esperada], [1300000, 1000000, 1300000]);
+  assert.equal(orc.renda.reduce((s: number, l: any) => s + l.recebido, 0) + orc.entradas_sem_categoria, resumo.entradas);
+  assert.equal(orc.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + orc.sem_categoria, resumo.saidas);
+  await chamar("PUT", "/api/orcamento", { mes, categoria_id: RENDA, valor_centavos: 0 });
+  assert.equal((await ritmo()).renda.origem, "mediana");
+
+  // investir, empresa e conta oculta não mexem no ritmo
+  novoLanc(banco, `${mes}-01`, -777700, INVESTIMENTOS);
+  novoLanc(banco, `${mes}-01`, 888800, INVESTIMENTOS);
+  novoLanc(novaConta("BANK", { pessoa: "PJ" }), `${mes}-01`, -999900, MERCADO);
+  novoLanc(novaConta("BANK", { oculta: 1 }), `${mes}-01`, -999900, MERCADO);
+  assert.deepEqual(await ritmo(), r);
+
+  // mês fechado: vermelho é gastar mais do que entrou; antes do início da análise não há veredito
+  assert.equal((await ritmo(m1)).nivel, "verde");
+  novoLanc(banco, `${m1}-10`, -2000000, MERCADO);
+  const ruim = await ritmo(m1);
+  assert.deepEqual([ruim.situacao, ruim.nivel, ruim.projecao, ruim.por_dia, ruim.acima[0].categoria], ["fechado", "vermelho", null, null, "Mercado"]);
+  assert.ok(ruim.sobra < 0);
+  const antes = await ritmo(somarMes(m3, -1));
+  assert.deepEqual([antes.analisado, antes.nivel], [false, null]);
+  const futuro = await ritmo(somarMes(mes, 1));
+  assert.deepEqual([futuro.situacao, futuro.nivel, futuro.por_dia], ["futuro", null, null]);
+  assert.equal((await chamar("GET", "/api/ritmo?mes=2026-13")).status, 400);
+
+  const { cliente, usar } = await ligarMcp();
+  const pelo = await usar("ritmo_do_mes");
+  assert.deepEqual([pelo.mes, pelo.renda_esperada, pelo.gasto, pelo.ultimos_meses_fechados.meses], [mes, 10000, r.gasto / 100, 3]);
+  assert.equal((await usar("ritmo_do_mes", { mes: m1 })).nivel, "vermelho");
+  assert.equal((await usar("estado")).mes_atual.mes, mes);
+  const orcMcp = await usar("orcamento", { mes });
+  assert.deepEqual([orcMcp.renda_esperada, orcMcp.renda_esperada_vem_de, orcMcp.gasto_total], [10000, "mediana", r.gasto / 100]);
+  assert.equal((await usar("definir_orcamento", { mes, categoria_id: RENDA, valor: 12000 })).renda_esperada, 12000);
+  await usar("definir_orcamento", { mes, categoria_id: RENDA, valor: 0 });
   await cliente.close();
 });
 

@@ -7,6 +7,7 @@ import { env } from "./env.js";
 import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Gasto } from "./recorrentes.js";
+import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_ACUMULADO, MESES_MEDIANA, nivelDo, projetar, somarMes, type TotalMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
 
@@ -45,10 +46,8 @@ app.setErrorHandler((err: Error, _req, reply) => {
 const uuid = z.string().uuid();
 const pessoaPFPJ = z.enum(["PF", "PJ"]);
 const mesRe = /^\d{4}-(0[1-9]|1[0-2])$/;
-const fimDoMes = (mes: string) => {
-  const [a, m] = mes.split("-").map(Number);
-  return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
-};
+const fimDoMes = (mes: string) => `${mes}-${diasDoMes(mes)}`;
+const diaDeHoje = () => (db.prepare("SELECT date('now','localtime') AS hoje").get() as { hoje: string }).hoje;
 
 function ouNaoEncontrado<T>(registro: T | undefined, oQue: string): T {
   if (registro === undefined) throw Object.assign(new Error(`${oQue}: não encontrado(a)`), { statusCode: 404 });
@@ -233,6 +232,8 @@ const BASE_RESUMO = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEF
  * categoria. Sem categoria não abate: pode ser renda, ou um pagamento de fatura ainda não marcado como transferência.
  */
 const GASTO = `CASE WHEN l.valor_centavos < 0 OR cat.grupo <> 'renda' THEN -l.valor_centavos END`;
+/** Entrada em centavos; NULL = é gasto (o contrário de GASTO). */
+const ENTRADA = `CASE WHEN ${GASTO} IS NULL THEN l.valor_centavos END`;
 const periodo = (mes: string, pessoa: string) => [`${mes}-01`, fimDoMes(mes), pessoa];
 
 interface GastoCategoria { categoria_id: number | null; categoria: string; cor: string | null; grupo: string | null; total: number; qtd: number }
@@ -242,32 +243,78 @@ const gastosPorCategoria = (mes: string, pessoa: string) =>
      ${BASE_RESUMO} GROUP BY l.categoria_id HAVING COUNT(${GASTO}) > 0 ORDER BY total DESC`,
   ).all(...periodo(mes, pessoa)) as unknown as GastoCategoria[];
 
+function totaisDoMes(mes: string, pessoa: string) {
+  const tot = db.prepare(
+    `SELECT COALESCE(SUM(${ENTRADA}),0) AS entradas,
+            COALESCE(SUM(${GASTO}),0) AS saidas,
+            SUM(l.categoria_id IS NULL) AS pendentes ${BASE_RESUMO}`,
+  ).get(...periodo(mes, pessoa)) as { entradas: number; saidas: number; pendentes: number | null };
+  return { ...tot, pendentes: tot.pendentes ?? 0 };
+}
+
 app.get("/api/resumo", async (req) => {
   const { mes, pessoa } = z
     .object({ mes: z.string().regex(mesRe), pessoa: z.enum(["PF", "PJ"]).default("PF") })
     .parse(req.query);
-  const tot = db.prepare(
-    `SELECT COALESCE(SUM(CASE WHEN ${GASTO} IS NULL THEN l.valor_centavos END),0) AS entradas,
-            COALESCE(SUM(${GASTO}),0) AS saidas,
-            SUM(l.categoria_id IS NULL) AS pendentes ${BASE_RESUMO}`,
-  ).get(...periodo(mes, pessoa)) as { entradas: number; saidas: number; pendentes: number | null };
-  return { mes, pessoa, ...tot, pendentes: tot.pendentes ?? 0, porCategoria: gastosPorCategoria(mes, pessoa) };
+  return { mes, pessoa, ...totaisDoMes(mes, pessoa), porCategoria: gastosPorCategoria(mes, pessoa) };
 });
 
 // ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
 
-app.get("/api/orcamento", async (req) => {
-  const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
-  const gastos = gastosPorCategoria(mes, "PF");
-  const cats = db.prepare(
+/** Em categoria de renda, o planejado é a renda esperada: não é gasto. */
+const planejadoPorCategoria = (mes: string) =>
+  db.prepare(
     `SELECT c.id AS categoria_id, c.nome AS categoria, c.cor, c.grupo,
             (SELECT valor_centavos FROM orcamentos WHERE categoria_id = c.id AND mes <= ? ORDER BY mes DESC LIMIT 1) AS planejado
      FROM categorias c WHERE c.grupo <> 'transferencia' ORDER BY c.nome`,
   ).all(mes) as { categoria_id: number; categoria: string; cor: string | null; grupo: string; planejado: number | null }[];
+const somar = (ns: (number | null)[]) => ns.reduce<number>((s, n) => s + (n ?? 0), 0);
+
+const totaisPorMes = (ate: string) =>
+  db.prepare(
+    `SELECT substr(l.data,1,7) AS mes, COALESCE(SUM(${ENTRADA}),0) AS entradas,
+            COALESCE(SUM(CASE WHEN cat.grupo = 'renda' THEN ${ENTRADA} END),0) AS renda, COALESCE(SUM(${GASTO}),0) AS gasto
+     ${BASE_RESUMO} GROUP BY 1 ORDER BY 1`,
+  ).all("0000-01-01", fimDoMes(ate), "PF") as unknown as TotalMes[];
+
+/** A renda que serve de régua no mês, o histórico de onde ela saiu e o orçado de gasto. Só PF. */
+function reguaDoMes(mes: string, mesAtual: string) {
+  const totais = totaisPorMes(mesAtual);
+  const inicio = inicioDaAnalise(totais, mesAtual);
+  const anteriores = fechadosAntes(totais, mes < mesAtual ? mes : mesAtual, MESES_MEDIANA, inicio);
+  const cats = planejadoPorCategoria(mes);
+  const definida = somar(cats.filter((c) => c.grupo === "renda").map((c) => c.planejado));
+  return {
+    totais, inicio, anteriores, cats,
+    orcado: somar(cats.filter((c) => c.grupo !== "renda").map((c) => c.planejado)),
+    esperada: definida || mediana(anteriores.map((t) => t.renda)) || null,
+    origem: definida ? ("definida" as const) : ("mediana" as const),
+  };
+}
+
+app.get("/api/orcamento", async (req) => {
+  const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
+  const gastos = gastosPorCategoria(mes, "PF");
+  const { cats, anteriores, esperada, origem } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
   const linhas = cats
-    .map((c) => ({ ...c, realizado: gastos.find((g) => g.categoria_id === c.categoria_id)?.total ?? 0 }))
+    .map((c) => ({ ...c, planejado: c.grupo === "renda" ? null : c.planejado, realizado: gastos.find((g) => g.categoria_id === c.categoria_id)?.total ?? 0 }))
     .filter((c) => c.grupo !== "renda" || c.realizado); // renda só aparece se teve saída (para o total bater com o Resumo)
-  return { mes, linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0 };
+  const entradas = db.prepare(
+    `SELECT l.categoria_id, substr(l.data,1,7) AS mes, SUM(${ENTRADA}) AS total ${BASE_RESUMO} GROUP BY 1, 2 HAVING COUNT(${ENTRADA}) > 0`,
+  );
+  const doMes = entradas.all(...periodo(mes, "PF")) as { categoria_id: number | null; total: number }[];
+  const antes = anteriores.length
+    ? (entradas.all(`${anteriores[0].mes}-01`, fimDoMes(anteriores.at(-1)!.mes), "PF") as { categoria_id: number | null; mes: string; total: number }[])
+    : [];
+  const renda = cats.filter((c) => c.grupo === "renda").map(({ grupo, ...c }) => ({
+    ...c,
+    recebido: doMes.find((e) => e.categoria_id === c.categoria_id)?.total ?? 0,
+    sugerido: mediana(anteriores.map((t) => antes.find((e) => e.categoria_id === c.categoria_id && e.mes === t.mes)?.total ?? 0)),
+  }));
+  return {
+    mes, linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0,
+    renda, renda_esperada: esperada, renda_origem: origem, entradas_sem_categoria: doMes.find((e) => e.categoria_id === null)?.total ?? 0,
+  };
 });
 
 app.put("/api/orcamento", async (req) => {
@@ -281,11 +328,66 @@ app.put("/api/orcamento", async (req) => {
   return { ok: true };
 });
 
+// ---------------- ritmo: a renda aguenta o mês? (só PF) ----------------
+
+app.get("/api/ritmo", async (req) => {
+  const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
+  const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
+  const situacao = mes === mesAtual ? "aberto" : mes < mesAtual ? "fechado" : "futuro";
+  const { totais, inicio, anteriores, orcado, esperada, origem } = reguaDoMes(mes, mesAtual);
+  const { entradas, saidas } = totaisDoMes(mes, "PF");
+  // sem renda esperada, o orçado é o único limite
+  const teto = esperada ?? (orcado || null);
+  const analisado = inicio !== null && mes >= inicio;
+
+  const recorrentes = situacao === "aberto"
+    ? somar(listarRecorrentes("PF", hoje).filter((r) => r.status !== "ignorada" && r.situacao !== "parada" && r.proxima.startsWith(mes)).map((r) => r.valor))
+    : 0;
+  const gastoEntre = (de: string, ate: string) =>
+    (db.prepare(`SELECT COALESCE(SUM(${GASTO}),0) AS total ${BASE_RESUMO}`).get(de, ate, "PF") as { total: number }).total;
+  const dia = Number(hoje.slice(8)), diasNoMes = diasDoMes(mes);
+  const gastoAteHoje = situacao === "aberto" ? gastoEntre(`${mes}-01`, hoje) : 0;
+  const projecao = situacao === "aberto"
+    ? projetar({
+        gastoAteHoje, dia, diasNoMes, jaLancado: saidas,
+        depoisDoDia: anteriores.map((t) => gastoEntre(`${t.mes}-${String(dia + 1).padStart(2, "0")}`, fimDoMes(t.mes))),
+      })
+    : null;
+  const dias = diasNoMes - dia + 1; // contando hoje
+  const livre = (teto ?? 0) - saidas - recorrentes;
+
+  const noFim = fechadosAntes(totais, situacao === "fechado" ? somarMes(mes, 1) : mesAtual, MESES_ACUMULADO, inicio);
+  const ganho = somar(noFim.map((t) => t.entradas)), gasto = somar(noFim.map((t) => t.gasto));
+
+  const historico = anteriores.map((t) => gastosPorCategoria(t.mes, "PF"));
+  const acima = situacao === "futuro" || !historico.length ? [] : gastosPorCategoria(mes, "PF")
+    .filter((g) => g.categoria_id !== null)
+    .map(({ categoria_id, categoria, cor, total }) => {
+      // reembolso pode deixar o mês da categoria negativo; "normal" abaixo de zero não diz nada
+      const normal = Math.max(0, mediana(historico.map((h) => h.find((x) => x.categoria_id === categoria_id)?.total ?? 0))!);
+      return { categoria_id, categoria, cor, gasto: total, normal, acima: total - normal };
+    })
+    .filter((c) => c.acima > 0)
+    .sort((a, b) => b.acima - a.acima)
+    .slice(0, 3);
+
+  return {
+    mes, situacao, hoje, inicio, analisado,
+    renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
+    orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
+    // contra a renda, não contra o teto: sem renda conhecida, passar do orçado é amarelo, não "estourando a renda"
+    nivel: situacao === "aberto" ? nivelDo(projecao?.media ?? saidas, orcado, esperada)
+      : situacao === "fechado" && analisado ? nivelDo(saidas, orcado, entradas)
+      : null,
+    por_dia: situacao === "aberto" && teto !== null ? { valor: Math.trunc(livre / dias), media: Math.round(gastoAteHoje / dia), livre, dias, recorrentes } : null,
+    acumulado: noFim.length ? { de: noFim[0].mes, ate: noFim.at(-1)!.mes, meses: noFim.length, entradas: ganho, gasto, sobra: ganho - gasto } : null,
+    acima,
+  };
+});
+
 // ---------------- recorrentes ----------------
 
-app.get("/api/recorrentes", async (req) => {
-  const { pessoa } = z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query);
-  const { hoje } = db.prepare("SELECT date('now','localtime') AS hoje").get() as { hoje: string };
+function listarRecorrentes(pessoa: string, hoje: string) {
   const gastos = db.prepare(
     `SELECT l.data, l.descricao, l.descricao_original, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
      ${BASE_RESUMO} AND l.valor_centavos < 0 AND COALESCE(l.total_parcelas, 0) <= 1 ORDER BY l.data`,
@@ -296,6 +398,11 @@ app.get("/api/recorrentes", async (req) => {
   return detectarRecorrentes(gastos, hoje)
     .map((r) => ({ ...r, status: status.get(r.chave) ?? null }))
     .filter((r) => r.status || r.situacao !== "parada"); // o que já acabou só aparece se o Paulo decidiu algo sobre ele
+}
+
+app.get("/api/recorrentes", async (req) => {
+  const { pessoa } = z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query);
+  return listarRecorrentes(pessoa, diaDeHoje());
 });
 
 app.put("/api/recorrentes", async (req) => {
