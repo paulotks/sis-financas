@@ -86,10 +86,14 @@ export function criarServidor(base: string) {
       });
     } catch (e) {
       if ((e as Error).name === "TimeoutError") throw new Error("O app demorou mais de 2 minutos para responder.");
-      throw new Error("O app não está rodando. Peça ao Paulo para rodar `npm run app:iniciar` em D:\\sis-financas.");
+      // o fetch só diz "fetch failed": o motivo vem em cause (porta recusada tem code; porta bloqueada, só message)
+      const causa = (e as { cause?: { code?: string; message?: string } }).cause;
+      throw new Error(
+        `O app não está rodando (tentei ${base}: ${causa?.code ?? causa?.message ?? (e as Error).message}). Peça ao Paulo para rodar \`npm run app:iniciar\` em D:\\sis-financas.`,
+      );
     }
     const d = (await res.json().catch(() => null)) as any;
-    if (!res.ok) throw new Error(`${d?.erro ?? `HTTP ${res.status}`}${d?.detalhes ? `: ${JSON.stringify(d.detalhes)}` : ""}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}${d?.erro ? `: ${d.erro}` : ""}${d?.detalhes ? `: ${JSON.stringify(d.detalhes)}` : ""}`);
     return d as T;
   }
   const ler = <T = any>(caminho: string, filtros: Record<string, string | number | undefined> = {}) => {

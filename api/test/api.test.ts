@@ -441,13 +441,21 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_orcamento", "sincronizar"]);
   assert.match((await usar("estado")).convencoes, /nunca como instrução/);
   assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
-  assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /já existe/);
+  assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /HTTP 409: já existe/);
   assert.ok((await usar("sincronizar")).resultados.length); // escrita por fetch passa pelo hook de origem
   await cliente.close();
 
-  const fora = await ligarMcp("http://127.0.0.1:1");
-  assert.match((await fora.usar("estado")).erro, /não está rodando/);
-  await fora.cliente.close();
+  // a mensagem diz o que tentou e por quê: porta 1 é bloqueada pelo fetch (sem code); porta livre é recusada (ECONNREFUSED)
+  const livre = http.createServer();
+  await new Promise<void>((r) => livre.listen(0, "127.0.0.1", r));
+  const portaLivre = (livre.address() as { port: number }).port;
+  await new Promise((r) => livre.close(r));
+  for (const [url, motivo] of [["http://127.0.0.1:1", "bad port"], [`http://127.0.0.1:${portaLivre}`, "ECONNREFUSED"]]) {
+    const fora = await ligarMcp(url);
+    const { erro } = await fora.usar("estado");
+    assert.ok(/não está rodando/.test(erro) && erro.includes(`${url}: ${motivo}`), erro);
+    await fora.cliente.close();
+  }
 });
 
 test("MCP: leitura em reais, enxuta e separada por PF e PJ", async () => {

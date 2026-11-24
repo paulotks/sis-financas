@@ -14,7 +14,7 @@ Spec: [specs/lote-1.md](specs/lote-1.md). Rápido e sem migração. Ordem sugeri
 
 | # | Melhoria | Tam. | Base | Status |
 |---|---|---|---|---|
-| 1 | Erro do MCP mostra a URL tentada e o código | P | não | a iniciar |
+| 1 | Erro do MCP mostra a URL tentada e o código | P | não | feito (2026-11-24) |
 | 3 | Barra lateral mostra "Última: nunca" | P | não | feito (2026-11-24) |
 | 13 | Categorias e regras: criar regra na tela, apagar e mesclar categoria | M | não | a iniciar |
 | 14 | Painel Regras: categoria visível, sem rolagem horizontal | P | não | feito (2026-11-24) |
