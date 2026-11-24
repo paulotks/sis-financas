@@ -22,6 +22,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
   porque a edição manual nunca mais é alterada por regra. Comece por pendentes_agrupados e use previa_regra antes de criar_regra.
   Nome genérico pega gasto que não devia. Não crie regra com "Pagamento de conta".
+- Regra pode valer só para saída ou só para entrada (sentido) e só para uma conta (conta_id). Use o sentido do grupo que você está
+  categorizando: o mesmo nome costuma aparecer pagando e recebendo. Entre regras que pegam o mesmo lançamento, vence a de texto mais longo.
 - Orçamento é só PF e vale do mês informado em diante, até a próxima mudança. 0 = sem orçamento.
 - Sincronize só se o Paulo pedir ou se a última sincronização tiver mais de 24 h (o banco atualiza 1x por dia).`;
 
@@ -230,22 +232,29 @@ export function criarServidor(base: string) {
 
   servidor.registerTool("regras", { description: "Regras de categorização e quantos lançamentos cada uma pega.", annotations: LEITURA }, () =>
     tentar(async () =>
-      (await ler<any[]>("/api/regras")).map(({ id, padrao, categoria_id, categoria, prioridade, usos }) => ({ id, padrao, categoria_id, categoria, prioridade, usos })),
+      (await ler<any[]>("/api/regras")).map(({ id, padrao, sentido, conta, categoria_id, categoria, prioridade, usos }) => ({
+        id, padrao, ...(sentido && { sentido }), ...(conta && { conta }), categoria_id, categoria, prioridade, usos,
+      })),
     ),
   );
 
-  const padrao = z.string().trim().min(3).max(120).describe("trecho contido na descrição original; maiúsculas não contam");
+  /** Onde a regra vale: a prévia e a criação precisam receber o mesmo, senão o total não bate. */
+  const alcance = {
+    padrao: z.string().trim().min(3).max(120).describe("trecho contido na descrição original; maiúsculas não contam"),
+    sentido: z.enum(["saida", "entrada"]).optional().describe("só saída ou só entrada; sem isto, os dois"),
+    conta_id: z.string().uuid().optional().describe("só nesta conta (id da ferramenta contas); sem isto, todas"),
+  };
 
   servidor.registerTool(
     "previa_regra",
     {
-      description: "O que uma regra com esse texto pegaria, sem gravar nada (PF, PJ e contas ocultas). ja_categorizados = no máximo quantos teriam a categoria trocada (outra regra mais específica ou prioritária pode vencer); o número real vem em recategorizados, ao criar. Confira os exemplos antes.",
-      inputSchema: { padrao },
+      description: "O que uma regra com esse texto (e sentido e conta) pegaria, sem gravar nada (PF, PJ e contas ocultas). ja_categorizados = no máximo quantos teriam a categoria trocada (outra regra mais específica ou prioritária pode vencer); o número real vem em recategorizados, ao criar. Confira os exemplos antes.",
+      inputSchema: alcance,
       annotations: LEITURA,
     },
     (a) =>
       tentar(async () => {
-        const p = await ler("/api/regras/previa", { padrao: a.padrao });
+        const p = await ler("/api/regras/previa", a);
         return { total: p.total, sem_categoria: p.pendentes, ja_categorizados: p.total - p.pendentes, descricoes_distintas: p.descricoes, exemplos: p.exemplos };
       }),
   );
@@ -307,26 +316,30 @@ export function criarServidor(base: string) {
     {
       description: "Cria uma regra e já recategoriza passado e futuro (menos o editado à mão). Só depois de previa_regra e do ok do Paulo. Para desfazer, o Paulo apaga a regra na tela Categorias.",
       inputSchema: {
-        padrao,
+        ...alcance,
         categoria_id: categoriaId,
-        total_previsto: z.number().int().min(0).describe("o total que previa_regra devolveu para este mesmo texto"),
-        substituir: z.boolean().default(false).describe("true só para trocar a categoria de uma regra que já existe"),
+        total_previsto: z.number().int().min(0).describe("o total que previa_regra devolveu para este mesmo texto, sentido e conta"),
+        substituir: z.boolean().default(false).describe("true só se já há regra com esse texto: troca a categoria da que tem o mesmo sentido e conta ou, se ela cobre só parte, cria outra ao lado"),
       },
       annotations: TROCA,
     },
     (a) =>
       tentar(async () => {
-        const previa = await ler("/api/regras/previa", { padrao: a.padrao });
+        const previa = await ler("/api/regras/previa", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id });
         if (previa.total !== a.total_previsto) {
           throw new Error(`Nada foi gravado: a regra pegaria ${previa.total} lançamento(s), não ${a.total_previsto}. Rode previa_regra e confirme com o Paulo.`);
         }
-        const existente = (await ler<any[]>("/api/regras")).find((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase());
-        if (existente && !a.substituir) {
-          throw new Error(`Nada foi gravado: já existe a regra "${existente.padrao}" → ${existente.categoria}. Confirme com o Paulo e use substituir: true.`);
+        const mesmoTexto = (await ler<any[]>("/api/regras")).filter((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase());
+        const existente = mesmoTexto.find((r) => r.sentido === (a.sentido ?? null) && r.conta_id === (a.conta_id ?? null));
+        // regra de outro sentido ou conta que pega parte dos mesmos lançamentos também pede confirmação
+        const cruza = existente ?? mesmoTexto.find((r) => [[r.sentido, a.sentido], [r.conta_id, a.conta_id]].every(([x, y]) => !x || !y || x === y));
+        if (cruza && !a.substituir) {
+          const onde = [cruza.sentido && `só ${cruza.sentido}`, cruza.conta && `só ${cruza.conta}`].filter(Boolean).join(", ");
+          throw new Error(`Nada foi gravado: já existe a regra "${cruza.padrao}"${onde && ` (${onde})`} → ${cruza.categoria}. Confirme com o Paulo e use substituir: true.`);
         }
         // o texto já gravado, e não o novo: a API só ignora maiúsculas sem acento e criaria uma segunda regra
-        const r = await chamar("POST", "/api/regras", { padrao: existente?.padrao ?? a.padrao, categoria_id: a.categoria_id });
-        return { regra_id: r.regra.id, padrao: r.regra.padrao, recategorizados: r.recategorizados, ...(existente && { categoria_anterior: existente.categoria }) };
+        const r = await chamar("POST", "/api/regras", { padrao: (existente ?? mesmoTexto[0])?.padrao ?? a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
+        return { regra_id: r.regra.id, padrao: r.regra.padrao, ...(a.sentido && { sentido: a.sentido }), recategorizados: r.recategorizados, ...(existente && { categoria_anterior: existente.categoria }) };
       }),
   );
 

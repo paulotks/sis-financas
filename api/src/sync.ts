@@ -113,7 +113,7 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
         comum.parcela, comum.total, comum.fatura, bruto, t.id);
       if (antes.bruto !== bruto) atualizados++; // relido sem mudança não conta
     } else {
-      const s = sugerirCategoria(original, t.category, regras);
+      const s = sugerirCategoria({ descricao_original: original, categoria_pluggy: t.category, valor_centavos: comum.valor, conta_id: t.accountId }, regras);
       inserir.run(t.id, t.accountId, comum.data, original, s.descricao || t.description || original, comum.valor,
         t.type, t.status ?? null, t.category ?? null, s.categoria_id, s.regra_id, comerciante, comum.parcela,
         comum.total, comum.fatura, bruto);

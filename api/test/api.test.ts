@@ -4,6 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -50,7 +51,7 @@ Object.assign(process.env, {
   SYNC_DIAS_INICIAIS: "365",
 });
 const { app } = await import("../src/server.js");
-const { db } = await import("../src/db.js");
+const { db, MIGRACOES } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte } = await import("../src/recorrentes.js");
@@ -65,6 +66,7 @@ after(async () => {
 });
 
 const ids = () => (db.prepare("SELECT id FROM lancamentos ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+const mov = (descricao_original: string, categoria_pluggy: string) => ({ descricao_original, categoria_pluggy, valor_centavos: -100, conta_id: CARTAO });
 const lanc = (id: string) => db.prepare("SELECT * FROM lancamentos WHERE id = ?").get(id) as Record<string, unknown>;
 const sync = async () => {
   const [r] = await sincronizar(ITEM);
@@ -160,7 +162,7 @@ test("sincronizações simultâneas devolvem cada uma o seu resultado", async ()
 
 test("categorias da Pluggy caem no lugar certo", () => {
   const nome = (c: string) => {
-    const id = sugerirCategoria("", c, []).categoria_id;
+    const id = sugerirCategoria(mov("", c), []).categoria_id;
     return id && (db.prepare("SELECT nome FROM categorias WHERE id = ?").get(id) as { nome: string }).nome;
   };
   for (const [pluggy, nossa] of [
@@ -205,7 +207,7 @@ test("categorias da Pluggy caem no lugar certo", () => {
 
 test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual for a categoria da Pluggy", () => {
   const grupo = (descricao: string, cp: string) => {
-    const id = sugerirCategoria(descricao, cp, []).categoria_id;
+    const id = sugerirCategoria(mov(descricao, cp), []).categoria_id;
     return id && (db.prepare("SELECT grupo FROM categorias WHERE id = ?").get(id) as { grupo: string }).grupo;
   };
   for (const [descricao, cp] of [
@@ -220,8 +222,8 @@ test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual fo
   // Pix no crédito: tirar só esta perna contaria o gasto em dobro
   assert.equal(grupo("Valor adicionado na conta por cartão de crédito", "Transfer - Internal"), null);
   // regra do Paulo continua mandando
-  const pet = { id: 1, padrao: "reservado belinha", categoria_id: 8, descricao: null };
-  assert.equal(sugerirCategoria("Dinheiro reservado Belinha", "Transfer - Internal", [pet]).categoria_id, 8);
+  const pet = { id: 1, padrao: "reservado belinha", sentido: null, conta_id: null, categoria_id: 8, descricao: null };
+  assert.equal(sugerirCategoria(mov("Dinheiro reservado Belinha", "Transfer - Internal"), [pet]).categoria_id, 8);
 });
 
 test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza o que já estava", async () => {
@@ -413,6 +415,78 @@ test("mesclar categoria: leva lançamentos e regras, mantém a edição manual, 
   const linha = (await chamar("GET", "/api/orcamento?mes=2018-02")).d.linhas.find((l: any) => l.categoria_id === para);
   assert.deepEqual([linha.planejado, linha.realizado], [222, 1150]);
   await chamar("DELETE", `/api/regras/${regra}`);
+});
+
+test("regra por sentido e por conta: só pega o seu lado, convive com o mesmo texto e a prévia bate com o aplicado", async () => {
+  const a = novaConta("BANK"), b = novaConta("BANK");
+  for (const [conta, valor] of [[a, -100], [a, -200], [a, 300], [b, -400], [b, 500]] as const)
+    novoLanc(conta, "2017-01-01", valor, null, { descricao_original: "Pix Fulana Loja" });
+  const cats = () => db.prepare("SELECT categoria_id AS c FROM lancamentos WHERE data = '2017-01-01' ORDER BY abs(valor_centavos)").all().map((l: any) => l.c);
+  /** Cria a regra conferindo que a prévia contou o mesmo que mudou (só vale quando nenhuma outra regra disputa os lançamentos). */
+  const criar = async (padrao: string, categoria_id: number, extra: Record<string, string> = {}, confere = false) => {
+    const previa = (await chamar("GET", `/api/regras/previa?${new URLSearchParams({ padrao, ...extra })}`)).d;
+    const r = await chamar("POST", "/api/regras", { padrao, categoria_id, ...extra });
+    assert.equal(r.status, 200);
+    if (confere) assert.equal(r.d.recategorizados, previa.total);
+    return { ...r.d.regra, total: previa.total } as { id: number; total: number; categoria_id: number };
+  };
+
+  const saida = await criar("pix fulana", 9, { sentido: "saida" }, true);
+  assert.deepEqual([saida.total, cats()], [3, [9, 9, null, 9, null]]);
+  const entrada = await criar("PIX FULANA", 18, { sentido: "entrada" }, true); // mesmo texto, outro sentido: convive
+  assert.notEqual(entrada.id, saida.id);
+  assert.deepEqual([entrada.total, cats()], [2, [9, 9, 18, 9, 18]]);
+
+  // mesmo texto, para tudo: existe, mas perde para as que têm sentido; repetir troca a categoria em vez de duplicar
+  const geral = await criar("pix fulana", 21);
+  assert.deepEqual([geral.total, cats()], [5, [9, 9, 18, 9, 18]]);
+  const repetida = await criar("Pix Fulana", 11);
+  assert.deepEqual([repetida.id, repetida.categoria_id], [geral.id, 11]);
+  assert.equal((await criar("pix fulana", 13, { sentido: "saida" })).id, saida.id);
+  assert.deepEqual(cats(), [13, 13, 18, 13, 18]);
+
+  // por conta: só a conta b; e com sentido e conta juntos
+  const daB = await criar("pix fulana", 8, { conta_id: b });
+  assert.deepEqual([daB.total, cats()], [2, [13, 13, 18, 8, 8]]);
+  const daBsaida = await criar("pix fulana", 3, { conta_id: b, sentido: "saida" });
+  assert.deepEqual([daBsaida.total, cats()], [1, [13, 13, 18, 3, 8]]);
+  // texto mais longo vence, mesmo sem sentido: regra antiga e específica não perde para uma nova e curta
+  const longa = await criar("pix fulana loja", 10);
+  assert.deepEqual(cats(), [10, 10, 10, 10, 10]);
+
+  assert.equal((await chamar("POST", "/api/regras", { padrao: "pix fulana", categoria_id: 3, sentido: "x" })).status, 400);
+  assert.equal((await chamar("POST", "/api/regras", { padrao: "pix fulana", categoria_id: 3, conta_id: ITEM2 })).status, 400); // conta que não existe
+  const lista = (await chamar("GET", "/api/regras")).d.filter((r: any) => /^pix fulana$/i.test(r.padrao));
+  assert.equal(lista.length, 5);
+  assert.match(lista.find((r: any) => r.id === daB.id).conta, /^conta /);
+  for (const r of [...lista, longa]) await chamar("DELETE", `/api/regras/${r.id}`);
+  assert.deepEqual(cats(), [null, null, null, null, null]);
+  db.prepare("DELETE FROM lancamentos WHERE data = '2017-01-01'").run();
+});
+
+test("migração das regras: mesmas regras com os mesmos ids, valendo para tudo, e sem duplicar", () => {
+  const m = new DatabaseSync(":memory:");
+  m.exec("PRAGMA foreign_keys = ON");
+  const ANTES = 4; // versão da base antes de sentido e conta
+  MIGRACOES.slice(0, ANTES).forEach((sql) => m.exec(sql));
+  m.exec(`INSERT INTO regras (id, padrao, categoria_id, descricao, prioridade, criado_em) VALUES
+    (3, 'Uber', 4, NULL, 50, '2026-01-01'), (27, 'água', 2, 'Água', 90, '2026-02-02');
+    INSERT INTO conexoes (item_id) VALUES ('i'); INSERT INTO contas (id, item_id) VALUES ('c', 'i');
+    INSERT INTO lancamentos (id, conta_id, data, valor_centavos, regra_id) VALUES ('l', 'c', '2026-01-01', -1, 27)`);
+  const colunas = "id, padrao, categoria_id, descricao, prioridade, criado_em";
+  const ver = () => JSON.stringify(m.prepare(`SELECT ${colunas} FROM regras ORDER BY id`).all());
+  const antes = ver();
+  m.exec("BEGIN");
+  m.exec(MIGRACOES[ANTES]);
+  m.exec("COMMIT");
+  assert.equal(ver(), antes);
+  assert.equal((m.prepare("SELECT COUNT(*) AS n FROM regras WHERE sentido IS NULL AND conta_id IS NULL").get() as { n: number }).n, 2);
+  assert.ok(m.prepare("SELECT 1 FROM lancamentos l JOIN regras r ON r.id = l.regra_id").get());
+  assert.throws(() => m.exec("INSERT INTO regras (padrao, categoria_id) VALUES ('UBER', 4)"), /UNIQUE/);
+  m.exec("INSERT INTO regras (padrao, categoria_id, sentido) VALUES ('UBER', 4, 'saida')");
+  assert.throws(() => m.exec("INSERT INTO regras (padrao, categoria_id, sentido) VALUES ('uber', 4, 'saida')"), /UNIQUE/);
+  assert.equal((m.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
+  m.close();
 });
 
 test("planejado vale dali em diante e não mexe no passado", async () => {
@@ -617,6 +691,20 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
   await usar("criar_regra", { padrao: "ÁGUA XYZ", categoria_id: 2, total_previsto: 0 });
   await usar("criar_regra", { padrao: "água xyz", categoria_id: 3, total_previsto: 0, substituir: true });
   assert.deepEqual((await usar("regras")).map((r: any) => [r.padrao, r.categoria_id]).sort(), [["padoca", 13], ["ÁGUA XYZ", 3]]);
+
+  // sentido: a prévia conta só aquele lado; texto que já tem regra (mesmo de outro alcance) continua pedindo substituir
+  const entra = { padrao: "padoca", sentido: "entrada" };
+  assert.equal((await usar("previa_regra", entra)).total, 1);
+  assert.match((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 3 })).erro, /Nada foi gravado.* 1 /);
+  assert.match((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 1 })).erro, /já existe a regra "padoca" → /);
+  assert.equal((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 1, substituir: true })).recategorizados, 1);
+  assert.deepEqual(cats(), [MERCADO, 13, RENDA, 13]);
+  assert.match((await usar("criar_regra", { ...entra, categoria_id: 10, total_previsto: 1 })).erro, /"padoca" \(só entrada\) → Renda/);
+  const daConta = { padrao: "padoca", conta_id: (lanc(itens[0].id) as any).conta_id };
+  assert.equal((await usar("previa_regra", daConta)).total, 2);
+  // saída e entrada não se cruzam, mas a regra geral cruza com as duas
+  assert.match((await usar("criar_regra", { padrao: "padoca", sentido: "saida", categoria_id: 10, total_previsto: 2 })).erro, /"padoca" → Lazer/);
+  assert.deepEqual((await usar("regras")).filter((r: any) => r.padrao === "padoca").map((r: any) => r.sentido), [undefined, "entrada"]);
 
   assert.equal((await usar("definir_orcamento", { mes: "2019-05", categoria_id: 13, valor: 850.55 })).planejado, 850.55);
   assert.equal((db.prepare("SELECT valor_centavos AS v FROM orcamentos WHERE categoria_id = 13").get() as { v: number }).v, 85055);

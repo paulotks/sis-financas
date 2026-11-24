@@ -142,9 +142,16 @@ export interface PreviaRegra {
   exemplos: { descricao: string | null; categoria: string | null; qtd: number }[];
 }
 
+export type Sentido = "saida" | "entrada";
+export const SENTIDOS: Record<Sentido, string> = { saida: "só saída", entrada: "só entrada" };
+
+/** sentido nulo = entrada e saída; conta nula = todas. */
 export interface Regra {
   id: number;
   padrao: string;
+  sentido: Sentido | null;
+  conta_id: string | null;
+  conta: string | null;
   categoria_id: number;
   categoria: string;
   descricao: string | null;
@@ -209,8 +216,8 @@ export const api = {
   mesclarCategoria: (id: number, destino: number) =>
     req<{ ok: true; lancamentos: number; regras: number }>("POST", `/api/categorias/${id}/mesclar`, { destino }),
   regras: () => req<Regra[]>("GET", "/api/regras"),
-  previaRegra: (padrao: string) => req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao })}`),
-  criarRegra: (d: { padrao: string; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
+  previaRegra: (padrao: string, sentido: Sentido | null) => req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao, sentido: sentido ?? undefined })}`),
+  criarRegra: (d: { padrao: string; sentido: Sentido | null; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
   apagarRegra: (id: number) => req<{ ok: boolean; recategorizados: number }>("DELETE", `/api/regras/${id}`),
 };
 

@@ -28,7 +28,7 @@ Spec: [specs/lote-2.md](specs/lote-2.md). A ordem importa: 7 → 5 → 4 → 2. 
 
 | # | Melhoria | Tam. | Base | Status |
 |---|---|---|---|---|
-| 7 | Regra só de entrada ou só de saída, e por conta | M | migração | próximo |
+| 7 | Regra só de entrada ou só de saída, e por conta | M | migração | feito (2026-11-24) |
 | 5 | Reembolso em conta abate a categoria; rendimento vira Renda | P | regrava categorias | próximo |
 | 4 | Pix no crédito do Nubank contado em dobro: vale a cobrança no cartão | M | regrava categorias | próximo |
 | 2 | Estorno: correção à mão com um clique | M | não | próximo |

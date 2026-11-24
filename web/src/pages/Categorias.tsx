@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, GRUPOS, type Categoria, type CategoriaComUsos, type Regra } from "../lib/api";
+import { api, GRUPOS, SENTIDOS, type Categoria, type CategoriaComUsos, type Regra, type Sentido } from "../lib/api";
 import SelectCategoria from "../components/SelectCategoria";
+import SelectSentido from "../components/SelectSentido";
+
+/** "só saída · Conta X"; vazio se a regra vale para tudo. */
+const alcance = (r: Regra) => [r.sentido && SENTIDOS[r.sentido], r.conta].filter(Boolean).join(" · ");
 
 export default function Categorias() {
   const qc = useQueryClient();
@@ -91,7 +95,7 @@ export default function Categorias() {
                 <tr key={r.id}>
                   <td>
                     <code>{r.padrao}</code>
-                    <div className="sub">{r.usos} uso(s){r.descricao && ` → ${r.descricao}`}</div>
+                    <div className="sub">{[alcance(r), `${r.usos} uso(s)`].filter(Boolean).join(" · ")}{r.descricao && ` → ${r.descricao}`}</div>
                   </td>
                   <td>{r.categoria}</td>
                   <td>
@@ -173,22 +177,26 @@ const EXEMPLOS = 5;
 function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Regra[] | undefined }) {
   const qc = useQueryClient();
   const [padrao, setPadrao] = useState("");
+  const [sentido, setSentido] = useState<Sentido | null>(null);
   const [categoria, setCategoria] = useState<number | null>(null);
   const texto = padrao.trim();
   const valido = texto.length >= 3;
   const previa = useQuery({
-    queryKey: ["previaRegra", texto],
-    queryFn: () => api.previaRegra(texto),
+    queryKey: ["previaRegra", texto, sentido],
+    queryFn: () => api.previaRegra(texto, sentido),
     enabled: valido,
     placeholderData: keepPreviousData,
   });
   const n = valido && !previa.isPlaceholderData ? previa.data : undefined; // só vale a prévia deste texto, não a do anterior
-  const existente = regras?.find((r) => r.padrao.toLowerCase() === texto.toLowerCase());
+  const mesmoTexto = regras?.filter((r) => r.padrao.toLowerCase() === texto.toLowerCase()) ?? [];
+  const existente = mesmoTexto.find((r) => r.sentido === sentido && r.conta_id === null); // regra por conta se cria pelo Claude
+  const outras = mesmoTexto.filter((r) => r !== existente);
   const criar = useMutation({
     // o texto já gravado, e não o novo: a API só ignora maiúsculas sem acento e criaria uma segunda regra
-    mutationFn: () => api.criarRegra({ padrao: existente?.padrao ?? texto, categoria_id: categoria! }),
+    mutationFn: () => api.criarRegra({ padrao: (existente ?? mesmoTexto[0])?.padrao ?? texto, sentido, categoria_id: categoria! }),
     onSuccess: () => {
       setPadrao("");
+      setSentido(null);
       setCategoria(null);
       qc.invalidateQueries();
     },
@@ -216,6 +224,7 @@ function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Re
             criar.reset();
           }}
         />
+        <SelectSentido valor={sentido} onChange={setSentido} />
         <SelectCategoria categorias={categorias} valor={categoria} vazio="Vai para…" onChange={setCategoria} />
         <button className="botao" disabled={!pronto}>{existente ? "Trocar categoria" : "Criar regra"}</button>
       </div>
@@ -226,6 +235,11 @@ function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Re
             Já existe{existente.categoria_id === categoria ? " e já vai para" : ", hoje vai para"} <strong>{existente.categoria}</strong>.
           </p>
         )}
+        {outras.map((r) => (
+          <p key={r.id} className="mudo">
+            Também há uma regra com esse texto ({alcance(r) || "entrada e saída"}) → {r.categoria}; a mais específica vence.
+          </p>
+        ))}
         {n && (
           <p className="mudo">
             {n.total === 0 ? "Nenhum lançamento parecido; vale para os próximos." : `${n.total} parecido(s), ${n.pendentes} sem categoria.`}

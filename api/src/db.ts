@@ -9,7 +9,7 @@ export const db = new DatabaseSync(env.dbPath);
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 
 /** Migrações em ordem; cada uma roda uma única vez (controle por PRAGMA user_version). */
-const MIGRACOES: string[] = [
+export const MIGRACOES: string[] = [
   `
   CREATE TABLE conexoes (
     item_id           TEXT PRIMARY KEY,
@@ -172,6 +172,25 @@ const MIGRACOES: string[] = [
     status    TEXT NOT NULL CHECK (status IN ('confirmada','ignorada')),
     criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
   );
+  `,
+  // regra com sentido e conta: recria a tabela porque o SQLite não tira UNIQUE; os ids ficam (lancamentos.regra_id aponta para eles)
+  `
+  CREATE TABLE regras_nova (
+    id           INTEGER PRIMARY KEY,
+    padrao       TEXT NOT NULL,                        -- texto contido na descrição original (sem diferenciar maiúsculas)
+    sentido      TEXT CHECK (sentido IN ('saida','entrada')),          -- nulo = os dois
+    conta_id     TEXT REFERENCES contas(id) ON DELETE CASCADE,         -- nulo = todas
+    categoria_id INTEGER NOT NULL REFERENCES categorias(id) ON DELETE CASCADE,
+    descricao    TEXT,                                 -- nome limpo opcional
+    prioridade   INTEGER NOT NULL DEFAULT 50,
+    criado_em    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  );
+  INSERT INTO regras_nova (id, padrao, categoria_id, descricao, prioridade, criado_em)
+    SELECT id, padrao, categoria_id, descricao, prioridade, criado_em FROM regras;
+  DROP TABLE regras;
+  ALTER TABLE regras_nova RENAME TO regras;
+  -- COALESCE porque o índice trata nulos como diferentes e deixaria duas regras iguais "para tudo"
+  CREATE UNIQUE INDEX ux_regras ON regras (padrao COLLATE NOCASE, COALESCE(sentido,''), COALESCE(conta_id,''));
   `,
 ];
 

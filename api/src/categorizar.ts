@@ -1,10 +1,22 @@
 import { db } from "./db.js";
 
-interface Regra {
-  id: number;
+/** Onde a regra vale. Sentido nulo = entrada e saída; conta nula = todas. */
+interface Alcance {
   padrao: string;
+  sentido: "saida" | "entrada" | null;
+  conta_id: string | null;
+}
+interface Regra extends Alcance {
+  id: number;
   categoria_id: number;
   descricao: string | null;
+}
+/** O que decide a categoria de um lançamento. */
+interface Movimento {
+  descricao_original: string | null;
+  categoria_pluggy?: string | null;
+  valor_centavos: number;
+  conta_id: string;
 }
 
 /** Categoria da Pluggy (em inglês) -> nossa categoria. Primeiro termo que aparecer vence. */
@@ -113,17 +125,27 @@ export function limparCacheCategorias() {
 }
 
 export function carregarRegras(): Regra[] {
-  return db.prepare("SELECT id, padrao, categoria_id, descricao FROM regras ORDER BY prioridade DESC, length(padrao) DESC").all() as unknown as Regra[];
+  // texto mais longo antes de sentido/conta: senão uma regra nova e curta, só de saída, passaria na frente de toda regra antiga específica
+  return db.prepare(
+    `SELECT id, padrao, sentido, conta_id, categoria_id, descricao FROM regras
+     ORDER BY prioridade DESC, length(padrao) DESC, conta_id IS NOT NULL DESC, sentido IS NOT NULL DESC`,
+  ).all() as unknown as Regra[];
 }
 
+/** Única comparação de regra com lançamento: a prévia e a aplicação usam a mesma, para baterem. */
+const alcanca = (r: Alcance, l: Movimento) =>
+  (r.sentido === null || r.sentido === (l.valor_centavos < 0 ? "saida" : "entrada")) &&
+  (r.conta_id === null || r.conta_id === l.conta_id) &&
+  (l.descricao_original ?? "").toLowerCase().includes(r.padrao.toLowerCase());
+
 /** Decide a categoria de um lançamento novo: regra do Paulo > movimento interno > categoria da Pluggy > pendente (null). */
-export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: string | null | undefined, regras: Regra[]) {
-  const texto = descricaoOriginal.toLowerCase();
-  const regra = regras.find((r) => texto.includes(r.padrao.toLowerCase()));
+export function sugerirCategoria(l: Movimento, regras: Regra[]) {
+  const texto = (l.descricao_original ?? "").toLowerCase();
+  const regra = regras.find((r) => alcanca(r, l));
   if (regra) return { categoria_id: regra.categoria_id, regra_id: regra.id, descricao: regra.descricao };
   const interno = INTERNOS.find(([re]) => re.test(texto));
   if (interno) return { categoria_id: categoriaPorNome(interno[1]), regra_id: null, descricao: null };
-  const cp = (categoriaPluggy ?? "").toLowerCase();
+  const cp = (l.categoria_pluggy ?? "").toLowerCase();
   if (cp) {
     for (const [termo, nome] of MAPA_PLUGGY) {
       if (cp.includes(termo)) return { categoria_id: categoriaPorNome(nome), regra_id: null, descricao: null };
@@ -133,17 +155,16 @@ export function sugerirCategoria(descricaoOriginal: string, categoriaPluggy: str
 }
 
 /**
- * Quantos lançamentos uma regra com esse texto pegaria (fora os editados à mão): mesma comparação de sugerirCategoria.
+ * Quantos lançamentos uma regra com esse alcance pegaria (fora os editados à mão): mesma comparação de sugerirCategoria.
  * Nos exemplos, o que já tem categoria vem primeiro: é o que a regra trocaria.
  */
-export function contarParecidos(padrao: string) {
-  const texto = padrao.toLowerCase();
+export function contarParecidos(alcance: Alcance) {
   const parecidos = (
     db.prepare(
-      `SELECT l.descricao_original, l.categoria_id, c.nome AS categoria
+      `SELECT l.descricao_original, l.valor_centavos, l.conta_id, l.categoria_id, c.nome AS categoria
        FROM lancamentos l LEFT JOIN categorias c ON c.id = l.categoria_id WHERE l.categoria_manual = 0`,
-    ).all() as { descricao_original: string | null; categoria_id: number | null; categoria: string | null }[]
-  ).filter((l) => (l.descricao_original ?? "").toLowerCase().includes(texto));
+    ).all() as unknown as (Movimento & { categoria_id: number | null; categoria: string | null })[]
+  ).filter((l) => alcanca(alcance, l));
   const grupos = new Map<string, { descricao: string | null; categoria: string | null; qtd: number }>();
   for (const l of parecidos) {
     const chave = `${l.categoria_id}|${l.descricao_original}`;
@@ -164,18 +185,12 @@ export function contarParecidos(padrao: string) {
 export function reaplicarRegras(): number {
   const regras = carregarRegras();
   const alvo = db
-    .prepare("SELECT id, descricao_original, categoria_pluggy, categoria_id, regra_id FROM lancamentos WHERE categoria_manual = 0")
-    .all() as {
-    id: string;
-    descricao_original: string | null;
-    categoria_pluggy: string | null;
-    categoria_id: number | null;
-    regra_id: number | null;
-  }[];
+    .prepare("SELECT id, descricao_original, categoria_pluggy, valor_centavos, conta_id, categoria_id, regra_id FROM lancamentos WHERE categoria_manual = 0")
+    .all() as unknown as (Movimento & { id: string; categoria_id: number | null; regra_id: number | null })[];
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
   for (const l of alvo) {
-    const s = sugerirCategoria(l.descricao_original ?? "", l.categoria_pluggy, regras);
+    const s = sugerirCategoria(l, regras);
     if (s.categoria_id !== l.categoria_id || s.regra_id !== l.regra_id) {
       upd.run(s.categoria_id, s.regra_id, l.id);
       if (s.categoria_id !== l.categoria_id) n++;

@@ -36,7 +36,7 @@ app.setErrorHandler((err: Error, _req, reply) => {
   if (err instanceof ErroPluggy) return reply.code(502).send({ erro: err.message });
   const errcode = (err as { errcode?: number }).errcode; // node:sqlite
   if (errcode === 2067) return reply.code(409).send({ erro: "já existe um registro com esse nome ou texto" }); // UNIQUE
-  if (errcode === 787) return reply.code(400).send({ erro: "categoria não encontrada" }); // FOREIGN KEY
+  if (errcode === 787) return reply.code(400).send({ erro: "categoria ou conta não encontrada" }); // FOREIGN KEY
   const status = (err as { statusCode?: number }).statusCode ?? 500;
   if (status >= 500) app.log.error(err);
   return reply.code(status).send({ erro: err.message });
@@ -380,22 +380,27 @@ app.post("/api/categorias/:id/mesclar", async (req) => {
 
 app.get("/api/regras", async () =>
   db.prepare(
-    `SELECT r.*, c.nome AS categoria, (SELECT COUNT(*) FROM lancamentos WHERE regra_id = r.id) AS usos
-     FROM regras r JOIN categorias c ON c.id = r.categoria_id ORDER BY r.prioridade DESC, r.padrao`,
+    `SELECT r.*, c.nome AS categoria, COALESCE(ct.apelido, ct.nome) AS conta, (SELECT COUNT(*) FROM lancamentos WHERE regra_id = r.id) AS usos
+     FROM regras r JOIN categorias c ON c.id = r.categoria_id LEFT JOIN contas ct ON ct.id = r.conta_id ORDER BY r.prioridade DESC, r.padrao`,
   ).all(),
 );
-const padraoRegra = z.string().trim().min(3).max(120); // texto curto demais pegaria quase tudo
-app.get("/api/regras/previa", async (req) => contarParecidos(z.object({ padrao: padraoRegra }).parse(req.query).padrao));
-/** Cria a regra; se o texto já tem regra (maiúsculas não contam), troca a categoria dela: é o Paulo corrigindo. */
+const alcanceRegra = z.object({
+  padrao: z.string().trim().min(3).max(120), // texto curto demais pegaria quase tudo
+  sentido: z.enum(["saida", "entrada"]).nullable().default(null), // nulo = os dois
+  conta_id: uuid.nullable().default(null), // nulo = todas
+});
+app.get("/api/regras/previa", async (req) => contarParecidos(alcanceRegra.parse(req.query)));
+/** Cria a regra; se já existe uma com o mesmo texto (maiúsculas não contam), sentido e conta, troca a categoria dela: é o Paulo corrigindo. */
 app.post("/api/regras", async (req) => {
-  const d = z.object({ padrao: padraoRegra, categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
+  const d = alcanceRegra.extend({ categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
   return transacao(() => {
-    const atual = db.prepare("SELECT id FROM regras WHERE padrao = ? COLLATE NOCASE").get(d.padrao) as { id: number } | undefined;
+    const atual = db.prepare("SELECT id FROM regras WHERE padrao = ? COLLATE NOCASE AND sentido IS ? AND conta_id IS ?")
+      .get(d.padrao, d.sentido, d.conta_id) as { id: number } | undefined;
     const r = atual
       ? db.prepare("UPDATE regras SET categoria_id = ?, descricao = COALESCE(?, descricao), prioridade = COALESCE(?, prioridade) WHERE id = ? RETURNING *")
         .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)
-      : db.prepare("INSERT INTO regras (padrao, categoria_id, descricao, prioridade) VALUES (?,?,?,?) RETURNING *")
-        .get(d.padrao, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
+      : db.prepare("INSERT INTO regras (padrao, sentido, conta_id, categoria_id, descricao, prioridade) VALUES (?,?,?,?,?,?) RETURNING *")
+        .get(d.padrao, d.sentido, d.conta_id, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
     return { regra: r, recategorizados: reaplicarRegras() };
   });
 });

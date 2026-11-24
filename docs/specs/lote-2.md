@@ -23,10 +23,14 @@ O 2 só lê e edita pela tela.
   criar duas regras iguais "para tudo". Pelo mesmo motivo, a busca em `POST /api/regras` usa `IS ?`, não `= ?`.
 - **Código:** `sugerirCategoria` passa a receber valor e conta. Chamadores: `sync.ts` (`salvarTransacoes`), `reaplicarRegras` e os testes.
   `contarParecidos` e a prévia precisam do mesmo filtro, senão a prévia não bate com o aplicado (há teste para isso).
-- **Desempate:** prioridade, depois a mais específica (com sentido ou conta), depois o texto mais longo.
+- **Desempate:** prioridade, depois o texto mais longo, depois a mais específica (com conta, com sentido). Trocado ao implementar: a tela sugere
+  o sentido em toda regra nova, então com a específica na frente uma regra nova e curta passaria por cima de toda regra antiga mais longa.
 - **API e MCP:** `POST /api/regras` procura a regra existente por texto + sentido + conta. `previa_regra` e `criar_regra` ganham os dois campos
   opcionais; `total_previsto` e `substituir` **não afrouxam**. Atualizar `CONVENCOES`.
-- **Tela:** escolha "entrada / saída / os dois" no formulário do 13a e no `OferecerRegra` (sugerir o sentido do lançamento corrigido).
+- **Tela:** escolha "entrada / saída / os dois" no formulário do 13a e no `OferecerRegra` (sugerir o sentido do lançamento corrigido; o sentido
+  oposto não é oferecido). Regra por conta só se cria pelo MCP; a lista de regras mostra sentido e conta.
+- **MCP:** mesmo texto com alcance que se cruza (ex.: já existe a regra geral e vem uma só de saída) também exige `substituir`.
+- **Ensaio na cópia (2026-11-24):** versão 4 → 5, 35 regras idênticas, nenhum lançamento mudou, Resumo idêntico em todos os meses.
 - **Testes:** repetir o mesmo texto sem sentido troca a regra em vez de duplicar; mesmo texto com sentidos diferentes convive; regra de saída não toca entrada; regra por conta não toca outra; regras antigas
   continuam iguais depois da migração; prévia = aplicado.
 
