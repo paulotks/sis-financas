@@ -7,6 +7,9 @@ export interface Categoria {
   cor: string | null;
 }
 
+/** usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar nem renomear. */
+export type CategoriaComUsos = Categoria & { usos: number; fixa: boolean };
+
 export interface Lancamento {
   id: string;
   conta_id: string;
@@ -200,8 +203,9 @@ export const api = {
   orcamento: (mes: string) => req<Orcamento>("GET", `/api/orcamento${qs({ mes })}`),
   salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<{ ok: true }>("PUT", "/api/orcamento", d),
 
-  categorias: () => req<Categoria[]>("GET", "/api/categorias"),
+  categorias: () => req<CategoriaComUsos[]>("GET", "/api/categorias"),
   criarCategoria: (d: { nome: string; grupo: Categoria["grupo"]; cor?: string }) => req<Categoria>("POST", "/api/categorias", d),
+  apagarCategoria: (id: number) => req<{ ok: true }>("DELETE", `/api/categorias/${id}`),
   regras: () => req<Regra[]>("GET", "/api/regras"),
   previaRegra: (padrao: string) => req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao })}`),
   criarRegra: (d: { padrao: string; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),

@@ -319,6 +319,44 @@ test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência
   assert.ok(!o.linhas.some((l: any) => ["transferencia", "renda"].includes(l.grupo)));
 });
 
+test("categoria: apaga só se estiver vazia; em uso ou com nome do mapa dá 409 e nada some", async () => {
+  const conta = novaConta("BANK");
+  const criar = async (nome: string) => (await chamar("POST", "/api/categorias", { nome, grupo: "financeiro" })).d.id as number;
+  const apagar = (id: number) => chamar("DELETE", `/api/categorias/${id}`);
+  const uma = async (id: number) => (await chamar("GET", "/api/categorias")).d.find((c: any) => c.id === id);
+  const n = (tabela: string, id: number) => (db.prepare(`SELECT COUNT(*) AS n FROM ${tabela} WHERE categoria_id = ?`).get(id) as { n: number }).n;
+
+  const vazia = await criar("Engano");
+  assert.deepEqual([(await uma(vazia)).usos, (await uma(vazia)).fixa], [0, false]);
+  assert.equal((await apagar(vazia)).status, 200);
+  assert.equal(await uma(vazia), undefined);
+  assert.equal((await apagar(vazia)).status, 404);
+
+  const comRegra = await criar("Com regra"), comOrcamento = await criar("Com orçamento"), comLanc = await criar("Com lançamento");
+  const regra = (await chamar("POST", "/api/regras", { padrao: "texto que não existe", categoria_id: comRegra })).d.regra.id;
+  await chamar("PUT", "/api/orcamento", { mes: "2018-01", categoria_id: comOrcamento, valor_centavos: 100 });
+  novoLanc(conta, "2018-01-01", -100, comLanc, { status: "REMOVIDO", categoria_manual: 1 }); // não soma, mas aponta para ela
+  for (const [id, tabela] of [[comRegra, "regras"], [comOrcamento, "orcamentos"], [comLanc, "lancamentos"]] as const) {
+    const r = await apagar(id);
+    assert.deepEqual([r.status, n(tabela, id), (await uma(id)).usos], [409, 1, 1], tabela);
+  }
+
+  // o mapa da Pluggy e os movimentos internos acham estas pelo nome
+  assert.equal((await uma(TRANSFERENCIA)).fixa, true);
+  for (const id of [MERCADO, RENDA, TRANSFERENCIA]) {
+    assert.equal((await apagar(id)).status, 409);
+    assert.equal((await chamar("PATCH", `/api/categorias/${id}`, { nome: "Outro nome" })).status, 409);
+  }
+  const { nome } = await uma(MERCADO);
+  assert.equal((await chamar("PATCH", `/api/categorias/${MERCADO}`, { nome, cor: "#4fd1a5" })).status, 200); // mesmo nome: só a cor muda
+  assert.equal((await chamar("PATCH", `/api/categorias/${comRegra}`, { nome: "Renomeada" })).d.nome, "Renomeada");
+
+  db.prepare("DELETE FROM lancamentos WHERE categoria_id = ?").run(comLanc);
+  db.prepare("DELETE FROM orcamentos WHERE categoria_id = ?").run(comOrcamento);
+  await chamar("DELETE", `/api/regras/${regra}`);
+  for (const id of [comRegra, comOrcamento, comLanc]) assert.equal((await apagar(id)).status, 200);
+});
+
 test("planejado vale dali em diante e não mexe no passado", async () => {
   const planejado = async (mes: string) =>
     (await chamar("GET", `/api/orcamento?mes=${mes}`)).d.linhas.find((l: any) => l.categoria_id === MERCADO).planejado;

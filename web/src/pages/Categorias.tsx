@@ -18,10 +18,16 @@ export default function Categorias() {
       qc.invalidateQueries({ queryKey: ["categorias"] });
     },
   });
+  const apagarCategoria = useMutation({
+    mutationFn: api.apagarCategoria,
+    onSettled: () => qc.invalidateQueries(), // também no erro: se recusou, os usos da tela estão velhos
+  });
   const apagar = useMutation({
     mutationFn: api.apagarRegra,
     onSuccess: () => qc.invalidateQueries(),
   });
+
+  const erroCategorias = cats.error ?? criar.error ?? apagarCategoria.error;
 
   return (
     <section>
@@ -43,13 +49,26 @@ export default function Categorias() {
             <input type="color" value={cor} onChange={(e) => setCor(e.target.value)} />
             <button className="botao" disabled={criar.isPending}>Adicionar</button>
           </form>
-          {(cats.error ?? criar.error) && <div className="aviso erro">{(cats.error ?? criar.error)!.message}</div>}
+          {erroCategorias && <div className="aviso erro">{erroCategorias.message}</div>}
           {(Object.keys(GRUPOS) as Categoria["grupo"][]).map((g) => (
             <div key={g}>
               <h3>{GRUPOS[g]}</h3>
               <div className="chips">
                 {cats.data?.filter((c) => c.grupo === g).map((c) => (
-                  <span key={c.id} className="chip" style={{ borderColor: c.cor ?? undefined }}>{c.nome}</span>
+                  <span key={c.id} className="chip" style={{ borderColor: c.cor ?? undefined }}>
+                    {c.nome}
+                    {!c.fixa && c.usos === 0 && (
+                      <button
+                        className="icone-botao"
+                        title="Apagar categoria sem uso"
+                        aria-label={`Apagar a categoria ${c.nome}`}
+                        disabled={apagarCategoria.isPending}
+                        onClick={() => confirm(`Apagar a categoria "${c.nome}"? Ela não tem lançamento, regra nem orçamento.`) && apagarCategoria.mutate(c.id)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
                 ))}
               </div>
             </div>

@@ -8,7 +8,7 @@ import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { detectarRecorrentes, type Gasto } from "./recorrentes.js";
 import { salvarConexao, sincronizar } from "./sync.js";
-import { contarParecidos, limparCacheCategorias, reaplicarRegras } from "./categorizar.js";
+import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
 
 migrar();
 reaplicarRegras(); // mudança no mapa de categorias passa a valer também para o que já está na base
@@ -310,7 +310,22 @@ app.delete("/api/bens/:id", async (req) => {
 
 // ---------------- categorias e regras ----------------
 
-app.get("/api/categorias", async () => db.prepare("SELECT * FROM categorias ORDER BY grupo, nome").all());
+interface CategoriaComUsos { id: number; nome: string; grupo: string; cor: string | null; usos: number }
+// conta tudo que aponta para a categoria, inclusive lançamento ignorado ou REMOVIDO
+const CATEGORIAS_COM_USOS = `SELECT c.*, (SELECT COUNT(*) FROM lancamentos WHERE categoria_id = c.id)
+    + (SELECT COUNT(*) FROM regras WHERE categoria_id = c.id)
+    + (SELECT COUNT(*) FROM orcamentos WHERE categoria_id = c.id) AS usos
+  FROM categorias c`;
+const categoriaOu404 = (id: number) =>
+  ouNaoEncontrado(db.prepare(`${CATEGORIAS_COM_USOS} WHERE c.id = ?`).get(id) as unknown as CategoriaComUsos | undefined, "categoria");
+const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
+const recusarNomeFixo = (nome: string) => {
+  if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar nem renomear`);
+};
+
+app.get("/api/categorias", async () =>
+  (db.prepare(`${CATEGORIAS_COM_USOS} ORDER BY grupo, nome`).all() as unknown as CategoriaComUsos[]).map((c) => ({ ...c, fixa: NOMES_FIXOS.has(c.nome) })),
+);
 
 const grupos = z.enum(["essencial", "estilo_de_vida", "financeiro", "renda", "transferencia"]);
 app.post("/api/categorias", async (req) => {
@@ -322,10 +337,24 @@ app.post("/api/categorias", async (req) => {
 app.patch("/api/categorias/:id", async (req) => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const d = z.object({ nome: z.string().trim().min(1).max(40).optional(), grupo: grupos.optional(), cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }).parse(req.body);
+  const atual = categoriaOu404(id);
+  if (d.nome !== undefined && d.nome !== atual.nome) recusarNomeFixo(atual.nome);
   db.prepare("UPDATE categorias SET nome = COALESCE(?, nome), grupo = COALESCE(?, grupo), cor = COALESCE(?, cor) WHERE id = ?")
     .run(d.nome ?? null, d.grupo ?? null, d.cor ?? null, id);
   limparCacheCategorias();
-  return ouNaoEncontrado(db.prepare("SELECT * FROM categorias WHERE id = ?").get(id), "categoria");
+  return db.prepare("SELECT * FROM categorias WHERE id = ?").get(id);
+});
+/** Só apaga categoria sem uso: regras e orçamentos têm ON DELETE CASCADE e sumiriam junto, em silêncio. */
+app.delete("/api/categorias/:id", async (req) => {
+  const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
+  return transacao(() => {
+    const c = categoriaOu404(id);
+    recusarNomeFixo(c.nome);
+    if (c.usos) throw conflito(`"${c.nome}" está em uso (lançamentos, regras ou orçamento): não dá para apagar`);
+    db.prepare("DELETE FROM categorias WHERE id = ?").run(id);
+    limparCacheCategorias();
+    return { ok: true };
+  });
 });
 
 app.get("/api/regras", async () =>

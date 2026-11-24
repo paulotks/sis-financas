@@ -83,6 +83,9 @@ const INTERNOS: [RegExp, string][] = [
   [/^débito automático (fatura|total)\b/, "Pagamento de fatura"], // fatura do Mercado Pago: perna da conta e perna do cartão
 ];
 
+/** Categorias que o código acha pelo nome: apagar ou renomear uma faria o mapa devolver "sem categoria". */
+export const NOMES_FIXOS = new Set([...MAPA_PLUGGY, ...INTERNOS].map(([, nome]) => nome));
+
 let idsPorNome: Map<string, number> | null = null;
 function categoriaPorNome(nome: string) {
   if (!idsPorNome) {
