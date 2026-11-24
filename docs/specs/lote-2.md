@@ -52,21 +52,29 @@ Três pernas: **(1)** "Valor adicionado…" entra na conta (+X), **(2)** o Pix s
   O impacto é pequeno: 26 operações, de jan a set/26.
 - **Achados na base:**
   - (1) e (2) casam **exatamente** (mesma conta, mesmo dia, mesmo valor) em 26 de 26.
-  - (3) só tem o texto "Pagamento de pix" em 16, até o início de maio. Em 9, mais recentes, vem com o **nome da pessoa**; em 1 não foi achada.
-  - Tarifa entre 1,6% e 13% (as maiores são parceladas, 1/2 e 1/3); há dias com mais de um candidato parecido.
+  - (3) só tem o texto "Pagamento de pix" em 16, até o início de maio. Em 10, mais recentes, vem com o **nome da pessoa**.
+  - **O horário identifica as três pernas em 26 de 26** (achado ao implementar; a versão anterior desta spec casava por dia). No `bruto`,
+    `date` (ou `creditCardMetadata.purchaseDate`, quando existe) tem hora: (2) fica a menos de 1 s de (1), e o segundo candidato de mesmo
+    valor só aparece mais de 22 min depois. (3) vem 1 a 7 s depois em 25, e 417 s em 1; o candidato errado mais próximo está a 95 min.
+    Casar por dia errava em 2026-06-23 (duas operações de mesmo valor) e partiria uma operação na meia-noite UTC.
+  - Tarifa entre 1,6% e 13% (as maiores são parceladas, 1/2 e 1/3).
+  - Em 3 operações (3) traz o nome mas não tem categoria própria, e (2) tem: sem herdar, o gasto viraria "Sem categoria".
+  - Em 1 operação (2026-03-16) (2) **já** está fora do resumo por uma regra do Paulo (transferência, e o dinheiro voltou no mesmo dia).
   - Como (3) traz o nome da pessoa, uma **regra por nome pega (2) e (3)** e o gasto dobra na categoria. Em 1 caso as duas já estão na
     mesma categoria; cresce a cada regra por pessoa.
 - **Fazer (D2):** saem do resumo (1) e (2), o par exato, e fica (3). A tarifa e as parcelas entram naturalmente, no mês de cada uma.
-  Quando (3) não traz o nome, herda a categoria de (2). Descartado: ficar com (2) e tirar (3), porque (3) é o par incerto e a tarifa sumiria.
+  Quando (3) não tem categoria própria (regra ou mapa), herda a que (2) teria; as parcelas seguintes também (mesma `purchaseDate`).
+  Descartado: ficar com (2) e tirar (3), porque a tarifa sumiria.
 - **Regras:**
-  - Só tirar o par se existe alguma (3) possível no dia; senão o gasto some. Basta existir (o total fica certo mesmo sem saber qual é);
-    achar a (3) exata só serve para herdar a categoria quando ela vem como "Pagamento de pix".
-  - Qualquer perna editada à mão: não mexer na operação.
+  - Só tirar o par se existe a (3), no cartão visível do mesmo banco e da mesma pessoa; senão o gasto some.
+  - (2) ou (3) já em transferência: não mexer na operação. Assim este item **nunca muda o resultado de um mês**, só tira o inchaço.
+  - Qualquer perna editada à mão ou ignorada: não mexer na operação.
   - Vale **acima** das regras do Paulo para essas pernas (hoje regra vence movimento interno).
-  - Precisa de várias linhas ao mesmo tempo: não cabe em `sugerirCategoria`. Rodar no fim de `reaplicarRegras` **e** no fim de `sincronizar`
-    (a sincronização não chama `reaplicarRegras`). Tem que dar o mesmo resultado se rodar de novo, sem inflar o "recategorizados".
+  - Precisa de várias linhas ao mesmo tempo: não cabe em `sugerirCategoria`. Fica **dentro** de `reaplicarRegras` (calcula as trocas antes de
+    comparar com o gravado; um passo depois dele faria as pernas irem e voltarem e inflaria o "recategorizados"), e `sincronizar` passa a
+    chamar `reaplicarRegras` no fim. O que (3) herda é a categoria que (2) *teria*, não a gravada: depois da 1ª vez a gravada é transferência.
 - **Atualizar junto:** "fica de fora de propósito" no `CLAUDE.md`, em `CONVENCOES` e no comentário de `INTERNOS`.
-- **Testes:** os três formatos de (3), parcelada, sem (3), dois candidatos no mesmo dia, perna manual, rodar duas vezes.
+- **Testes:** os três formatos de (3), parcelada, sem (3), duas operações de mesmo valor no mesmo dia, perna manual, (2) já em transferência, rodar duas vezes.
 
 ## 2. Estorno: correção à mão com um clique (M, sem migração)
 
