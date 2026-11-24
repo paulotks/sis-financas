@@ -35,13 +35,14 @@ api/src/
   sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
   recorrentes.ts  detecta cobranças mensais (função pura)
+  ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em server.ts)
   patrimonio.ts   soma das posições e foto diária dos saldos
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
 web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual)
   pages/                Resumo, Lancamentos, Orcamento, Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
@@ -61,7 +62,7 @@ web/src/
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ ou bens (o teste confere a lista de ferramentas). PF é o padrão.
 - `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
-- Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
+- **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
 
 ## Convenções de dados
@@ -75,9 +76,10 @@ web/src/
 - `NOMES_FIXOS` (nomes usados em `MAPA_PLUGGY` e `INTERNOS`): o código acha a categoria pelo nome, então a API recusa apagar, renomear ou mesclar (409). Apagar só categoria sem uso: `regras` e `orcamentos` têm `ON DELETE CASCADE`.
 - Movimento interno vem em **par** (+X e −X) e a Pluggy dá categoria diferente a cada perna (cofrinho do MP, débito automático de fatura). Só tirar do resumo quando as **duas** pernas saem juntas: tirar uma só distorce o mês. Pix no crédito do Nubank tem **três** pernas (`pixNoCredito`, casadas pelo horário): o gasto é a cobrança no cartão, que herda a categoria do Pix se não tiver a própria; as duas da conta saem do resumo, acima das regras. Nunca muda o resultado do mês.
 - Fora do trial a Pluggy pode mandar `category: null`; o sync guarda a última categoria conhecida.
-- Grupo `transferencia` (Transferência entre contas, Pagamento de fatura) fica **fora do resumo**, para não contar o mesmo gasto duas vezes.
+- Grupo `transferencia` (Transferência entre contas, Pagamento de fatura, Investimentos) fica **fora do resumo**: não é gasto nem renda. Guardado = entradas − saídas.
 - **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Entrada (em conta ou cartão) com categoria de gasto é **estorno ou reembolso e abate** a categoria; sem categoria não abate (pode ser renda ou fatura paga). Rendimento de conta (`proceeds interests`) é Renda.
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
+- **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
 - **Recorrentes** (`recorrentes.ts`): detecção refeita a cada leitura; a tabela `recorrencias` guarda só a decisão (confirmada/ignorada) por `chave` (descrição original sem acento, número e símbolo).
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
@@ -117,7 +119,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 e 2 feitos; o próximo lote ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 3 feitos; o próximo é o 4, página Análises), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)

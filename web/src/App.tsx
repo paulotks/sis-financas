@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dadosVelhos, quando } from "./lib/api";
+import RitmoLateral from "./components/RitmoLateral";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
 import Orcamento from "./pages/Orcamento";
@@ -44,6 +45,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+        <RitmoLateral />
         <div className="sync">
           <button className="botao" disabled={sync.isPending || !conexoes.data?.length} onClick={() => sync.mutate()}>
             {sync.isPending ? "Sincronizando…" : "↻ Sincronizar"}

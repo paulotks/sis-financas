@@ -4,9 +4,10 @@ const formatar = (centavos: number | null) =>
   centavos ? (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
 
 /** Valor editável direto na tabela: Enter ou sair do campo salva, Esc desfaz. */
-export default function CampoDinheiro({ valor, rotulo, negativo = false, onSalvar }: {
+export default function CampoDinheiro({ valor, rotulo, sugestao = null, negativo = false, onSalvar }: {
   valor: number | null;
   rotulo: string;
+  sugestao?: number | null; // aparece apagada enquanto nada foi digitado
   negativo?: boolean; // aceita valor abaixo de zero (dívida)
   onSalvar: (centavos: number) => void;
 }) {
@@ -18,7 +19,7 @@ export default function CampoDinheiro({ valor, rotulo, negativo = false, onSalva
       name="valor"
       inputMode="decimal"
       aria-label={rotulo}
-      placeholder="—"
+      placeholder={formatar(sugestao) || "—"}
       defaultValue={inicial}
       onFocus={(e) => e.target.select()}
       onBlur={(e) => {

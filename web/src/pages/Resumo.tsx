@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, hoje, mesAtual, nomeMes, type Lancamento } from "../lib/api";
+import Alarme from "../components/Alarme";
 import LinhaPatrimonio from "../components/LinhaPatrimonio";
 import OferecerRegra from "../components/OferecerRegra";
 import SelectCategoria from "../components/SelectCategoria";
@@ -20,10 +21,8 @@ export default function Resumo() {
     setParams(p, { replace: true });
   };
   const r = useQuery({ queryKey: ["resumo", mes, pessoa], queryFn: () => api.resumo(mes, pessoa) });
-  const orc = useQuery({ queryKey: ["orcamento", mes], queryFn: () => api.orcamento(mes), enabled: pessoa === "PF" });
   const pat = useQuery({ queryKey: ["patrimonio", pessoa], queryFn: () => api.patrimonio(pessoa) });
   const d = r.data;
-  const planejado = pessoa === "PF" ? (orc.data?.linhas.reduce((s, l) => s + (l.planejado ?? 0), 0) ?? 0) : 0;
   const filtro = (extra: string) => `/lancamentos?mes=${mes}${pessoa === "PJ" ? "&pessoa=PJ" : ""}${extra}`;
 
   return (
@@ -40,22 +39,14 @@ export default function Resumo() {
 
       {r.error && <div className="aviso erro">{r.error.message}</div>}
 
-      <div className="destaques">
-        <div className="card destaque">
-          <small>Gastos de {nomeMes(mes).toLowerCase()}</small>
-          <strong>{dinheiro(d?.saidas)}</strong>
-          {d && planejado > 0 && <Planejado gasto={d.saidas} planejado={planejado} mes={mes} />}
-          {d && pessoa === "PF" && orc.data && planejado === 0 && <Link className="mudo" to={`/orcamento?mes=${mes}`}>Definir orçamento →</Link>}
-        </div>
+      {pessoa === "PF" ? <Alarme mes={mes} /> : <div className="cards">
+        <div className="card"><small>Entradas</small><strong>{dinheiro(d?.entradas)}</strong></div>
+        <div className="card"><small>Gastos de {nomeMes(mes).toLowerCase()}</small><strong>{dinheiro(d?.saidas)}</strong></div>
         <div className="card">
-          <small>Entradas</small>
-          <strong>{dinheiro(d?.entradas)}</strong>
-        </div>
-        <div className="card">
-          <small>Resultado do mês</small>
+          <small>{mes === mesAtual() ? "Resultado até agora" : "Resultado do mês"}</small>
           <strong className={d ? (d.entradas - d.saidas < 0 ? "neg" : "pos") : ""}>{dinheiro(d ? d.entradas - d.saidas : null)}</strong>
         </div>
-      </div>
+      </div>}
 
       {!!d?.pendentes && (
         <Link className="faixa" to={filtro("&pendentes=1")}>
@@ -88,25 +79,10 @@ export default function Resumo() {
       <Recentes key={mes + pessoa} mes={mes} pessoa={pessoa} verTodos={filtro("")} />
 
       <p className="mudo pequeno">
-        Transferências entre contas e pagamentos de fatura ficam fora do resumo, para não contar o mesmo gasto duas vezes. Estorno no
+        Transferências entre contas, pagamentos de fatura e investimentos ficam fora do resumo: não são gasto nem renda. Estorno no
         cartão e reembolso em conta abatem a categoria em que estão.
       </p>
     </section>
-  );
-}
-
-function Planejado({ gasto, planejado, mes }: { gasto: number; planejado: number; mes: string }) {
-  const pct = (gasto / planejado) * 100;
-  const resta = planejado - gasto;
-  return (
-    <Link className="planejado" to={`/orcamento?mes=${mes}`}>
-      <span className={`barra ${pct > 100 ? "estourou" : pct > 90 ? "perto" : ""}`}>
-        <span style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-      </span>
-      <span className="mudo">
-        {resta >= 0 ? `Restam ${dinheiro(resta)}` : `Passou ${dinheiro(-resta)}`} de {dinheiro(planejado)} planejados
-      </span>
-    </Link>
   );
 }
 
