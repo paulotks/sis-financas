@@ -33,6 +33,32 @@ Spec: [specs/lote-2.md](specs/lote-2.md). A ordem importa: 7 → 5 → 4 → 2. 
 | 4 | Pix no crédito do Nubank contado em dobro: vale a cobrança no cartão | M | regrava categorias | feito (2026-11-24) |
 | 2 | Estorno: correção à mão com um clique | M | não | feito (2026-11-24) |
 
+## Lote 3: FEITO (2026-11-24, o alarme da renda)
+
+Spec: [specs/lote-3.md](specs/lote-3.md). Tem migração: worktree com cópia da base.
+
+| # | Melhoria | Tam. | Base | Status |
+|---|---|---|---|---|
+| 21 | Investimentos fora do resumo (não é gasto) | P | migração | feito (2026-11-24) |
+| 22 | Renda esperada no Orçamento | M | não | feito (2026-11-24) |
+| 23 | Ritmo do mês: projeção, teto, por dia, acumulado | M | não | feito (2026-11-24) |
+| 24 | Alarme no topo do Resumo e linha fixa no menu | M | não | feito (2026-11-24) |
+| 25 | Topo do Orçamento contra a renda | P | não | feito (2026-11-24) |
+| 26 | MCP em dia com o sistema | M | não | feito (2026-11-24) |
+
+## Lote 4: página Análises (depois do 3)
+
+Spec: [specs/lote-4.md](specs/lote-4.md).
+
+| # | Melhoria | Tam. | Base | Status |
+|---|---|---|---|---|
+| 27 | A. Renda × orçado × gasto por mês | M | não | |
+| 28 | B. Gasto acumulado dia a dia | M | não | |
+| 29 | C. Guardado por mês e acumulado | P | não | |
+| 30 | E. Quem estourou: categoria contra média, mês passado ou orçado | M | não | |
+| 31 | G. Próximos meses já comprometidos | M | não | |
+| 32 | Mês inicial da análise editável, e MCP | P | migração | |
+
 ## Depois (na fila, ainda sem spec)
 
 | # | Melhoria | Tam. | Base | O que já se sabe |
@@ -44,6 +70,9 @@ Spec: [specs/lote-2.md](specs/lote-2.md). A ordem importa: 7 → 5 → 4 → 2. 
 | 16 | Bens: nome cortado na tela | P | não | Lista em `.bens li` (`styles.css`): a coluna do nome divide espaço com 130px do valor. Não conferido na tela |
 | 18 | Orçamento: sugerir pela média de 3 meses | P | não | Menos urgente: o orçamento já foi definido |
 | 19 | Resumo: % categorizada do mês | P | não | O "gasto real" já existe: `saidas` exclui transferências. Falta só a % |
+| 33 | Metas: tela própria (guardar, reserva, quitar dívida), nada fixo no código. O teto do alarme passa a ser renda − meta | G | migração | Pedido na entrevista de 2026-11-24, para o futuro. Aportes em Investimentos e as linhas de `bens` são candidatos a medir o progresso |
+| 34 | Análises D, F e J: cada R$ 100 da renda, mapa de calor categoria × mês, patrimônio e dívida no tempo | M | não | O J precisa de mais dias em `saldos_diarios` |
+| 35 | Notificação do Windows quando o mês virar vermelho | P | não | Só se o alarme na tela não bastar |
 
 ## Fechados ou só acompanhar
 
