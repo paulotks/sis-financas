@@ -29,7 +29,7 @@ Já tem o Node em `C:\Program Files`? Tudo funciona, menos o início automático
 
 ### 2. Código
 
-O repositório é privado: peça ao dono para adicionar seu usuário do GitHub como colaborador e aceite o convite. Use uma pasta **sem espaços** e, por causa da base, fora do OneDrive.
+Use uma pasta **sem espaços** e, por causa da base, fora do OneDrive.
 
 ```powershell
 git clone https://github.com/paulotks/sis-financas.git C:\sis-financas
@@ -77,7 +77,6 @@ Conecte sempre por esta tela. O guia da Pluggy usa a página **Demo** do Dashboa
 
 | O que aparece | O que fazer |
 |---|---|
-| `Repository not found` no `git clone` | Falta o convite de colaborador, ou o Git está logado em outra conta do GitHub. |
 | `npm.ps1 não pode ser carregado` (execução de scripts desabilitada) | Use `npm.cmd` no lugar de `npm`, ou rode no Prompt de Comando. |
 | `npm warn install-scripts ... esbuild` | Pode ignorar: o build funciona assim mesmo. |
 | `Credenciais Pluggy ausentes` | O `.env` não está na raiz ou está vazio. Depois de mudar o `.env`, pare (`Ctrl+C`) e rode de novo. |
@@ -197,5 +196,9 @@ As instruções do MCP (`CONVENCOES` e descrições, em `api/src/mcp.ts`) tratam
 - [x] Orçamento mensal (planejado × realizado)
 - [ ] Faturas e parcelas futuras
 - [x] Assinaturas recorrentes
-- [ ] Lançamentos manuais (cartões fora do Open Finance: Bradescard, C&A, Pefisa, Midway)
+- [ ] Lançamentos manuais (cartões fora do Open Finance, dinheiro)
 - [ ] Importar regras e assinaturas do sistema antigo (`financeiro.db`)
+
+## Licença
+
+[MIT](LICENSE): use, mude e compartilhe à vontade, sem garantia.
