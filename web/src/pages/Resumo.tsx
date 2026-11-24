@@ -89,7 +89,7 @@ export default function Resumo() {
 
       <p className="mudo pequeno">
         Transferências entre contas e pagamentos de fatura ficam fora do resumo, para não contar o mesmo gasto duas vezes. Estorno no
-        cartão abate a categoria.
+        cartão e reembolso em conta abatem a categoria em que estão.
       </p>
     </section>
   );

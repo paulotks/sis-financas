@@ -27,7 +27,7 @@ const MAPA_PLUGGY: [string, string][] = [
   ["income taxes", "Impostos e taxas"],
   ["fixed income", "Investimentos"],
   ["variable income", "Investimentos"],
-  ["proceeds interests", "Investimentos"],
+  ["proceeds interests", "Renda"], // rendimento diário da conta
   ["car rental", "Transporte"],
   ["traffic tickets", "Transporte"],
   ["financing", "Juros e dívidas"],

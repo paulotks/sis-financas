@@ -202,10 +202,10 @@ const BASE_RESUMO = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEF
   WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
     AND COALESCE(cat.grupo, '') <> 'transferencia'`;
 /**
- * Gasto em centavos positivos; NULL = é entrada. Crédito no cartão já categorizado é estorno e abate a categoria.
- * Sem categoria não abate: pode ser um pagamento de fatura que ainda não foi marcado como transferência.
+ * Gasto em centavos positivos; NULL = é entrada. Dinheiro que entra já com categoria de gasto é estorno ou reembolso e abate a
+ * categoria. Sem categoria não abate: pode ser renda, ou um pagamento de fatura ainda não marcado como transferência.
  */
-const GASTO = `CASE WHEN l.valor_centavos < 0 OR (ct.tipo = 'CREDIT' AND cat.grupo <> 'renda') THEN -l.valor_centavos END`;
+const GASTO = `CASE WHEN l.valor_centavos < 0 OR cat.grupo <> 'renda' THEN -l.valor_centavos END`;
 const periodo = (mes: string, pessoa: string) => [`${mes}-01`, fimDoMes(mes), pessoa];
 
 interface GastoCategoria { categoria_id: number | null; categoria: string; cor: string | null; grupo: string | null; total: number; qtd: number }

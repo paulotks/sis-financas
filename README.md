@@ -81,7 +81,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Categorias | Ordem de decisão: regra sua > categoria da Pluggy (mapeada) > sem categoria. Uma edição manual nunca é sobrescrita pela sincronização. |
 | Regras | Ao corrigir a categoria de um lançamento, a tela oferece criar a regra (texto editável e contagem de parecidos). Valem para lançamentos cuja descrição original *contém* o texto, menos os editados à mão. |
 | PF / PJ | Cada conta é marcada como PF ou PJ (Inter Empresas → PJ). O resumo separa as duas. |
-| Resumo | Ignora transferências entre contas e pagamento de fatura, para não contar o mesmo gasto duas vezes. Estorno no cartão abate a categoria. |
+| Resumo | Ignora transferências entre contas e pagamento de fatura, para não contar o mesmo gasto duas vezes. Estorno no cartão e reembolso em conta abatem a categoria. |
 | Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. |
 | Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos. Você confirma ou ignora. |
 | Patrimônio | Contas + investimentos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |

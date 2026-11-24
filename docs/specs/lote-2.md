@@ -47,6 +47,8 @@ O 2 só lê e edita pela tela.
 - **Efeito:** entradas e saídas caem no mesmo valor; o resultado do mês não muda. `GASTO` vale também para PJ, que hoje não tem nenhuma
   entrada em conta com categoria de gasto.
 - **Atualizar junto:** texto do rodapé do Resumo, `CONVENCOES` em `mcp.ts`, "Totais do mês" no `CLAUDE.md`, teste do orçamento e Resumo.
+- **Ensaio na cópia (2026-11-24):** 594 rendimentos viraram Renda; entradas e saídas caíram no mesmo valor em 12 meses e nenhum resultado de
+  mês mudou. Uma categoria pode ficar **negativa** no mês em que o reembolso cai (gasto num mês, reembolso no outro): é o esperado.
 
 ## 4. Pix no crédito do Nubank (M)
 

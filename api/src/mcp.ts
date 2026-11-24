@@ -16,7 +16,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - O grupo "transferencia" (transferência entre contas, pagamento de fatura) fica fora do resumo e do orçamento. Movimento
   interno vem em par (+X e -X): nunca tire uma perna só. Pix no crédito do Nubank tem três pernas e fica de fora.
   Regra para categoria de transferência só com o "ok" explícito do Paulo.
-- Lançamento ignorado ou com status REMOVIDO não soma. Crédito em cartão já categorizado é estorno e abate a categoria.
+- Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
+  estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
 - Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,

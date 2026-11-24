@@ -170,7 +170,7 @@ test("categorias da Pluggy caem no lugar certo", () => {
     ["Taxes on investments", "Impostos e taxas"],
     ["Fixed income", "Investimentos"],
     ["Variable income", "Investimentos"],
-    ["Proceeds interests and dividends", "Investimentos"],
+    ["Proceeds interests and dividends", "Renda"],
     ["Non-recurring income", "Renda"],
     ["Car rental", "Transporte"],
     ["Rent", "Moradia"],
@@ -317,12 +317,13 @@ const novoLanc = (conta: string, data: string, valor: number, categoria: number 
 };
 const MERCADO = 3, RENDA = 18, TRANSFERENCIA = 19;
 
-test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência, PJ e oculta; estorno no cartão abate", async () => {
+test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência, PJ e oculta; estorno e reembolso abatem", async () => {
   const banco = novaConta("BANK"), cartao = novaConta("CREDIT");
   novoLanc(banco, "2020-03-05", -10000, MERCADO);
   novoLanc(cartao, "2020-03-06", -5000, MERCADO, { status: "PENDING" });
   novoLanc(cartao, "2020-03-07", 2000, MERCADO); // estorno: abate
-  novoLanc(banco, "2020-03-08", 2500, MERCADO); // Pix de alguém rachando a conta: entrada
+  novoLanc(banco, "2020-03-08", 2500, MERCADO); // Pix de alguém rachando a conta: abate
+  novoLanc(banco, "2020-03-08", 400, null); // entrada sem categoria: não abate
   novoLanc(cartao, "2020-03-09", 3000, null); // crédito no cartão sem categoria: não abate
   novoLanc(banco, "2020-03-10", 50000, RENDA);
   novoLanc(banco, "2020-03-11", -700, null);
@@ -334,10 +335,10 @@ test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência
   novoLanc(banco, "2020-04-01", -999, MERCADO);
 
   const r = (await chamar("GET", "/api/resumo?mes=2020-03")).d;
-  assert.deepEqual([r.entradas, r.saidas, r.pendentes], [55500, 13700, 2]);
-  assert.deepEqual(r.porCategoria.map((c: any) => [c.categoria, c.total]), [["Mercado", 13000], ["Sem categoria", 700]]);
+  assert.deepEqual([r.entradas, r.saidas, r.pendentes], [53400, 11200, 3]);
+  assert.deepEqual(r.porCategoria.map((c: any) => [c.categoria, c.total]), [["Mercado", 10500], ["Sem categoria", 700]]);
   const o = (await chamar("GET", "/api/orcamento?mes=2020-03")).d;
-  assert.equal(o.linhas.find((l: any) => l.categoria_id === MERCADO).realizado, 13000);
+  assert.equal(o.linhas.find((l: any) => l.categoria_id === MERCADO).realizado, 10500);
   assert.equal(o.sem_categoria, 700);
   assert.equal(o.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + o.sem_categoria, r.saidas);
   assert.ok(!o.linhas.some((l: any) => ["transferencia", "renda"].includes(l.grupo)));
