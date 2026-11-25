@@ -379,7 +379,7 @@ export function criarServidor(base: string) {
 
   servidor.registerTool(
     "patrimonio",
-    { description: "Patrimônio líquido: contas + investimentos + bens − dívidas (cartões inclusos), com a evolução. Bem com valor 0 = quitado ou vendido.", inputSchema: { pessoa }, annotations: LEITURA },
+    { description: "Patrimônio líquido: contas + investimentos + bens − dívidas (cartões inclusos), com a evolução. É a posição nos bancos conectados mais o lançado à mão: o que está fora do app não entra, diga isso ao usar o número. Bem com valor 0 = quitado ou vendido.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
         const p = await ler("/api/patrimonio", { pessoa: a.pessoa });

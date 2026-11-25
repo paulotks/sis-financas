@@ -67,6 +67,7 @@ export default function Resumo() {
           </div>
           {pat.error && <div className="aviso erro">{pat.error.message}</div>}
           <strong className={`grande ${pat.data && pat.data.total < 0 ? "neg" : ""}`}>{dinheiro(pat.data?.total)}</strong>
+          <small className="mudo">Posição nos bancos conectados, mais o que você lançou à mão.</small>
           {pat.data && <LinhaPatrimonio key={pessoa} pontos={pat.data.historico} />}
           <dl className="saldos">
             <dt>Contas</dt><dd>{dinheiro(pat.data?.contas)}</dd>

@@ -83,6 +83,7 @@ export default function Patrimonio() {
             </div>
           </div>
           <strong className={`grande ${d && d.total < 0 ? "neg" : ""}`}>{dinheiro(d?.total)}</strong>
+          <small className="mudo">Posição nos bancos conectados, mais o que você lançou à mão. O que está fora daqui não entra.</small>
           {d && <LinhaPatrimonio key={pessoa} pontos={d.historico} />}
           <dl className="saldos">
             <dt>Contas</dt><dd>{dinheiro(d?.contas)}</dd>

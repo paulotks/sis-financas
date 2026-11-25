@@ -157,7 +157,7 @@ Os cálculos estão certos; o que falha é o dado que os cartões mandam, e ning
 | 74 | (V13) Prévia da regra conta o Pix no crédito | P | não | `contarParecidos` (`categorizar.ts:161`) não passa por `pixNoCredito`; o `total_previsto` do MCP compara prévia com prévia e não pega isso. Melhor separar, em `reaplicarRegras`, o cálculo da gravação e usar o cálculo na prévia: aplicar e desfazer faria um GET travar a base | a fazer |
 | 75 | (V14) Fechar a dúvida do fuso dos lançamentos | P | não | Recomendação da validação: **não converter** `date` (parte das linhas não tem hora e iria para o dia anterior). O Paulo aceitou: `CLAUDE.md` e notas acertados | feito (2026-11-25) |
 | 76 | (V8 a V12) Ajustes de Alarme e Análises | P cada | não | V8 avisar quando o mês inicial automático mudar (`ritmo.ts:42-48`). V9 mesma janela no acumulado (`ritmo.ts:6`, `server.ts:398`). V10 "Renda" do gráfico é tudo o que entrou (`Analises.tsx:107`). V11 recorrente já lançada no futuro desconta duas vezes (`server.ts:351`). V12 sem "normal" quando ele é zero (`server.ts:373`, `432`). Com o 55, que mexe nos mesmos trechos | a fazer |
-| 77 | (V15) Patrimônio diz que é a posição nos bancos conectados | P | não | Só texto. Depois do 62, que põe os cofrinhos e caixinhas | a fazer |
+| 77 | (V15) Patrimônio diz que é a posição nos bancos conectados | P | não | Só texto. Depois do 62, que põe os cofrinhos e caixinhas. Em Contas, no Resumo e na ferramenta do MCP | feito (2026-11-25) |
 
 **O que 41 a 62 já resolvem destes achados** ("liga com", na validação, quer dizer assunto vizinho, não correção):
 
