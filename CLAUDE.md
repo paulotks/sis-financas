@@ -91,7 +91,7 @@ web/src/
 - `POST /connect_token`: `clientUserId` vai **dentro de `options`**; `itemId` na raiz só para reconectar.
 - Transações: usar **`GET /v2/transactions`** (cursor; `next` é a query string pronta, `?accountId=...&after=...`: anexar ao caminho, nunca mandar inteira em `after`). O `/transactions` v1 é removido em **31/12/2026**.
 - A Pluggy cria lançamentos com **data passada** e parcelas com **data futura** (`PENDING`), e ao fechar a fatura pode **apagar e recriar** um lançamento com outro id. Por isso a sincronização relê a janela toda e `removerSumidos` (`sync.ts`) tira o antigo, passando a edição do usuário para o substituto. Editado sem substituto vira `status = 'REMOVIDO'`: fica na lista e **não soma** (toda consulta de totais precisa excluir).
-- `date` vem em UTC (a documentação manda converter para GMT-3). Hoje usamos só a parte da data: conferir com dados reais se lançamento feito depois das 21h cai no dia seguinte.
+- `date` vem em UTC (a documentação manda converter para GMT-3), mas parte das linhas só tem a data (`T00:00Z`) e iria para o dia anterior. Usamos só a parte da data e **não convertemos** (decidido em 2026-11-25; o efeito nos totais é desprezível).
 - Itens do MeuPluggy **não** aceitam refresh pela API; a Pluggy atualiza 1x/dia. Nem o widget (`updateItem`) atualiza o item proxy: reautorizar banco = refazer no meu.pluggy.ai (atualiza sozinho a cada 24h). Limite gratuito: 5 conexões ativas do mesmo titular (a tela Conexões mostra n/5). Widget fixado em v2.7.0.
 - Faturas (`/bills`) e investimentos (`/investments`) podem não existir para alguns bancos: tratar `ErroPluggy` e seguir.
 - Cofrinhos do Mercado Pago não aparecem como conta nem em `/investments` (vazio em todos os bancos testados até 2026-11-23). No extrato vêm em par (+X/−X). Até virem, entram como linha manual em `bens`.
@@ -120,7 +120,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 5 feitos; o próximo, Metas, ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 5 feitos; o que vem agora está em "Ordem e fatias"; Metas ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)
