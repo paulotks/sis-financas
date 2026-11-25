@@ -15,8 +15,9 @@ precisa. Banco sem peculiaridade não tem entrada no mapa, e isso é o adaptador
 |---|---|---|
 | `internos` | descrição de movimento interno → nome da categoria | Mercado Pago (323): cofrinhos e débito automático de fatura |
 | `trocas` | olha várias linhas juntas e devolve as categorias que mudam, acima das regras | Nubank (260): Pix no crédito |
+| `totalDaFatura` (item 67) | tira do total da fatura o que ela carrega da anterior; só compara, não grava | o banco do Cartão B |
 
-**Fica de fora até ter caso:** a tradução da lista da conta (65 e 66) e a do total da fatura (67). Quando vierem: a da lista entra em `sincronizarItem`, com
+**Fica de fora até ter caso:** a tradução da lista da conta (65 e 66). Quando vier, entra em `sincronizarItem`, com
 a lista inteira da conta em mãos, antes de `salvarTransacoes` e `removerSumidos` (os dois comparam datas). `bruto` continua como o banco mandou.
 
 ## Passo 1: mover, sem mudar número (sem migração)

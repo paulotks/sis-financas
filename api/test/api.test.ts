@@ -69,6 +69,7 @@ const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
+const { totalDaFatura } = await import("../src/adaptadores.js");
 const { parcelasPrevistas } = await import("../src/faltas.js");
 const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
@@ -422,6 +423,11 @@ test("banco da conexão: vem do código da conta; sem código ou com mais de um,
 
   ({ paginas, contasFalsas } = antes);
   db.exec("DELETE FROM lancamentos WHERE id = 'interno'; DELETE FROM contas WHERE id LIKE '66666666%'; UPDATE conexoes SET banco = NULL");
+});
+
+test("total da fatura: só no banco que carrega a anterior, o que veio dela sai; pago inteiro, em parte ou nada", () => {
+  for (const [pagamentos, total] of [[-5000 + 5000, 10000], [-5000 + 4000, 9000], [-5000, 5000], [0, 10000]]) assert.equal(totalDaFatura("104", 10000, pagamentos), total);
+  for (const outro of ["260", "999", null]) assert.equal(totalDaFatura(outro, 10000, -5000), 10000); // peça nova não vale sem saber o banco
 });
 
 test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza o que já estava", async () => {
