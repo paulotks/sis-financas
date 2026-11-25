@@ -170,8 +170,9 @@ app.get("/api/lancamentos", async (req) => {
        AND COALESCE(l.categoria_id, 0) NOT IN (SELECT id FROM categorias WHERE grupo = 'transferencia')`,
     );
   if (q.busca) {
-    onde.push("(l.descricao LIKE ? OR l.descricao_original LIKE ? OR l.notas LIKE ?)");
-    const b = `%${q.busca}%`;
+    // instr e não LIKE: "%" e "_" digitados são texto, não coringa
+    onde.push(`(${["descricao", "descricao_original", "notas"].map((c) => `instr(minusculas(l.${c}), ?) > 0`).join(" OR ")})`);
+    const b = q.busca.toLowerCase();
     vals.push(b, b, b);
   }
   const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde.join(" AND ")} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);

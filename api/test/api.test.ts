@@ -979,6 +979,25 @@ test("filtro de conta: uma, só contas ou só cartões", async () => {
   assert.equal((await chamar("GET", "/api/lancamentos?conta=xyz")).status, 400);
 });
 
+test("busca: acha texto com acento em outra caixa, nos três campos, e trata % e _ como texto", async () => {
+  const conta = novaConta("BANK");
+  for (const [i, descricao_original, extra] of [[1, "LOJINHA ÉBANO", {}], [2, "loja 100% nova", {}], [3, "loja 1000 nova", {}], [4, "a_b cd", {}], [5, "axb cd", { descricao: "Ômega Zyx" }], [6, "outra", { notas: "Reforço da ÁREA" }]] as const)
+    novoLanc(conta, "2031-03-01", -i, null, { descricao_original, ...extra });
+  const achados = async (busca: string) => {
+    const { d } = await chamar("GET", `/api/lancamentos?${new URLSearchParams({ mes: "2031-03", busca })}`);
+    assert.equal(d.total, d.itens.length);
+    return d.itens.map((l: any) => -l.valor_centavos).sort();
+  };
+  assert.deepEqual(await achados("lojinha ébano"), [1]);
+  assert.deepEqual(await achados("Ébano"), [1]);
+  assert.deepEqual(await achados("ÔMEGA"), [5]);
+  assert.deepEqual(await achados("reforço da área"), [6]);
+  assert.deepEqual(await achados("100%"), [2]);
+  assert.deepEqual(await achados("a_b"), [4]);
+  assert.deepEqual(await achados("NOVA"), [2, 3]);
+  db.prepare("DELETE FROM lancamentos WHERE data = '2031-03-01'").run();
+});
+
 test("estorno: o filtro acha só os créditos de cartão e as compras candidatas vêm na ordem certa", async () => {
   const cartao = novaConta("CREDIT"), outro = novaConta("CREDIT"), banco = novaConta("BANK");
   const por = (id: string, conta: string, data: string, valor: number, categoria: number | null, texto: string, extra: Record<string, string | number> = {}) =>
