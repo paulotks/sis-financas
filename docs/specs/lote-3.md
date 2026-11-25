@@ -37,8 +37,9 @@ Em worktree (sem `.env`), com cópia da base: tem migração e muda o total dos 
 - **Ensaio na cópia (2026-11-24):** Resumo idêntico em todos os meses, PF e PJ, menos onde havia lançamento em Investimentos (só ele saiu da conta).
 - **Pode gastar por dia** = (teto − já lançado no mês − recorrentes previstas até o fim do mês, menos as ignoradas) ÷ dias que faltam, contando hoje.
   Ao lado, o que a projeção supõe por dia até o fim. Comparar com a média do mês até hoje exagera: ela inclui as contas fixas já pagas.
-- **Acumulado:** renda − gasto dos até 6 últimos meses fechados e analisados.
-- **Acima do normal:** 3 categorias que mais passaram da própria mediana dos 3 meses anteriores, menos as que estão dentro do orçado.
+- **Acumulado:** renda − gasto dos até 12 últimos meses fechados e analisados (eram 6; desde o item 76, a mesma janela de Análises).
+- **Acima do normal:** 3 categorias que mais passaram da própria mediana dos 3 meses anteriores, menos as que estão dentro do orçado
+  e as sem normal (mediana zero ou negativa, item 76).
 
 ## Itens
 

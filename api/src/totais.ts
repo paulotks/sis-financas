@@ -4,8 +4,8 @@
  */
 import { db } from "./db.js";
 import { faltasDosCartoes, previstas } from "./faltas.js";
-import { detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
-import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_MEDIANA, type TotalMes } from "./ritmo.js";
+import { detectarRecorrentes, type Decisao, type Gasto } from "./recorrentes.js";
+import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_MEDIANA, somarMes, type TotalMes } from "./ritmo.js";
 
 export const fimDoMes = (mes: string) => `${mes}-${diasDoMes(mes)}`;
 
@@ -69,12 +69,16 @@ export const totaisPorMes = (ate: string) =>
      ${BASE_RESUMO} GROUP BY 1 ORDER BY 1`,
   ).all("0000-01-01", fimDoMes(ate), "PF") as unknown as TotalMes[];
 
-/** Totais PF até o mês atual e o primeiro mês da análise: o que o usuário escolheu ou, sem escolha, o primeiro com a renda completa. */
+/**
+ * Totais PF até o mês atual e o primeiro mês da análise: o que o usuário escolheu ou, sem escolha, o primeiro com a renda completa.
+ * O automático pode mudar na virada do mês (a mediana anda), e o acumulado junto: `inicio_antes` = qual era no mês passado, se mudou.
+ */
 export function historicoPF(mesAtual: string) {
   const totais = totaisPorMes(mesAtual);
   const inicio_automatico = inicioDaAnalise(totais, mesAtual);
   const escolhido = db.prepare("SELECT valor FROM config WHERE chave = 'inicio_analise'").get() as { valor: string } | undefined;
-  return { totais, inicio: escolhido?.valor ?? inicio_automatico, inicio_automatico, inicio_definido: !!escolhido };
+  const inicio = escolhido?.valor ?? inicio_automatico, antes = inicioDaAnalise(totais, somarMes(mesAtual, -1));
+  return { totais, inicio, inicio_automatico, inicio_definido: !!escolhido, inicio_antes: !escolhido && inicio && antes !== inicio ? antes : null };
 }
 
 /** A renda que serve de régua no mês, o histórico de onde ela saiu e o orçado de gasto. Só PF. */
@@ -90,12 +94,15 @@ export function reguaDoMes(mes: string, mesAtual: string, { totais, inicio } = h
   };
 }
 
-/** O normal de cada categoria: a mediana do gasto nos meses anteriores. Nulo = não há mês anterior na análise. */
+/**
+ * O normal de cada categoria: a mediana do gasto nos meses anteriores. Nulo = não há normal: nenhum mês anterior na análise, ou a mediana é
+ * zero ou negativa (reembolso, gasto esporádico), e contra ela todo gasto pareceria estouro.
+ */
 export function normalPorCategoria(anteriores: TotalMes[]) {
   const meses = anteriores.map((t) => new Map(gastosPorCategoria(t.mes, "PF").map((g) => [g.categoria_id, g.total])));
   return (categoria_id: number | null) => {
     const m = mediana(meses.map((totais) => totais.get(categoria_id) ?? 0));
-    return m === null ? null : Math.max(0, m); // reembolso pode deixar o mês da categoria negativo; "normal" abaixo de zero não diz nada
+    return m !== null && m > 0 ? m : null;
   };
 }
 
@@ -113,14 +120,11 @@ export function ultimoDiaComDado(hoje: string) {
 /** Quantos dias do mês têm dado; 0 = os dados ainda são do mês anterior. */
 export const diasComDado = (mes: string, ate: string) => (ate < `${mes}-01` ? 0 : Number(ate.slice(8)));
 
-/** Deve cobrar de novo: conta no alarme. Sugestão conta até ser ignorada. */
-export const deveCobrar = (r: Recorrente) => r.status !== "ignorada" && r.status !== "cancelada" && r.situacao !== "parada";
-
 export function listarRecorrentes(pessoa: string, hoje: string) {
   const gastos = db.prepare(
     `SELECT l.data, l.descricao, l.descricao_original, l.status, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
      ${BASE_RESUMO} AND l.valor_centavos < 0 AND COALESCE(l.total_parcelas, 0) <= 1 ORDER BY l.data`,
-  ).all("0000-01-01", hoje, pessoa) as unknown as Gasto[];
+  ).all("0000-01-01", "9999-12-31", pessoa) as unknown as Gasto[]; // o detector separa o que é futuro
   const decisoes = db.prepare("SELECT chave, valor_centavos AS valor, status, proposta, decidido_em FROM recorrencias").all() as unknown as Decisao[];
   return detectarRecorrentes(gastos, hoje, decisoes);
 }

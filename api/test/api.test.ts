@@ -1254,6 +1254,24 @@ test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o q
   assert.deepEqual(["2026-01-31", "2026-12-15", "2028-01-30"].map(mesSeguinte), ["2026-02-28", "2027-01-15", "2028-02-29"]);
 });
 
+test("recorrentes: a já lançada com data futura não conta de novo como a que ainda vem", () => {
+  const passado = ["2031-03-10", "2031-04-10", "2031-05-10"].flatMap((d) => [g("Streaming", d, 4000), g("Streaming", d, 9000)]);
+  const ver = (...futuro: ReturnType<typeof g>[]) =>
+    detectarRecorrentes([...passado, ...futuro], "2031-05-20").map((r) => [r.valor, r.vezes, r.ultima, r.proxima, r.a_lancar]).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const normal = (valor: number) => [valor, 3, "2031-05-10", "2031-06-10", "2031-06-10"];
+  assert.deepEqual(ver(), [normal(4000), normal(9000)]);
+  // só a de valor parecido anda, quantos meses já vierem, e nada mais muda na lista
+  assert.deepEqual(ver(g("Streaming", "2031-06-10", 8700)), [normal(4000), [9000, 3, "2031-05-10", "2031-06-10", "2031-07-10"]]);
+  assert.deepEqual(ver(g("Streaming", "2031-06-10", 9000), g("Streaming", "2031-07-10", 9000))[1][4], "2031-08-10");
+  assert.deepEqual(ver(g("Streaming", "2031-06-10", 9000), g("Streaming", "2031-06-11", 4000)).map((r) => r[4]), ["2031-07-11", "2031-07-10"]);
+  // outro nome, compra dias depois da última ou valor bem diferente: não é ela
+  assert.deepEqual(ver(g("Loja", "2031-06-10", 9000), g("Streaming", "2031-05-25", 9000), g("Streaming", "2031-06-10", 90000)), [normal(4000), normal(9000)]);
+  // cancelada não toma o lugar da que continua
+  const cancelada = [{ chave: "streaming", valor: 9000, status: "cancelada" as const, proposta: null, decidido_em: "2031-05-15 10:00:00" }];
+  const r = detectarRecorrentes([...passado, g("Streaming", "2031-06-10", 6000)], "2031-05-20", cancelada).find((x) => x.valor === 4000)!;
+  assert.equal(r.a_lancar, "2031-07-10");
+});
+
 test("recorrentes: troca de nome, forma de pagamento, várias no mesmo lugar e mês pulado; compra repetida por acaso não", () => {
   const ver = (gs: ReturnType<typeof g>[], decisoes: any[] = [], hoje = "2026-06-20") =>
     detectarRecorrentes([...gs].sort((a, b) => (a.data < b.data ? -1 : 1)), hoje, decisoes);
@@ -1693,6 +1711,64 @@ test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o in
   const pelo = await usar("analises", { mes: m1 });
   assert.deepEqual([pelo.mes_a_mes.length, pelo.mes_a_mes[2].gasto, pelo.gasto_acumulado_por_dia.dias.at(-1)], [4, r1.saidas / 100, r1.saidas / 100]);
   await cliente.close();
+});
+
+test("alarme e análises: mesma janela no acumulado, aviso do início que mudou, sem normal não é estouro e recorrente lançada não conta duas vezes", async () => {
+  // meses e renda do teste do ritmo
+  const conta = novaConta("BANK"), { mes, inicio } = (await chamar("GET", "/api/ritmo")).d, m = (k: number) => somarMes(mes, k);
+  const ver = async (qual = mes) => ({ r: (await chamar("GET", `/api/ritmo?mes=${qual}`)).d, a: (await chamar("GET", `/api/analises?mes=${qual}`)).d });
+  const limpar = () => db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(conta);
+  const base = await ver();
+  assert.deepEqual([base.r.inicio_antes, base.a.inicio_antes], [null, null]);
+
+  // V8: no mês passado a mediana era menor e mais um mês entrava na análise
+  novoLanc(conta, `${m(-4)}-05`, 480000, RENDA);
+  const mudou = await ver();
+  assert.deepEqual([mudou.r.inicio, mudou.r.inicio_antes, mudou.a.inicio_antes], [inicio, m(-4), m(-4)]);
+  const { cliente, usar } = await ligarMcp();
+  assert.deepEqual([(await usar("ritmo_do_mes")).analise_desde_mudou_era, (await usar("analises")).analise_desde_mudou_era], [m(-4), m(-4)]);
+  await chamar("PUT", "/api/analises/inicio", { mes: m(-2) });
+  assert.equal((await ver()).a.inicio_antes, null); // escolhido não muda sozinho
+  await chamar("PUT", "/api/analises/inicio", { mes: null });
+  limpar();
+
+  // V9: com histórico longo, as duas telas somam os mesmos 12 meses
+  for (let k = 4; k <= 15; k++) {
+    novoLanc(conta, `${m(-k)}-05`, 1000000, RENDA);
+    novoLanc(conta, `${m(-k)}-06`, -100000 - k, MERCADO);
+  }
+  const longo = await ver(), fechados = longo.a.meses.filter((x: any) => !x.aberto);
+  assert.deepEqual([longo.r.acumulado.meses, longo.r.acumulado.de, longo.r.acumulado.ate], [12, m(-12), m(-1)]);
+  assert.deepEqual([fechados.length, fechados[0].mes, fechados.at(-1).acumulado], [12, m(-12), longo.r.acumulado.sobra]);
+  assert.deepEqual([longo.a.meses.at(-1).mes, longo.a.meses.length], [mes, 13]);
+  limpar();
+
+  // V12: gasto esporádico e reembolso maior que o gasto não têm normal; não encabeçam o alarme
+  const nova = async (nome: string) => (await chamar("POST", "/api/categorias", { nome, grupo: "essencial" })).d.id as number;
+  const esporadica = await nova("Esporádica"), reembolsada = await nova("Reembolsada"), comum = await nova("Comum");
+  for (const k of [1, 2]) {
+    novoLanc(conta, `${m(-k)}-07`, 70000, reembolsada);
+    novoLanc(conta, `${m(-k)}-07`, -30000, comum);
+  }
+  for (const c of [esporadica, reembolsada, comum]) novoLanc(conta, `${mes}-01`, -900000, c);
+  const { r, a } = await ver(), linha = (id: number) => a.categorias.find((c: any) => c.categoria_id === id);
+  assert.deepEqual([esporadica, reembolsada, comum].map((id) => [linha(id).gasto, linha(id).normal]), [[900000, null], [900000, null], [900000, 30000]]);
+  const acima = r.acima.map((c: any) => c.categoria_id);
+  assert.deepEqual([acima.includes(esporadica), acima.includes(reembolsada), acima.includes(comum)], [false, false, true]);
+  assert.equal((await usar("analises")).categorias.find((c: any) => c.categoria_id === esporadica).normal, null);
+  limpar();
+  for (const id of [esporadica, reembolsada, comum]) assert.equal((await chamar("DELETE", `/api/categorias/${id}`)).status, 200);
+
+  // V11: a academia deste mês e a do próximo já lançadas: estão no gasto, não no que ainda vem
+  for (const k of [0, 1]) novoLanc(conta, `${m(k)}-28`, -5000, MERCADO, { descricao_original: "Academia", descricao: "Academia" });
+  const lancada = await ver(), total = (x: typeof base, i: number) => x.a.comprometido[i].parcelas + x.a.comprometido[i].recorrentes;
+  assert.equal(lancada.r.gasto, base.r.gasto + 5000);
+  assert.deepEqual([lancada.r.por_dia.recorrentes, lancada.r.por_dia.livre], [base.r.por_dia.recorrentes - 5000, base.r.por_dia.livre]);
+  assert.deepEqual([lancada.a.comprometido[0].recorrentes, total(lancada, 0)], [base.a.comprometido[0].recorrentes - 5000, total(base, 0)]);
+  assert.deepEqual(lancada.a.comprometido.slice(1), base.a.comprometido.slice(1));
+  limpar();
+  await cliente.close();
+  assert.deepEqual(await ver(), base);
 });
 
 test("projeção e curva do mês param no último dia com dado de todos os bancos; o que falta do mês conta de hoje", async () => {

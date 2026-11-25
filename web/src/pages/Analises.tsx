@@ -64,6 +64,7 @@ function Inicio({ d }: { d: Dados }) {
   const salvar = useMutation({ mutationFn: api.definirInicio, onSuccess: () => qc.invalidateQueries() });
   return (
     <label className="inicio mudo">
+      {d.inicio_antes && <span className="alerta pequeno">O automático mudou na virada do mês (era {mesCurto(d.inicio_antes)}): escolha um mês para fixar.</span>}
       {salvar.error ? <span className="neg">{salvar.error.message}</span> : "Analisar desde"}
       <select
         className="campo"
@@ -79,7 +80,7 @@ function Inicio({ d }: { d: Dados }) {
   );
 }
 
-/** A: renda × orçado × gasto. Onde não havia orçamento, a linha tracejada mostra o de hoje. */
+/** A: o que entrou (renda e entradas sem categoria, como no Resumo) × orçado × gasto. Onde não havia orçamento, a linha tracejada mostra o de hoje. */
 function RendaOrcadoGasto({ d }: { d: Dados }) {
   const fechados = d.meses.filter((m) => !m.aberto);
   const estourados = fechados.filter((m) => m.gasto > m.entradas);
@@ -94,21 +95,21 @@ function RendaOrcadoGasto({ d }: { d: Dados }) {
   const barra = (p: BarShapeProps) => <Rectangle {...p} fillOpacity={(p.payload as { aberto?: boolean })?.aberto ? 0.45 : 1} />;
   return (
     <Grafico
-      titulo="Renda × orçado × gasto"
+      titulo="Entrou × orçado × gasto"
       frase={
         <>
           {fechados.length > 0 && (estourados.length
-            ? <>Em <b className="neg">{estourados.length} de {fechados.length}</b> meses fechados você gastou mais do que ganhou.</>
-            : <>Nenhum dos {fechados.length} meses fechados estourou a renda.</>)}
+            ? <>Em <b className="neg">{estourados.length} de {fechados.length}</b> meses fechados você gastou mais do que entrou.</>
+            : <>Em nenhum dos {fechados.length} meses fechados você gastou mais do que entrou.</>)}
           {d.meses.some((m) => m.aberto) && <> {nomeDoMes(d.mes_atual)} (apagado) está em andamento.</>}
         </>
       }
       chaves={[
-        { nome: "Renda", cor: COR.renda }, { nome: "Gasto", cor: COR.gasto }, { nome: "Orçado", cor: COR.tinta, forma: "linha" },
+        { nome: "Entrou", cor: COR.renda }, { nome: "Gasto", cor: COR.gasto }, { nome: "Orçado", cor: COR.tinta, forma: "linha" },
         ...(temReferencia ? [{ nome: "Orçado de hoje (referência: o mês não tinha orçamento)", cor: COR.tinta, forma: "tracejada" as const }] : []),
       ]}
       tabela={{
-        colunas: ["Mês", "Renda", "Orçado", "Gasto", "Sobra"],
+        colunas: ["Mês", "Entrou", "Orçado", "Gasto", "Sobra"],
         linhas: d.meses.map((m) => [
           mesCurto(m.mes) + (m.aberto ? " (em andamento)" : ""), dinheiro(m.entradas), dinheiro(m.orcado), dinheiro(m.gasto), <span className={cor(m.sobra)}>{dinheiro(m.sobra)}</span>,
         ]),
@@ -122,7 +123,7 @@ function RendaOrcadoGasto({ d }: { d: Dados }) {
           cursor={{ fill: "#ffffff0a" }}
           content={(p) => <Dica p={p} titulo={nomeMes} extra={(m) => <span><b className={cor(m.sobra)}>{dinheiro(m.sobra)}</b> {m.aberto ? "até agora" : "sobra"}</span>} />}
         />
-        <Bar dataKey="entradas" name="renda" fill={COR.renda} maxBarSize={24} radius={[4, 4, 0, 0]} shape={barra} />
+        <Bar dataKey="entradas" name="entrou" fill={COR.renda} maxBarSize={24} radius={[4, 4, 0, 0]} shape={barra} />
         <Bar dataKey="gasto" name="gasto" fill={COR.gasto} maxBarSize={24} radius={[4, 4, 0, 0]} shape={barra}>
           <LabelList dataKey="estouro" position="top" fill="var(--neg)" fontSize={12} />
         </Bar>
@@ -144,7 +145,7 @@ function Guardado({ d }: { d: Dados }) {
     <div className="dois-graficos">
       <Grafico
         titulo="Guardado por mês"
-        frase={<>Renda menos gasto. No período, {total < 0 ? "faltou" : "sobrou"} <b className={cor(total)}>{dinheiro(Math.abs(total))}</b>{ganho > 0 && `: ${Math.round((Math.abs(total) / ganho) * 100)}% do que entrou`}.</>}
+        frase={<>O que entrou menos o gasto. No período, {total < 0 ? "faltou" : "sobrou"} <b className={cor(total)}>{dinheiro(Math.abs(total))}</b>{ganho > 0 && `: ${Math.round((Math.abs(total) / ganho) * 100)}% do que entrou`}.</>}
         tabela={tabela}
       >
         <BarChart data={fechados} responsive style={ALTURA} margin={margem}>
@@ -180,7 +181,7 @@ function DiaADia({ d }: { d: Dados }) {
   const noOrcado = furou(orcado), naRenda = furou(esperada);
   const dados = Array.from({ length: Math.max(dias.length, anterior?.length ?? 0) }, (_, i) => ({ dia: i + 1, atual: dias[i] ?? null, anterior: anterior?.[i] ?? null }));
   const ultimo = dias.length, antes = anterior?.[Math.min(ultimo, anterior.length) - 1]; // meses de tamanhos diferentes
-  const gasto = dias[ultimo - 1], aberto = d.mes === d.mes_atual;
+  const gasto = dias[ultimo - 1] ?? 0, aberto = d.mes === d.mes_atual;
   const [a, m] = d.mes.split("-").map(Number);
   const faltamDias = new Date(a, m, 0).getDate() - Number(hoje().slice(8)) + 1; // contando hoje
   const limites = [["o orçado", orcado], ["a renda esperada", esperada]] as const;
@@ -196,7 +197,7 @@ function DiaADia({ d }: { d: Dados }) {
           {aberto && dados_ate < hoje() && <>Os dados do banco vão até {dataCurta(dados_ate)}. </>}
           {noOrcado > 0 && <>Passou do orçado no <b className="alerta">dia {noOrcado}</b>. </>}
           {naRenda > 0 && <>Passou da renda esperada no <b className="neg">dia {naRenda}</b>. </>}
-          {soComParcelas.length > 0 && <>Com as parcelas já lançadas, passa de <b className="neg">{soComParcelas.join(" e de ")}</b>. </>}
+          {soComParcelas.length > 0 && <>Com o que já está lançado até o fim do mês, passa de <b className="neg">{soComParcelas.join(" e de ")}</b>. </>}
           {aberto && resta.length > 0 && <>Restam <b>{resta.join(" e ")}</b>, já contando as parcelas lançadas, com {faltamDias === 1 ? "1 dia" : `${faltamDias} dias`} pela frente. </>}
           {!aberto && !noOrcado && !naRenda && resta.length > 0 && <>Não passou de nenhum limite. </>}
           {antes !== undefined && (
@@ -236,7 +237,10 @@ function QuemEstourou({ d }: { d: Dados }) {
   const [contra, setContra] = useState<keyof typeof CONTRA>("normal");
   const [todas, setTodas] = useState(false);
   const temBase = d.categorias.some((c) => c[contra] !== null);
+  // sem normal não há estouro a medir: sai da ordem e aparece embaixo (sem orçado é diferente: o gasto está fora do plano)
+  const semNormal = contra === "normal" ? d.categorias.filter((c) => c.normal === null && c.gasto !== 0) : [];
   const lista = d.categorias
+    .filter((c) => !semNormal.includes(c))
     // dentro do próprio orçado aparece na lista, mas não é culpado (mesma regra do alarme)
     .map((c) => ({ ...c, base: c[contra], diferenca: c.gasto - (c[contra] ?? 0), noOrcado: c.orcado !== null && c.gasto <= c.orcado }))
     .filter((c) => c.diferenca !== 0)
@@ -278,6 +282,18 @@ function QuemEstourou({ d }: { d: Dados }) {
               </li>
             ))}
           </ul>
+          {semNormal.length > 0 && (
+            <p className="mudo pequeno">
+              Sem um normal para comparar:{" "}
+              {semNormal.map((c, i) => (
+                <span key={c.categoria_id}>
+                  {i > 0 && ", "}
+                  <Link to={`/lancamentos?mes=${d.mes}&categoria=${c.categoria_id}`}>{c.categoria}</Link> ({dinheiro(c.gasto)})
+                </span>
+              ))}
+              .
+            </p>
+          )}
           {lista.length > MAIORES && (
             <button className="botao secundario ver-todas" aria-expanded={todas} onClick={() => setTodas(!todas)}>
               {todas ? "Ver só as maiores" : `Ver todas (${lista.length})`}

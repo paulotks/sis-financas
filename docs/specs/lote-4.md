@@ -13,7 +13,7 @@ Itens 27 a 32 do [backlog](../backlog.md). Decidido com o Paulo em 2026-11-24. S
 
 | # | Gráfico | Detalhe |
 |---|---|---|
-| 27 | **A.** Renda × orçado × gasto por mês | Barras de renda e gasto, linha do orçado. Mês sem orçamento: linha pontilhada com o de hoje, identificada como "referência" |
+| 27 | **A.** Entrou × orçado × gasto por mês | Barras do que entrou (item 76: renda e entradas sem categoria) e do gasto, linha do orçado. Mês sem orçamento: linha pontilhada com o de hoje, identificada como "referência" |
 | 28 | **B.** Gasto acumulado dia a dia | Mês escolhido contra o mês passado, com as linhas do orçado e da renda esperada: onde a curva fura |
 | 29 | **C.** Guardado por mês e acumulado | Barras acima e abaixo de zero, e o acumulado em gráfico separado (nunca dois eixos). Sem meta por enquanto |
 | 30 | **E.** Quem estourou | Categoria contra: média dos 3 meses (padrão), mês passado ou orçado. Ordem: maior estouro em reais. No topo, os 3 maiores em frase. A barra abre os lançamentos |
@@ -23,7 +23,7 @@ Itens 27 a 32 do [backlog](../backlog.md). Decidido com o Paulo em 2026-11-24. S
 **Decidido ao implementar**
 
 - O mês em andamento aparece apagado no A e fica **fora** do C: a sobra dele engana (a renda entra no começo, o gasto vem depois).
-- O "normal" do E é a **mediana** dos 3 meses, a mesma do alarme, e não a média: um mês fora do padrão não muda a régua.
+- O "normal" do E é a **mediana** dos 3 meses, a mesma do alarme, e não a média: um mês fora do padrão não muda a régua. Zero ou negativa = sem normal.
 - Categoria dentro do próprio orçado aparece na lista do E, mas não entra na frase dos culpados (mesma regra do alarme).
 - Recorrente no G é o valor da última cobrança, repetido nos 12 meses: é provável, não certo.
 

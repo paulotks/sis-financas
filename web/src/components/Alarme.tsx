@@ -205,6 +205,7 @@ function Acumulado({ r }: { r: Ritmo }) {
         {a.sobra < 0 ? "você gastou mais do que ganhou. " : "isto é tudo o que sobrou. "}
         Entraram {dinheiroCurto(a.entradas)}, saíram {dinheiroCurto(a.gasto)}.
       </p>
+      {r.inicio_antes && r.situacao === "aberto" && <p className="pequeno alerta">O mês inicial automático mudou (era {mesCurto(r.inicio_antes)}). <Link to="/analises">Fixar em Análises →</Link></p>}
     </>
   );
 }

@@ -7,11 +7,11 @@ import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
 import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
-import { chaveDe } from "./recorrentes.js";
+import { chaveDe, deveCobrar } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import {
-  BASE_RESUMO, deveCobrar, diasComDado, ENTRADA, fimDoMes, GASTO, gastosPorCategoria, historicoPF, listarRecorrentes, naoApareceuPF, normalPorCategoria,
+  BASE_RESUMO, diasComDado, ENTRADA, fimDoMes, GASTO, gastosPorCategoria, historicoPF, listarRecorrentes, naoApareceuPF, normalPorCategoria,
   periodo, previstasPF, reguaDoMes, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
@@ -298,7 +298,8 @@ app.get("/api/ritmo", async (req) => {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
   const situacao = mes === mesAtual ? "aberto" : mes < mesAtual ? "fechado" : "futuro";
-  const { totais, inicio, anteriores, cats, orcado, esperada, origem } = reguaDoMes(mes, mesAtual);
+  const historico = historicoPF(mesAtual);
+  const { totais, inicio, anteriores, cats, orcado, esperada, origem } = reguaDoMes(mes, mesAtual, historico);
   const { entradas, saidas } = totaisDoMes(mes, "PF");
   // sem renda esperada, o orçado é o único limite
   const teto = esperada ?? (orcado || null);
@@ -306,7 +307,7 @@ app.get("/api/ritmo", async (req) => {
 
   const lista = situacao === "aberto" ? listarRecorrentes("PF", hoje) : [];
   // a atrasada do mês passado ainda vem: também desconta
-  const recorrentes = somar(lista.filter((r) => deveCobrar(r) && r.proxima.slice(0, 7) <= mes).map((r) => r.valor));
+  const recorrentes = somar(lista.filter((r) => deveCobrar(r) && r.a_lancar.slice(0, 7) <= mes).map((r) => r.valor));
   const gastoEntre = (de: string, ate: string) =>
     (db.prepare(`SELECT COALESCE(SUM(${GASTO}),0) AS total ${BASE_RESUMO}`).get(de, ate, "PF") as { total: number }).total;
   const diasNoMes = diasDoMes(mes), dados_ate = ultimoDiaComDado(hoje), dia = diasComDado(mes, dados_ate);
@@ -334,7 +335,7 @@ app.get("/api/ritmo", async (req) => {
     .slice(0, 3);
 
   return {
-    mes, situacao, hoje, dados_ate, inicio, analisado,
+    mes, situacao, hoje, dados_ate, inicio, inicio_antes: historico.inicio_antes, analisado,
     renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
     orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
     nao_apareceu: situacao === "aberto" ? naoApareceuPF(hoje) : [],
@@ -352,7 +353,7 @@ app.get("/api/ritmo", async (req) => {
 
 // ---------------- análises (só PF; mesmos totais do Resumo) ----------------
 
-const MESES_GRAFICO = 12;
+const MESES_A_FRENTE = 12;
 
 app.get("/api/analises", async (req) => {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
@@ -363,7 +364,8 @@ app.get("/api/analises", async (req) => {
   // mês a mês: o atual entra como "aberto" e fica fora do acumulado, porque a sobra dele ainda engana
   const orcado_hoje = reguaDoMes(mesAtual, mesAtual, historico).orcado;
   let acumulado = 0;
-  const meses = historico.totais.filter((t) => naAnalise(t.mes)).slice(-MESES_GRAFICO).map((t) => {
+  const atual = historico.totais.filter((t) => t.mes === mesAtual && naAnalise(t.mes));
+  const meses = [...fechadosAntes(historico.totais, mesAtual, MESES_ACUMULADO, inicio), ...atual].map((t) => {
     const aberto = t.mes === mesAtual, sobra = t.entradas - t.gasto;
     if (!aberto) acumulado += sobra;
     return { mes: t.mes, aberto, entradas: t.entradas, gasto: t.gasto, orcado: reguaDoMes(t.mes, mesAtual, historico).orcado || null, sobra, acumulado: aberto ? null : acumulado };
@@ -381,26 +383,27 @@ app.get("/api/analises", async (req) => {
 
   // quem estourou: toda categoria com gasto, normal, mês passado ou orçado
   const gastoPor = (m: string) => new Map(gastosPorCategoria(m, "PF").map((g) => [g.categoria_id, g]));
-  const atual = gastoPor(mes), passado = naAnalise(mes_anterior) ? gastoPor(mes_anterior) : null;
+  const doMes = gastoPor(mes), passado = naAnalise(mes_anterior) ? gastoPor(mes_anterior) : null;
   const normalDe = normalPorCategoria(regua.anteriores);
   const categorias = !naAnalise(mes) ? [] : regua.cats.filter((c) => c.grupo !== "renda").map(({ categoria_id, categoria, cor, grupo, planejado }) => ({
     categoria_id, categoria, cor, grupo,
-    gasto: atual.get(categoria_id)?.total ?? 0,
+    gasto: doMes.get(categoria_id)?.total ?? 0,
     normal: normalDe(categoria_id),
     mes_passado: passado ? (passado.get(categoria_id)?.total ?? 0) : null,
     orcado: planejado || null,
   })).filter((c) => c.gasto || c.normal || c.mes_passado || c.orcado);
 
   // já comprometido: o que já está lançado nos próximos meses (parcelas), as parcelas que o banco não mandou e as recorrentes, se continuarem
-  const todos = totaisPorMes(somarMes(mesAtual, MESES_GRAFICO));
+  const todos = totaisPorMes(somarMes(mesAtual, MESES_A_FRENTE));
   const naoMandadas = previstasPF(hoje);
-  const recorrentes = somar(listarRecorrentes("PF", hoje).filter(deveCobrar).map((r) => r.valor));
-  const comprometido = Array.from({ length: MESES_GRAFICO }, (_, i) => somarMes(mesAtual, i + 1)).map((m) => ({
-    mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), previstas: naoMandadas.get(m) ?? 0, recorrentes, esperada: reguaDoMes(m, mesAtual, historico).esperada,
+  const recorrentes = listarRecorrentes("PF", hoje).filter(deveCobrar);
+  const comprometido = Array.from({ length: MESES_A_FRENTE }, (_, i) => somarMes(mesAtual, i + 1)).map((m) => ({
+    mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), previstas: naoMandadas.get(m) ?? 0,
+    recorrentes: somar(recorrentes.filter((r) => r.a_lancar.slice(0, 7) <= m).map((r) => r.valor)), esperada: reguaDoMes(m, mesAtual, historico).esperada,
   }));
 
   return {
-    mes, mes_atual: mesAtual, inicio, inicio_automatico: historico.inicio_automatico, inicio_definido: historico.inicio_definido,
+    mes, mes_atual: mesAtual, inicio, inicio_automatico: historico.inicio_automatico, inicio_definido: historico.inicio_definido, inicio_antes: historico.inicio_antes,
     meses, orcado_hoje: orcado_hoje || null,
     dia_a_dia: {
       dados_ate,

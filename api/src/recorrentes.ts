@@ -35,6 +35,7 @@ export interface Recorrente {
   vezes: number;
   ultima: string;
   proxima: string;
+  a_lancar: string; // a primeira que ainda não está lançada: `proxima` ou, se já há cobrança com data futura, a seguinte a ela
   situacao: "prevista" | "atrasada" | "parada";
   status: Status | null;
   proposta: Status | "sugerida" | null;
@@ -80,6 +81,9 @@ export function mesSeguinte(data: string) {
   const ultimoDia = new Date(Date.UTC(a, m + 1, 0)).getUTCDate();
   return new Date(Date.UTC(a, m, Math.min(d, ultimoDia))).toISOString().slice(0, 10);
 }
+
+/** Deve cobrar de novo: conta no alarme. Sugestão conta até ser ignorada. */
+export const deveCobrar = (r: Pick<Recorrente, "status" | "situacao">) => r.status !== "ignorada" && r.status !== "cancelada" && r.situacao !== "parada";
 
 type Cobranca = Gasto & { chave: string; nome: string };
 type Serie = Cobranca[];
@@ -136,19 +140,20 @@ const decisaoDe = (s: Serie, decisoes: Decisao[]) =>
     .sort((a, b) => Number(b.valor > 0) - Number(a.valor > 0) || (a.decidido_em < b.decidido_em ? 1 : -1))[0];
 
 export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Decisao[] = []): Recorrente[] {
-  const cobrancas = gastos
+  const todas = gastos
     .filter((g) => !/\d{1,2}\/\d{1,2}\s*$/.test(g.descricao_original ?? "")) // parcela escrita no texto (nem todo banco manda o metadado)
     .map((g) => ({ ...g, chave: chaveDe(g.descricao_original ?? "") }))
     .filter((g) => g.chave)
     .map((g) => ({ ...g, nome: nomeDe(g.chave) }));
+  const cobrancas = todas.filter((c) => c.data <= hoje), futuras = todas.filter((c) => c.data > hoje);
 
   const regulares = montarSeries(cobrancas).filter(regular);
   const mensais = new Set(regulares.flat());
   /** Compra repetida no mesmo lugar às vezes forma uma série por acaso: aí a maior parte das compras fica fora de série. */
   const predominaMensal = (s: Serie) => {
     const nomes = new Set(s.map((c) => c.nome));
-    const todas = cobrancas.filter((c) => nomes.has(c.nome) && c.data >= s[0].data);
-    return todas.filter((c) => mensais.has(c)).length / todas.length >= MINIMO_MENSAL;
+    const doNome = cobrancas.filter((c) => nomes.has(c.nome) && c.data >= s[0].data);
+    return doNome.filter((c) => mensais.has(c)).length / doNome.length >= MINIMO_MENSAL;
   };
 
   const achadas = regulares
@@ -160,13 +165,18 @@ export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Dec
     })
     .filter((a) => (a.status && a.status !== "ignorada") || predominaMensal(a.serie));
 
+  // já lançada com data futura: está no gasto do mês dela e não pode contar de novo como recorrente que ainda vem
+  const seguidas = new Map(achadas.filter(deveCobrar).map((a) => [a, [...a.serie]]));
+  for (const c of futuras) aMaisProxima([...seguidas.values()].filter((s) => s.some((x) => x.nome === c.nome)), c, [MES[0], MES_PULADO[1]])?.push(c);
+
   const viva = (a: (typeof achadas)[number]) => a.situacao !== "parada";
   const nomesEmComum = (a: Serie, b: Serie) => a.some((x) => b.some((y) => x.nome === y.nome));
 
   return achadas
     // o que já acabou só aparece se alguém decidiu sobre esta cobrança, ou sobre o nome e não sobrou outra viva com ele
     .filter((a) => viva(a) || (a.decisao?.valor ? a.decisao.status !== "sugerida" : a.status && !achadas.some((b) => viva(b) && nomesEmComum(a.serie, b.serie))))
-    .map(({ serie, decisao, status, situacao, proxima, u }) => {
+    .map((a) => {
+      const { serie, decisao, status, situacao, proxima, u } = a;
       const outro = serie.findLast((c) => c.nome !== u.nome);
       const firme = serie.findLast((c) => c.status !== "PENDING") ?? u; // a pendente pode mudar de nome e a decisão se perderia
       const cobrou = status !== "cancelada" ? undefined : cobrancas.findLast((c) =>
@@ -187,6 +197,7 @@ export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Dec
         vezes: serie.length,
         ultima: u.data,
         proxima,
+        a_lancar: mesSeguinte((seguidas.get(a)?.at(-1) ?? u).data),
         situacao,
         status,
         proposta: decisao?.proposta ?? null,

@@ -3,7 +3,7 @@
 /** Com menos dias de dados que isto, o mês tem pouco gasto para projetar o resto. */
 const DIA_MINIMO = 5;
 export const MESES_MEDIANA = 3;
-export const MESES_ACUMULADO = 6;
+export const MESES_ACUMULADO = 12; // o mesmo no alarme e em Análises, senão as duas telas divergem
 
 export interface TotalMes {
   mes: string; // AAAA-MM

@@ -173,6 +173,7 @@ export interface Ritmo {
   situacao: "aberto" | "fechado" | "futuro";
   hoje: string;
   dados_ate: string; // último dia com dado de todos os bancos: a projeção não conta os dias depois dele
+  inicio_antes: string | null; // o mês inicial automático mudou na virada do mês: era este
   analisado: boolean; // falso = antes do primeiro mês com a renda completa
   renda: { esperada: number | null; origem: "definida" | "mediana"; recebida: number; extra: number };
   orcado: number;
@@ -221,6 +222,7 @@ export interface Analises {
   inicio: string | null;
   inicio_automatico: string | null;
   inicio_definido: boolean;
+  inicio_antes: string | null; // o automático mudou na virada do mês: era este
   orcado_hoje: number | null;
   meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
   dia_a_dia: { dados_ate: string; dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
