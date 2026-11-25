@@ -1,4 +1,4 @@
-/** Ritmo do mês: a renda aguenta o gasto? Funções puras, em centavos; quem lê a base é server.ts. */
+/** Ritmo do mês: a renda aguenta o gasto? Funções puras, em centavos; quem lê a base é totais.ts. */
 
 /** Antes deste dia o mês tem pouco gasto para projetar o resto. */
 const DIA_MINIMO = 5;
