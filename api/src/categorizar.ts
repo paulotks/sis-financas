@@ -1,4 +1,4 @@
-import { ADAPTADORES, type Linha, type Movimento } from "./adaptadores.js";
+import { internosDe, trocasDe, type Linha, type Movimento } from "./adaptadores.js";
 import { db } from "./db.js";
 
 /** Onde a regra vale. Sentido nulo = entrada e saída; conta nula = todas. */
@@ -92,10 +92,8 @@ const MAPA_PLUGGY: [string, string][] = [
   ["investment", "Investimentos"],
 ];
 
-const INTERNOS = Object.values(ADAPTADORES).flatMap((a) => a.internos ?? []);
-
 /** Categorias que o código acha pelo nome: apagar ou renomear uma faria o mapa devolver "sem categoria"; mudar o grupo, os totais. */
-export const NOMES_FIXOS = new Set([...MAPA_PLUGGY, ...INTERNOS].map(([, nome]) => nome));
+export const NOMES_FIXOS = new Set([...MAPA_PLUGGY, ...internosDe(null)].map(([, nome]) => nome));
 
 let idsPorNome: Map<string, number> | null = null;
 function categoriaPorNome(nome: string) {
@@ -124,12 +122,12 @@ const alcanca = (r: Alcance, l: Movimento) =>
   (r.conta_id === null || r.conta_id === l.conta_id) &&
   (l.descricao_original ?? "").toLowerCase().includes(r.padrao.toLowerCase());
 
-/** Decide a categoria de um lançamento novo: regra do Paulo > movimento interno > categoria da Pluggy > pendente (null). */
-export function sugerirCategoria(l: Movimento, regras: Regra[]) {
+/** Decide a categoria de um lançamento novo: regra do Paulo > movimento interno do banco > categoria da Pluggy > pendente (null). */
+export function sugerirCategoria(l: Movimento, regras: Regra[], banco: string | null) {
   const texto = (l.descricao_original ?? "").toLowerCase();
   const regra = regras.find((r) => alcanca(r, l));
   if (regra) return { categoria_id: regra.categoria_id, regra_id: regra.id, descricao: regra.descricao };
-  const interno = INTERNOS.find(([re]) => re.test(texto));
+  const interno = internosDe(banco).find(([re]) => re.test(texto));
   if (interno) return { categoria_id: categoriaPorNome(interno[1]), regra_id: null, descricao: null };
   const cp = (l.categoria_pluggy ?? "").toLowerCase();
   if (cp) {
@@ -173,20 +171,20 @@ export function reaplicarRegras(): number {
   const linhas = db
     .prepare(
       `SELECT l.id, l.descricao_original, l.categoria_pluggy, l.valor_centavos, l.conta_id, l.categoria_id, l.regra_id, l.categoria_manual,
-         l.ignorado, l.status, l.parcela, l.total_parcelas, ct.tipo AS conta_tipo, ct.item_id, ct.pessoa, ct.oculta,
+         l.ignorado, l.status, l.parcela, l.total_parcelas, ct.tipo AS conta_tipo, ct.item_id, cx.banco, ct.pessoa, ct.oculta,
          COALESCE(json_extract(l.bruto, '$.creditCardMetadata.purchaseDate'), json_extract(l.bruto, '$.date'), l.data) AS momento
-       FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id`,
+       FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id JOIN conexoes cx ON cx.item_id = ct.item_id`,
     )
     .all() as unknown as Linha[];
   const alvo = linhas.filter((l) => !l.categoria_manual);
-  const sugestoes = new Map(alvo.map((l) => [l.id, sugerirCategoria(l, regras)]));
+  const sugestoes = new Map(alvo.map((l) => [l.id, sugerirCategoria(l, regras, l.banco)]));
   // antes de comparar com o gravado, e não num passo depois: senão as pernas iriam e voltariam a cada vez, inflando a contagem
   const contexto = {
     categoriaDe: (l: Linha) => (l.categoria_manual ? l.categoria_id : sugestoes.get(l.id)!.categoria_id),
     foraDoResumo: new Set((db.prepare("SELECT id FROM categorias WHERE grupo = 'transferencia'").all() as { id: number }[]).map((c) => c.id)),
     categoriaPorNome,
   };
-  const trocas = new Map(Object.values(ADAPTADORES).flatMap((a) => [...(a.trocas?.(linhas, contexto) ?? [])]));
+  const trocas = trocasDe(linhas, contexto);
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
   for (const l of alvo) {

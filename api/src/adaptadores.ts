@@ -3,6 +3,7 @@
  * entrada usa o padrão, que não muda nada. Adaptador traduz o que o banco mandou, nunca inventa o que faltou.
  * Não importa db.ts: recebe pronto o que precisa da base.
  */
+import type { PConta } from "./pluggy.js";
 
 /** O que decide a categoria de um lançamento. */
 export interface Movimento {
@@ -22,6 +23,7 @@ export interface Linha extends Movimento {
   total_parcelas: number | null;
   conta_tipo: string | null;
   item_id: string;
+  banco: string | null;
   pessoa: string;
   oculta: number;
   momento: string; // com hora; nas parcelas é a data da compra, igual em todas
@@ -45,7 +47,7 @@ interface Adaptador {
 }
 
 /** Chave: código COMPE. */
-export const ADAPTADORES: Record<string, Adaptador> = {
+const ADAPTADORES: Record<string, Adaptador> = {
   "260": { nome: "Nubank", trocas: pixNoCredito },
   "323": {
     nome: "Mercado Pago",
@@ -55,6 +57,27 @@ export const ADAPTADORES: Record<string, Adaptador> = {
     ],
   },
 };
+
+/**
+ * Código COMPE do banco de uma conexão, do começo de `transferNumber` ("260/0001/12345-6"). Sem as três partes, o começo é a agência.
+ * Null = não dá para saber, ou há mais de um (grupos financeiros podem juntar dois na mesma conexão): quem chama mantém o que já sabia.
+ */
+export function codigoDoBanco(contas: PConta[]) {
+  const codigos = new Set(contas.flatMap((c) => c.bankData?.transferNumber?.match(/^(\d{3})\/[^/]*\/./)?.[1] ?? []));
+  return codigos.size === 1 ? [...codigos][0] : null;
+}
+
+/**
+ * Banco nulo = ainda não se sabe (antes da primeira sincronização, ou conexão só de cartão): vale tudo, como era antes de existir o código.
+ * Sem isto, as regras reaplicadas na subida desfariam os movimentos internos. Peça nova não deve valer para nulo.
+ */
+const valeNo = (banco: string | null, codigo: string) => banco === null || banco === codigo;
+
+export const internosDe = (banco: string | null) =>
+  Object.entries(ADAPTADORES).flatMap(([codigo, a]) => (valeNo(banco, codigo) ? (a.internos ?? []) : []));
+
+export const trocasDe = (linhas: Linha[], contexto: Contexto) =>
+  new Map(Object.entries(ADAPTADORES).flatMap(([codigo, a]) => [...(a.trocas?.(linhas.filter((l) => valeNo(l.banco, codigo)), contexto) ?? [])]));
 
 /**
  * Pix no crédito do Nubank: (1) +X entra na conta, (2) o Pix de −X sai dela e (3) o cartão cobra X mais a tarifa. O gasto é a (3), então

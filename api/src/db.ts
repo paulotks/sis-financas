@@ -221,6 +221,8 @@ export const MIGRACOES: string[] = [
   `,
   // "você usa cofrinho ou caixinha nesta conta?": nulo = ainda não respondeu (a reserva não soma)
   `ALTER TABLE contas ADD COLUMN usa_reservas INTEGER CHECK (usa_reservas IN (0, 1))`,
+  // código COMPE do banco (todos chegam como MeuPluggy): escolhe o adaptador; nulo = ainda não se sabe
+  `ALTER TABLE conexoes ADD COLUMN banco TEXT`,
 ];
 
 const COPIAS = 14; // de cada tipo

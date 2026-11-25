@@ -1,4 +1,4 @@
-# Fatia 5: camada de adaptadores
+# Fatia 5: camada de adaptadores (FEITA em 2026-11-25)
 
 Item 63 do [backlog](../backlog.md) (passos 1 e 2), com a conferência do 68. Decidido com o Paulo em 2026-11-25: uma frente por banco, e nome e
 código do banco podem aparecer no código público.

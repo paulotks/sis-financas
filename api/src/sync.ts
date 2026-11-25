@@ -1,5 +1,6 @@
 import { agora, centavos, db, transacao } from "./db.js";
 import { env } from "./env.js";
+import { codigoDoBanco } from "./adaptadores.js";
 import { carregarRegras, reaplicarRegras, sugerirCategoria } from "./categorizar.js";
 import { registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy, type PConta, type PInvestimento, type PItem, type PReserva, type PTransacao } from "./pluggy.js";
@@ -115,7 +116,7 @@ const valorComSinal = (t: PTransacao) => {
   return t.type === "DEBIT" ? -v : t.type === "CREDIT" ? v : null;
 };
 
-function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carregarRegras>) {
+function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carregarRegras>, banco: string | null) {
   const novos: string[] = [];
   let atualizados = 0;
   let recusados = 0;
@@ -155,7 +156,7 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
         comum.parcela, comum.total, comum.fatura, bruto, t.id);
       if (antes.bruto !== bruto) atualizados++; // relido sem mudança não conta
     } else {
-      const s = sugerirCategoria({ descricao_original: original, categoria_pluggy: t.category, valor_centavos: comum.valor, conta_id: t.accountId }, regras);
+      const s = sugerirCategoria({ descricao_original: original, categoria_pluggy: t.category, valor_centavos: comum.valor, conta_id: t.accountId }, regras, banco);
       inserir.run(t.id, t.accountId, comum.data, original, s.descricao || t.description || original, comum.valor,
         t.type, t.status ?? null, t.category ?? null, s.categoria_id, s.regra_id, comerciante, comum.parcela,
         comum.total, comum.fatura, bruto);
@@ -261,6 +262,9 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       }),
     );
     res.contas = contas.length;
+    // o código pode não vir (nulo, ou conexão só de cartão): fica o último conhecido
+    const { banco } = db.prepare("UPDATE conexoes SET banco = COALESCE(?, banco) WHERE item_id = ? RETURNING banco")
+      .get(codigoDoBanco(contas), itemId) as { banco: string | null };
 
     const regras = carregarRegras();
     for (const c of contas) {
@@ -271,7 +275,7 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       for await (const pagina of pluggy.transacoes(c.id, de)) lista.push(...pagina);
       // só grava com todas as páginas em mãos, numa transação: conta inteira ou nada
       const r = transacao(() => {
-        const r = salvarTransacoes(lista, regras);
+        const r = salvarTransacoes(lista, regras, banco);
         if (listaCompleta(item, c)) removerSumidos(c.id, de, lista, r.novos);
         return r;
       });

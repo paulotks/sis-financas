@@ -334,7 +334,7 @@ test("sincronizações simultâneas devolvem cada uma o seu resultado", async ()
 
 test("categorias da Pluggy caem no lugar certo", () => {
   const nome = (c: string) => {
-    const id = sugerirCategoria(mov("", c), []).categoria_id;
+    const id = sugerirCategoria(mov("", c), [], null).categoria_id;
     return id && (db.prepare("SELECT nome FROM categorias WHERE id = ?").get(id) as { nome: string }).nome;
   };
   for (const [pluggy, nossa] of [
@@ -378,8 +378,8 @@ test("categorias da Pluggy caem no lugar certo", () => {
 });
 
 test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual for a categoria da Pluggy", () => {
-  const grupo = (descricao: string, cp: string) => {
-    const id = sugerirCategoria(mov(descricao, cp), []).categoria_id;
+  const grupo = (descricao: string, cp: string, banco: string | null = "323") => {
+    const id = sugerirCategoria(mov(descricao, cp), [], banco).categoria_id;
     return id && (db.prepare("SELECT grupo FROM categorias WHERE id = ?").get(id) as { grupo: string }).grupo;
   };
   for (const [descricao, cp] of [
@@ -389,13 +389,38 @@ test("as duas pernas do cofrinho e da fatura saem juntas do resumo, seja qual fo
     ["Dinheiro retirado PLR", "Salary"],
     ["Débito automático Fatura do cartão", "Transfer - Internal"],
     ["Débito automático total", "Transfer - Internal"],
-  ])
+  ]) {
     assert.equal(grupo(descricao, cp), "transferencia", `${descricao} / ${cp}`);
+    assert.equal(grupo(descricao, cp, null), "transferencia"); // ainda não se sabe o banco: como antes
+    // em outro banco, com ou sem adaptador, o mesmo texto não é movimento interno
+    for (const outro of ["260", "999"]) assert.equal(grupo(descricao, cp, outro), grupo("outra coisa", cp), `${descricao} no ${outro}`);
+  }
   // Pix no crédito: sozinha não sai (tirar só esta perna contaria o gasto em dobro); o teste das três pernas está adiante
   assert.equal(grupo("Valor adicionado na conta por cartão de crédito", "Transfer - Internal"), null);
   // regra do Paulo continua mandando
   const pet = { id: 1, padrao: "reservado pet", sentido: null, conta_id: null, categoria_id: 8, descricao: null };
-  assert.equal(sugerirCategoria(mov("Dinheiro reservado Pet", "Transfer - Internal"), [pet]).categoria_id, 8);
+  assert.equal(sugerirCategoria(mov("Dinheiro reservado Pet", "Transfer - Internal"), [pet], "323").categoria_id, 8);
+});
+
+test("banco da conexão: vem do código da conta; sem código ou com mais de um, fica o que já se sabia", async () => {
+  const antes = { paginas, contasFalsas };
+  const sincronizarCom = async (...numeros: (string | null)[]) => {
+    paginas = [[tx("interno", -2, { description: "Dinheiro reservado Férias", category: "Groceries" }), ...antes.paginas[0]]];
+    contasFalsas = [antes.contasFalsas[0], ...numeros.map((transferNumber, n) => ({ id: `66666666-6666-4666-8666-66666666666${n}`, type: "BANK", name: "Conta", bankData: { transferNumber } }))];
+    await sync();
+    const { banco } = db.prepare("SELECT banco FROM conexoes WHERE item_id = ?").get(ITEM) as { banco: string | null };
+    return [banco, lanc("interno").categoria_id]; // o lançamento é do cartão: herda o banco da conexão
+  };
+  const FORA = 19, MERCADO = 3;
+  const semCodigo = [[], [null], ["0001/12345-0"], ["001/12345-0"], ["260/0001/1", "999/0001/1"]];
+  for (const numeros of semCodigo) assert.deepEqual(await sincronizarCom(...numeros), [null, FORA], String(numeros)); // ainda não se sabe: como antes
+  assert.deepEqual(await sincronizarCom("260/0001/12345-6"), ["260", MERCADO]);
+  assert.deepEqual(await sincronizarCom("323/0001/12345-6", "323/0001/99999-9"), ["323", FORA]);
+  for (const numeros of semCodigo) assert.deepEqual(await sincronizarCom(...numeros), ["323", FORA], String(numeros));
+  assert.deepEqual(await sincronizarCom("999/0001/12345-6"), ["999", MERCADO]); // banco sem adaptador: o padrão
+
+  ({ paginas, contasFalsas } = antes);
+  db.exec("DELETE FROM lancamentos WHERE id = 'interno'; DELETE FROM contas WHERE id LIKE '66666666%'; UPDATE conexoes SET banco = NULL");
 });
 
 test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza o que já estava", async () => {
@@ -912,6 +937,15 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
   assert.deepEqual([antes[0], depois[0]], [[10000, 20300, -10300], [0, 10300, -10300]]);
   assert.deepEqual([depois[4], depois[5]], [[0, 5500, -5500], [0, 5500, -5500]]); // tarifa e parcela no mês de cada uma
   assert.equal(reaplicarRegras(), 0); // de novo: nada muda e nada conta
+  // até aqui sem saber o banco (nulo); no Nubank é igual, em outro o Pix no crédito não se aplica
+  const tudo = () => db.prepare("SELECT id, categoria_id, regra_id FROM lancamentos WHERE id LIKE 'pix%' ORDER BY id").all();
+  const resolvido = tudo();
+  for (const [banco, vale] of [["260", true], ["323", false], ["999", false], [null, true]] as const) {
+    db.prepare("UPDATE conexoes SET banco = ? WHERE item_id = ?").run(banco, ITEM);
+    reaplicarRegras();
+    if (vale) assert.deepEqual(tudo(), resolvido, `banco ${banco}`);
+    else assert.deepEqual(pernas(semNome), [null, "Mercado", null], `banco ${banco}`);
+  }
   await chamar("DELETE", `/api/regras/${regra}`);
   db.prepare("DELETE FROM lancamentos WHERE id LIKE 'pix%'").run();
 });
