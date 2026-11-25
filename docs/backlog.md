@@ -59,18 +59,29 @@ Spec: [specs/lote-4.md](specs/lote-4.md).
 | 31 | G. Próximos meses já comprometidos | M | não | feito (2026-11-24) |
 | 32 | Mês inicial da análise editável, e MCP | P | migração | feito (2026-11-24) |
 
+## Lote 5: FEITO (2026-11-24, recorrentes certas)
+
+Spec: [specs/lote-5.md](specs/lote-5.md). É o item 11, ampliado. Tem migração.
+
+| # | Melhoria | Tam. | Base | Status |
+|---|---|---|---|---|
+| 36 | Detecção: troca de nome, forma de pagamento, várias cobranças no mesmo lugar, mês pulado, falso positivo | M | não | feito (2026-11-24) |
+| 37 | Decisão por cobrança, estado cancelada e proposta | M | migração | feito (2026-11-24) |
+| 38 | Aviso de cobrança depois de cancelada | P | não | feito (2026-11-24) |
+| 39 | Tela: uma linha por cobrança, Cancelei/Reativar, propostas do Claude | P | não | feito (2026-11-24) |
+| 40 | MCP só propõe decisão de recorrente | P | não | feito (2026-11-24) |
+
 ## Depois (na fila, ainda sem spec)
 
 | # | Melhoria | Tam. | Base | O que já se sabe |
 |---|---|---|---|---|
-| 11 | Recorrentes: juntar nomes parecidos e tirar falsos positivos | M | não | Uma cobrança mudou de descrição e apareceu "atrasada". Falsos positivos: compras repetidas no mesmo lugar e Pix para pessoas. Mexe só em `recorrentes.ts` (função pura). Cuidado: a `chave` guarda a decisão do Paulo em `recorrencias`; mudar a forma da chave perde as decisões |
 | 6 | Regra põe tag (custo de um evento, sem mudar a categoria) | M | migração | `lancamentos.tags` já existe; falta em `regras` e o que fazer ao apagar a regra |
 | 10 | Cartão pela competência da fatura, não pela data da parcela | G | não | Dados existem: a maioria dos lançamentos de cartão já tem `fatura_id`. Muda os totais de **todos** os meses e o orçamento: conversar antes. Junto com a fase 3 (faturas e parcelas futuras) |
 | 8 | Contatos: nome → categoria por direção | G | migração | Só se o 7 não bastar |
 | 16 | Bens: nome cortado na tela | P | não | Lista em `.bens li` (`styles.css`): a coluna do nome divide espaço com 130px do valor. Não conferido na tela |
 | 18 | Orçamento: sugerir pela média de 3 meses | P | não | Menos urgente: o orçamento já foi definido |
 | 19 | Resumo: % categorizada do mês | P | não | O "gasto real" já existe: `saidas` exclui transferências. Falta só a % |
-| 33 | Metas: tela própria (guardar, reserva, quitar dívida), nada fixo no código. O teto do alarme passa a ser renda − meta | G | migração | Pedido na entrevista de 2026-11-24, para o futuro. Aportes em Investimentos e as linhas de `bens` são candidatos a medir o progresso |
+| 33 | (**lote 6**, combinado em 2026-11-24) Metas: tela própria (guardar, reserva, quitar dívida), nada fixo no código. O teto do alarme passa a ser renda − meta | G | migração | Pedido na entrevista de 2026-11-24, para o futuro. Aportes em Investimentos e as linhas de `bens` são candidatos a medir o progresso |
 | 34 | Análises D, F e J: cada R$ 100 da renda, mapa de calor categoria × mês, patrimônio e dívida no tempo | M | não | O J precisa de mais dias em `saldos_diarios` |
 | 35 | Notificação do Windows quando o mês virar vermelho | P | não | Só se o alarme na tela não bastar |
 

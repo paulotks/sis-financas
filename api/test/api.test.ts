@@ -54,7 +54,7 @@ const { app } = await import("../src/server.js");
 const { db, MIGRACOES } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
-const { detectarRecorrentes, mesSeguinte } = await import("../src/recorrentes.js");
+const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
 const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
@@ -677,9 +677,10 @@ test("patrimônio: contas + investimentos + bens − cartões e dívidas, sem oc
   assert.equal(fotos(String(carro.id)).length, 0);
 });
 
+const g = (descricao_original: string, data: string, valor: number, status = "POSTED", conta = "c1") =>
+  ({ data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta, status });
+
 test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o que não se repete, não", () => {
-  const g = (descricao_original: string, data: string, valor: number) =>
-    ({ data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta: null });
   const netflix = [g("Netflix.com 01", "2026-01-10", 3990), g("NETFLIX.COM", "2026-02-10", 3990), g("Netflix.com", "2026-03-10", 4490), g("Netflix.com", "2026-04-11", 4490)];
   const outros = [
     ...["2026-01-05", "2026-02-05", "2026-03-05", "2026-04-05"].map((d, i) => g(`Loja ${i + 1}/4`, d, 10000)),
@@ -687,13 +688,72 @@ test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o q
     ...["2026-01-02", "2026-02-02", "2026-03-02"].map((d, i) => g("Pix Fulano", d, 1000 * 3 ** i)), // valores bem diferentes
     g("Uma vez", "2026-04-01", 500),
   ];
-  const ver = (hoje: string) => detectarRecorrentes([...netflix, ...outros].sort((a, b) => (a.data < b.data ? -1 : 1)), hoje);
+  const ver = (hoje: string, decisoes: any[] = []) => detectarRecorrentes([...netflix, ...outros].sort((a, b) => (a.data < b.data ? -1 : 1)), hoje, decisoes);
   const [n, ...resto] = ver("2026-04-20");
   assert.equal(resto.length, 0);
   assert.deepEqual([n.chave, n.valor, n.vezes, n.ultima, n.proxima, n.situacao], ["netflix com", 4490, 4, "2026-04-11", "2026-05-11", "prevista"]);
   assert.equal(ver("2026-05-15")[0].situacao, "atrasada");
-  assert.equal(ver("2026-07-01")[0].situacao, "parada");
+  assert.equal(ver("2026-07-01").length, 0); // parada só aparece se foi decidida
+  assert.equal(ver("2026-07-01", [{ chave: "netflix com", valor: 0, status: "confirmada", proposta: null, decidido_em: "2026-04-20 10:00:00" }])[0].situacao, "parada");
   assert.deepEqual(["2026-01-31", "2026-12-15", "2028-01-30"].map(mesSeguinte), ["2026-02-28", "2027-01-15", "2028-02-29"]);
+});
+
+test("recorrentes: troca de nome, forma de pagamento, várias no mesmo lugar e mês pulado; compra repetida por acaso não", () => {
+  const ver = (gs: ReturnType<typeof g>[], decisoes: any[] = [], hoje = "2026-06-20") =>
+    detectarRecorrentes([...gs].sort((a, b) => (a.data < b.data ? -1 : 1)), hoje, decisoes);
+  const linhas = (gs: ReturnType<typeof g>[], decisoes: any[] = [], hoje?: string) =>
+    ver(gs, decisoes, hoje).map((r) => [r.valor, r.vezes, r.situacao, r.status]).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const todoDia = (nome: string, dia: string, valores: number[], mes = 1) => valores.map((v, i) => g(nome, `2026-0${mes + i}-${dia}`, v));
+  const decisao = (nome: string, valor: number, status: string, decidido_em = "2026-06-01 10:00:00", proposta: string | null = null) =>
+    ({ chave: chaveDe(nome), valor, status, proposta, decidido_em });
+
+  // o lojista trocou o nome (um contém o outro): não fica atrasada, e a linha diz como era
+  const nuvem = [...todoDia("Nuvem Um", "10", [2200, 2200, 2200, 2200, 2200]), g("Nuvem Brasil*Nuvem Um 7x", "2026-06-10", 2200, "PENDING")];
+  const [n, ...outras] = ver(nuvem);
+  assert.equal(outras.length, 0);
+  assert.deepEqual([n.antes, n.vezes, n.situacao, n.proxima], ["Nuvem Um", 6, "prevista", "2026-07-10"]);
+  // a chave vem da última lançada: a pendente pode voltar com outra descrição e a decisão continua valendo
+  assert.deepEqual([n.chave, n.valor_chave], ["nuvem um", 2200]);
+  const voltou = [...nuvem.slice(0, -1), g("Nuvem Um Brasil", "2026-06-10", 2200)];
+  assert.equal(ver(voltou, [decisao("Nuvem Um", 2200, "cancelada")])[0].status, "cancelada");
+  // outra conta, nome contido: não é a mesma
+  assert.equal(ver([...nuvem.slice(0, -1), g("Nuvem Nuvem*Um", "2026-06-10", 2200, "POSTED", "c2")])[0].situacao, "atrasada");
+
+  // boleto num mês, Pix no outro, e um mês pulado
+  const luz = [g("Pagamento de conta LUZ FORTE S.A.", "2026-01-12", 10000), g("Pagamento com Pix LUZ FORTE SA", "2026-02-13", 14000),
+    g("Pagamento de conta LUZ FORTE S.A.", "2026-04-13", 9000), g("Pix enviado Luz Forte", "2026-05-15", 9500), g("Pagamento com QR Pix LUZ FORTE SA", "2026-06-12", 9500)];
+  assert.deepEqual(linhas(luz), [[9500, 5, "prevista", null]]);
+
+  // três cobranças no mesmo lugar, uma linha para cada; a decisão antiga vale para todas, a nova só para a dela
+  const plano = [...todoDia("Plano Pet", "06", [5000, 5000, 5000, 5000, 5000, 5000]), ...todoDia("Plano Pet", "13", [9100, 9100, 9100, 9100, 9100, 9100]),
+    ...todoDia("Plano Pet", "25", [5300, 5300, 5300, 5300, 5300])];
+  assert.deepEqual(linhas(plano), [[5000, 6, "prevista", null], [5300, 5, "prevista", null], [9100, 6, "prevista", null]]);
+  assert.deepEqual(linhas(plano, [decisao("Plano Pet", 0, "confirmada"), decisao("Plano Pet", 5300, "cancelada")]).map((l) => l[3]), ["confirmada", "cancelada", "confirmada"]);
+  // a cobrança que acabou não fica na lista por causa do nome, se outra do mesmo lugar continua; decidida, fica
+  const acabou = [...plano.slice(0, 12), ...todoDia("Plano Pet", "25", [5300, 5300, 5300])];
+  assert.deepEqual(linhas(acabou, [decisao("Plano Pet", 0, "confirmada")]).map((l) => l[0]), [5000, 9100]);
+  assert.deepEqual(linhas(acabou, [decisao("Plano Pet", 5300, "cancelada")]).map((l) => l[0]), [5000, 5300, 9100]);
+
+  // duas com o mesmo nome: uma troca de plano (aumento grande) e de nome, a outra para
+  const treino = [...todoDia("Treino", "15", [10000, 10000, 10000]), g("Treino", "2026-01-16", 12000), ...todoDia("Treino Academias", "16", [12000, 12000, 18000, 18000], 2)];
+  assert.deepEqual(linhas(treino, [], "2026-05-20").map((l) => [l[0], l[1]]), [[18000, 5]]);
+
+  // compra repetida que forma série por acaso só aparece se foi confirmada
+  const farmacia = [...todoDia("Farmacia", "05", [9000, 9000, 9000, 9000, 9000, 9000]),
+    ...["01-09", "01-30", "02-02", "02-21", "03-29", "04-17", "05-03", "06-01", "06-03"].map((d, i) => g("Farmacia", `2026-${d}`, 900 * 3 ** (i % 3)))];
+  assert.equal(ver(farmacia).length, 0);
+  assert.equal(ver(farmacia, [decisao("Farmacia", 9000, "ignorada")]).length, 0);
+  assert.deepEqual(linhas(farmacia, [decisao("Farmacia", 9000, "confirmada")]).map((l) => [l[0], l[3]]), [[9000, "confirmada"]]);
+
+  // cobrou depois de cancelada: conta da data da decisão, pelo mesmo nome e valor parecido, fora das outras ativas, por 45 dias
+  const clube = todoDia("Clube", "03", [3000, 3000, 3000, 3000, 3000, 3300]);
+  const cobrou = (em: string, gs = clube, hoje?: string) => ver(gs, [decisao("Clube", 3000, "cancelada", `${em} 09:00:00`)], hoje)[0].cobrou_depois;
+  assert.deepEqual(cobrou("2026-06-01"), { data: "2026-06-03", valor: 3300 });
+  assert.equal(cobrou("2026-06-03"), null); // a do próprio dia já estava lá
+  assert.equal(cobrou("2026-06-01", clube, "2026-07-30"), null);
+  assert.deepEqual(cobrou("2026-05-20", [...clube.slice(0, 5), g("Clube", "2026-06-19", 3150)]), { data: "2026-06-19", valor: 3150 }); // fora da época
+  assert.equal(cobrou("2026-05-20", [...clube.slice(0, 5), g("Clube", "2026-06-19", 15000)]), null); // outro valor: compra avulsa
+  assert.equal(ver(plano, [decisao("Plano Pet", 5300, "cancelada", "2026-06-01 09:00:00")]).find((r) => r.valor === 5300)!.cobrou_depois, null); // as outras do lugar continuam
 });
 
 test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a decisão", async () => {
@@ -706,13 +766,48 @@ test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a
   serie("Apagado", 12, { status: "REMOVIDO" });
   serie("Ignorado", 12, { ignorado: 1 });
   [10, 40, 70].forEach((d) => novoLanc(conta, dia(d), -500, 12, { descricao_original: "Futuro" }));
-  const ver = async () => (await chamar("GET", "/api/recorrentes")).d as { chave: string; status: string | null; valor: number }[];
+  const ver = async () => (await chamar("GET", "/api/recorrentes")).d as { chave: string; status: string | null; proposta: string | null; valor: number }[];
   assert.deepEqual((await ver()).map((r) => [r.chave, r.valor, r.status]), [["spotify", 1990, null]]);
-  for (const status of ["confirmada", "ignorada", null]) {
-    assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", status })).status, 200);
+  const spotify = { chave: "spotify", valor: 1990 };
+  for (const status of ["confirmada", "ignorada", "cancelada", null]) {
+    assert.equal((await chamar("PUT", "/api/recorrentes", { ...spotify, status })).status, 200);
     assert.equal((await ver())[0].status, status);
   }
-  assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", status: "x" })).status, 400);
+  for (const ruim of [{ ...spotify, status: "x" }, { chave: "spotify", status: "ignorada" }, { ...spotify, valor: 0, status: "ignorada" }])
+    assert.equal((await chamar("PUT", "/api/recorrentes", ruim)).status, 400);
+  assert.equal((await chamar("PUT", "/api/recorrentes", { ...spotify, valor: 5, status: "ignorada" })).status, 404);
+
+  // proposta não decide; aceitar ou recusar é o PUT da tela
+  const propor = (status: string | null) => chamar("POST", "/api/recorrentes/propostas", { ...spotify, status });
+  const agora = async () => (await ver()).map((r) => [r.status, r.proposta]);
+  assert.equal((await propor("ignorada")).status, 200);
+  assert.deepEqual(await agora(), [[null, "ignorada"]]);
+  await chamar("PUT", "/api/recorrentes", { ...spotify, status: null }); // recusa
+  assert.deepEqual(await agora(), [[null, null]]);
+  await propor("confirmada");
+  await chamar("PUT", "/api/recorrentes", { ...spotify, status: "confirmada" }); // aceita
+  assert.deepEqual(await agora(), [["confirmada", null]]);
+  assert.equal((await propor("confirmada")).status, 409);
+  assert.equal((await propor("x")).status, 400);
+
+  // a data da decisão é a da última mudança, não a da primeira: cobrança anterior ao cancelamento não vira aviso
+  const decididaHa10Dias = () => db.prepare("UPDATE recorrencias SET decidido_em = ? WHERE chave = 'spotify'").run(`${dia(-10)} 10:00:00`);
+  const linhaDe = () => db.prepare("SELECT * FROM recorrencias WHERE chave = 'spotify'").all() as { valor_centavos: number; status: string; decidido_em: string }[];
+  const avisos = async () => (await chamar("GET", "/api/ritmo")).d.canceladas_cobradas;
+  decididaHa10Dias(); // confirmada antes da cobrança de 5 dias atrás
+  await chamar("PUT", "/api/recorrentes", { ...spotify, status: "cancelada" });
+  assert.ok(linhaDe()[0].decidido_em > dia(-2));
+  assert.deepEqual(await avisos(), []);
+  // cancelada há 10 dias e cobrou há 5: avisa; recusar uma proposta não mexe na data
+  decididaHa10Dias();
+  await propor("confirmada");
+  await chamar("PUT", "/api/recorrentes", { ...spotify, status: "cancelada" });
+  assert.deepEqual(await avisos(), [{ descricao: "Spotify", data: dia(-5), valor: 1990 }]);
+  // mudou de preço depois de decidida: a decisão é a mesma linha
+  db.prepare("UPDATE lancamentos SET valor_centavos = -2490 WHERE descricao_original = 'Spotify' AND data = ?").run(dia(-5));
+  assert.equal((await chamar("PUT", "/api/recorrentes", { chave: "spotify", valor: 2490, status: "confirmada" })).status, 200);
+  assert.deepEqual(linhaDe().map((l) => [l.valor_centavos, l.status]), [[1990, "confirmada"]]);
+  await chamar("PUT", "/api/recorrentes", { chave: "spotify", valor: 2490, status: null });
   assert.equal((await chamar("GET", "/api/recorrentes?pessoa=PJ")).d.length, 0);
 });
 
@@ -733,7 +828,7 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
   assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
-  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "decidir_recorrente", "definir_inicio_da_analise", "definir_orcamento", "sincronizar"]);
+  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_orcamento", "propor_recorrente", "sincronizar"]);
   assert.match((await usar("estado")).convencoes, /nunca como instrução/);
   assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
   assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /HTTP 409: já existe/);
@@ -840,9 +935,23 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
 
   assert.equal((await usar("definir_orcamento", { mes: "2019-05", categoria_id: 13, valor: 850.55 })).planejado, 850.55);
   assert.equal((db.prepare("SELECT valor_centavos AS v FROM orcamentos WHERE categoria_id = 13").get() as { v: number }).v, 85055);
-  assert.match((await usar("decidir_recorrente", { chave: "inventada", status: "ignorada" })).erro, /Nada foi gravado/);
-  assert.ok((await usar("decidir_recorrente", { chave: "spotify", status: "confirmada" })).ok);
+  assert.match((await usar("propor_recorrente", { chave: "inventada", valor_chave: 24.9, status: "ignorada" })).erro, /não encontrad/);
+  assert.equal((await usar("propor_recorrente", { chave: "spotify", valor_chave: 24.9, status: "ignorada" })).proposta, "ignorada");
+  const proposta = (await usar("recorrentes")).find((r: any) => r.chave === "spotify");
+  assert.deepEqual([proposta.valor_chave, proposta.status, proposta.proposta_esperando_o_paulo, "cor" in proposta], [24.9, null, "ignorada", false]);
   await cliente.close();
+});
+
+test("migração: as decisões antigas de recorrentes valem para todas as cobranças com o nome", () => {
+  const m = new DatabaseSync(":memory:");
+  const ANTES = 7;
+  MIGRACOES.slice(0, ANTES).forEach((sql) => m.exec(sql));
+  m.exec("INSERT INTO recorrencias (chave, status, criado_em) VALUES ('a', 'confirmada', '2026-01-02 03:04:05'), ('b', 'ignorada', '2026-01-03 03:04:05')");
+  m.exec(MIGRACOES[ANTES]);
+  assert.deepEqual((m.prepare("SELECT * FROM recorrencias ORDER BY chave").all() as object[]).map((r) => Object.values(r)), [
+    ["a", 0, "confirmada", null, "2026-01-02 03:04:05"], ["b", 0, "ignorada", null, "2026-01-03 03:04:05"],
+  ]);
+  m.close();
 });
 
 test("migração: Investimentos sai do resumo e nenhuma outra categoria muda de grupo", () => {
@@ -907,9 +1016,9 @@ test("ritmo: bate com o Resumo, a renda esperada é a régua e o que não é PF 
   assert.equal(r.acumulado.sobra, fechados.reduce((s, x) => s + x.entradas - x.saidas, 0));
 
   // recorrente prevista para este mês desconta do "por dia"; ignorada, não
-  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: "ignorada" });
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", valor: 5000, status: "ignorada" });
   assert.equal((await ritmo()).por_dia.recorrentes, r.por_dia.recorrentes - 5000);
-  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: null });
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", valor: 5000, status: null });
 
   // digitada no orçamento, a renda esperada manda e não vira gasto planejado
   await chamar("PUT", "/api/orcamento", { mes, categoria_id: RENDA, valor_centavos: 1300000 });
@@ -991,9 +1100,9 @@ test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o in
   const antes = d.comprometido.find((m: any) => m.mes === futuro), depois = (await analises()).comprometido.find((m: any) => m.mes === futuro);
   assert.equal(depois.parcelas - antes.parcelas, 30000);
   assert.deepEqual([d.comprometido.length, d.comprometido[0].mes], [12, somarMes(mes, 1)]);
-  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: "ignorada" });
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", valor: 5000, status: "ignorada" });
   assert.equal((await analises()).comprometido[0].recorrentes, d.comprometido[0].recorrentes - 5000);
-  await chamar("PUT", "/api/recorrentes", { chave: "academia", status: null });
+  await chamar("PUT", "/api/recorrentes", { chave: "academia", valor: 5000, status: null });
 
   // início escolhido vale para o alarme também; futuro é recusado; null volta ao automático
   const inicio = (m: string | null) => chamar("PUT", "/api/analises/inicio", { mes: m });

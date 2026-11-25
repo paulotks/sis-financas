@@ -6,7 +6,7 @@ import { db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
-import { chaveDe, detectarRecorrentes, type Gasto } from "./recorrentes.js";
+import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_ACUMULADO, MESES_MEDIANA, nivelDo, projetar, somarMes, type TotalMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
@@ -346,7 +346,9 @@ app.get("/api/ritmo", async (req) => {
   const teto = esperada ?? (orcado || null);
   const analisado = inicio !== null && mes >= inicio;
 
-  const recorrentes = situacao === "aberto" ? somar(recorrentesVivas(hoje).filter((r) => r.proxima.startsWith(mes)).map((r) => r.valor)) : 0;
+  const lista = situacao === "aberto" ? listarRecorrentes("PF", hoje) : [];
+  // a atrasada do mês passado ainda vem: também desconta
+  const recorrentes = somar(lista.filter((r) => deveCobrar(r) && r.proxima.slice(0, 7) <= mes).map((r) => r.valor));
   const gastoEntre = (de: string, ate: string) =>
     (db.prepare(`SELECT COALESCE(SUM(${GASTO}),0) AS total ${BASE_RESUMO}`).get(de, ate, "PF") as { total: number }).total;
   const dia = Number(hoje.slice(8)), diasNoMes = diasDoMes(mes);
@@ -387,6 +389,7 @@ app.get("/api/ritmo", async (req) => {
     por_dia: situacao === "aberto" && teto !== null ? { valor: Math.trunc(livre / dias), no_ritmo: projecao && Math.round((projecao.media - saidas) / dias), livre, dias, recorrentes } : null,
     acumulado: noFim.length ? { de: noFim[0].mes, ate: noFim.at(-1)!.mes, meses: noFim.length, entradas: ganho, gasto, sobra: ganho - gasto } : null,
     acima,
+    canceladas_cobradas: lista.flatMap((r) => (r.cobrou_depois ? [{ descricao: r.descricao, ...r.cobrou_depois }] : [])),
   };
 });
 
@@ -433,7 +436,7 @@ app.get("/api/analises", async (req) => {
 
   // já comprometido: o que já está lançado nos próximos meses (parcelas) e as recorrentes, se continuarem
   const todos = totaisPorMes(somarMes(mesAtual, MESES_GRAFICO));
-  const recorrentes = somar(recorrentesVivas(hoje).map((r) => r.valor));
+  const recorrentes = somar(listarRecorrentes("PF", hoje).filter(deveCobrar).map((r) => r.valor));
   const comprometido = Array.from({ length: MESES_GRAFICO }, (_, i) => somarMes(mesAtual, i + 1)).map((m) => ({
     mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), recorrentes, esperada: reguaDoMes(m, mesAtual, historico).esperada,
   }));
@@ -462,20 +465,29 @@ app.put("/api/analises/inicio", async (req) => {
 
 // ---------------- recorrentes ----------------
 
-/** As que devem cobrar de novo: nem ignoradas, nem paradas. Só PF. */
-const recorrentesVivas = (hoje: string) => listarRecorrentes("PF", hoje).filter((r) => r.status !== "ignorada" && r.situacao !== "parada");
+/** Deve cobrar de novo: conta no alarme. Sugestão conta até ser ignorada. */
+const deveCobrar = (r: Recorrente) => r.status !== "ignorada" && r.status !== "cancelada" && r.situacao !== "parada";
 
 function listarRecorrentes(pessoa: string, hoje: string) {
   const gastos = db.prepare(
-    `SELECT l.data, l.descricao, l.descricao_original, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
+    `SELECT l.data, l.descricao, l.descricao_original, l.status, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
      ${BASE_RESUMO} AND l.valor_centavos < 0 AND COALESCE(l.total_parcelas, 0) <= 1 ORDER BY l.data`,
   ).all("0000-01-01", hoje, pessoa) as unknown as Gasto[];
-  const status = new Map(
-    (db.prepare("SELECT chave, status FROM recorrencias").all() as { chave: string; status: string }[]).map((r) => [r.chave, r.status]),
-  );
-  return detectarRecorrentes(gastos, hoje)
-    .map((r) => ({ ...r, status: status.get(r.chave) ?? null }))
-    .filter((r) => r.status || r.situacao !== "parada"); // o que já acabou só aparece se o Paulo decidiu algo sobre ele
+  const decisoes = db.prepare("SELECT chave, valor_centavos AS valor, status, proposta, decidido_em FROM recorrencias").all() as unknown as Decisao[];
+  return detectarRecorrentes(gastos, hoje, decisoes);
+}
+
+const decisaoRecorrente = z.object({
+  chave: z.string().min(1).max(300),
+  valor: z.number().int().positive().max(1e12), // valor_chave da recorrente
+  status: z.enum(["confirmada", "ignorada", "cancelada"]).nullable(), // null = volta a sugestão
+});
+
+/** A recorrente escolhida e a linha de `recorrencias` que é só dela: se já decidiu antes, é a mesma linha, mesmo que o valor tenha mudado. */
+function acharRecorrente(d: { chave: string; valor: number }) {
+  const hoje = diaDeHoje();
+  const r = ouNaoEncontrado(pessoaPFPJ.options.flatMap((p) => listarRecorrentes(p, hoje)).find((x) => x.chave === d.chave && x.valor_chave === d.valor), "recorrente");
+  return { r, linha: r.decisao ?? { chave: r.chave, valor: r.valor_chave } };
 }
 
 app.get("/api/recorrentes", async (req) => {
@@ -484,11 +496,23 @@ app.get("/api/recorrentes", async (req) => {
 });
 
 app.put("/api/recorrentes", async (req) => {
-  const d = z.object({ chave: z.string().min(1).max(300), status: z.enum(["confirmada", "ignorada"]).nullable() }).parse(req.body);
-  if (d.status === null) db.prepare("DELETE FROM recorrencias WHERE chave = ?").run(d.chave);
-  else
-    db.prepare("INSERT INTO recorrencias (chave, status) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET status = excluded.status")
-      .run(d.chave, d.status);
+  const d = decisaoRecorrente.parse(req.body), { linha } = acharRecorrente(d);
+  // a data só muda se a decisão mudou: é dela que conta o "cobrou depois de cancelada"
+  db.prepare(
+    `INSERT INTO recorrencias (chave, valor_centavos, status) VALUES (?,?,?) ON CONFLICT(chave, valor_centavos) DO UPDATE SET
+       proposta = NULL, status = excluded.status, decidido_em = CASE WHEN status = excluded.status THEN decidido_em ELSE excluded.decidido_em END`,
+  ).run(linha.chave, linha.valor, d.status ?? "sugerida");
+  return { ok: true };
+});
+
+/** O MCP só propõe: nada muda nos números até alguém aceitar (ou recusar) na tela, pelo PUT acima. */
+app.post("/api/recorrentes/propostas", async (req) => {
+  const d = decisaoRecorrente.parse(req.body), { r, linha } = acharRecorrente(d);
+  if (r.status === d.status) throw Object.assign(new Error("a recorrente já está assim"), { statusCode: 409 });
+  db.prepare(
+    `INSERT INTO recorrencias (chave, valor_centavos, status, proposta) VALUES (?,?,?,?)
+     ON CONFLICT(chave, valor_centavos) DO UPDATE SET proposta = excluded.proposta`,
+  ).run(linha.chave, linha.valor, r.status ?? "sugerida", d.status ?? "sugerida");
   return { ok: true };
 });
 

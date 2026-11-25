@@ -139,7 +139,7 @@ O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API 
 Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 
 - **Lê:** estado, resumo, ritmo do mês, análises, orçamento com a renda esperada, lançamentos, compras de um estorno, pendentes agrupados, categorias, regras, prévia de regra, recorrentes, patrimônio e contas.
-- **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, recorrente, mês inicial da análise e sincronização. **O Cowork pode gravar sem pedir confirmação** (aconteceu em 24/11/2026): use o modo Manual no seletor da conversa ou marque essas ferramentas como "Sempre perguntar", se elas aparecerem em Customize > Connectors. O pedido de "ok" nas convenções é só uma instrução ao modelo, não uma trava.
+- **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, mês inicial da análise e sincronização. Em recorrentes ele só propõe: você aceita ou recusa na tela. **O Cowork pode gravar sem pedir confirmação** (aconteceu em 24/11/2026): use o modo Manual no seletor da conversa ou marque essas ferramentas como "Sempre perguntar", se elas aparecerem em Customize > Connectors. O pedido de "ok" nas convenções é só uma instrução ao modelo, não uma trava.
 - **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens.
 - O que ele lê passa pela conversa do Claude, na conta em que o Desktop está logado.
 
@@ -163,7 +163,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Análises | Só PF, com os totais do Resumo. O mês inicial é automático (o primeiro com a renda completa) ou escolhido na página, e vale também para o alarme. |
 | Resumo | Ignora transferências entre contas, pagamento de fatura e investimentos, que não são gasto nem renda. Estorno no cartão e reembolso em conta abatem a categoria. |
 | Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. A renda esperada também; sem digitar, é a mediana dos 3 últimos meses fechados. |
-| Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos. Você confirma ou ignora. |
+| Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos, uma linha para cada. Você confirma, ignora ou marca que cancelou (e é avisado se cobrarem de novo). |
 | Patrimônio | Contas + investimentos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
 
 ### Rotas principais
@@ -171,7 +171,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 `POST /api/pluggy/connect-token` · `GET|POST /api/conexoes` · `POST /api/sync` · `GET /api/contas` · `PATCH /api/contas/:id` ·
 `GET /api/lancamentos?mes=&conta=&categoria=&busca=&pendentes=1&pessoa=` · `PATCH /api/lancamentos/:id` · `GET /api/resumo?mes=&pessoa=` · `GET /api/ritmo?mes=` · `GET /api/analises?mes=` · `PUT /api/analises/inicio` ·
 `GET|POST /api/categorias` · `GET|POST|DELETE /api/regras` · `GET /api/regras/previa` · `GET|PUT /api/orcamento` ·
-`GET|PUT /api/recorrentes` · `GET /api/patrimonio` · `POST|PATCH|DELETE /api/bens`
+`GET|PUT /api/recorrentes` · `POST /api/recorrentes/propostas` · `GET /api/patrimonio` · `POST|PATCH|DELETE /api/bens`
 
 ## Problemas conhecidos
 

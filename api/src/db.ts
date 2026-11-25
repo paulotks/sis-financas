@@ -200,6 +200,20 @@ export const MIGRACOES: string[] = [
     valor TEXT NOT NULL
   );
   `,
+  // decisão por cobrança (nome + valor), estado cancelada e proposta do MCP; recria a tabela porque o SQLite não muda CHECK nem chave primária
+  `
+  CREATE TABLE recorrencias_nova (                         -- só a decisão do Paulo; a detecção é refeita a cada leitura
+    chave          TEXT NOT NULL,                          -- descrição original sem acento, número e símbolo
+    valor_centavos INTEGER NOT NULL,                       -- um valor que a cobrança já teve; 0 = todas com esse nome (decisões antigas)
+    status         TEXT NOT NULL CHECK (status IN ('confirmada','ignorada','cancelada','sugerida')),
+    proposta       TEXT CHECK (proposta IN ('confirmada','ignorada','cancelada','sugerida')),   -- do MCP: não vale até ser aceita na tela
+    decidido_em    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (chave, valor_centavos)
+  );
+  INSERT INTO recorrencias_nova (chave, valor_centavos, status, decidido_em) SELECT chave, 0, status, criado_em FROM recorrencias;
+  DROP TABLE recorrencias;
+  ALTER TABLE recorrencias_nova RENAME TO recorrencias;
+  `,
 ];
 
 export function migrar() {

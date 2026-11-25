@@ -34,7 +34,7 @@ api/src/
   pluggy.ts       cliente Pluggy: /auth (apiKey em cache ~110 min), /connect_token, items, accounts, bills, investments, /v2/transactions
   sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
-  recorrentes.ts  detecta cobranças mensais (função pura)
+  recorrentes.ts  detecta cobranças mensais e aplica as decisões (função pura)
   ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em server.ts)
   patrimonio.ts   soma das posições e foto diária dos saldos
   server.ts       rotas Fastify + zod; serve web/dist se existir
@@ -61,6 +61,7 @@ web/src/
 - Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ, bens ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
+- Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
 - `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
@@ -81,7 +82,7 @@ web/src/
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
 - **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito.
-- **Recorrentes** (`recorrentes.ts`): detecção refeita a cada leitura; a tabela `recorrencias` guarda só a decisão (confirmada/ignorada) por `chave` (descrição original sem acento, número e símbolo).
+- **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe`**, perde as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe
@@ -119,7 +120,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 4 feitos; o próximo ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 5 feitos; o próximo, Metas, ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)

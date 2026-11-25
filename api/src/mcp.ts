@@ -25,6 +25,10 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas são certas e recorrentes são prováveis (podem ter falso positivo).
+- Recorrentes: uma linha por cobrança (o mesmo lugar pode ter várias). Sugestão e confirmada contam no alarme; ignorada ("não é recorrente"),
+  cancelada ("cancelei") e parada, não. "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
+  na tela Recorrentes, então diga isso a ele. Só proponha cancelada se ele disser que cancelou. "cobrou_depois" = cobraram depois de
+  cancelada: avise.
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
@@ -193,6 +197,7 @@ export function criarServidor(base: string) {
             de: r.acumulado.de, ate: r.acumulado.ate, meses: r.acumulado.meses,
             entrou: reais(r.acumulado.entradas), gasto: reais(r.acumulado.gasto), sobra: reais(r.acumulado.sobra),
           },
+          cobradas_depois_de_canceladas: r.canceladas_cobradas.map((c: any) => ({ descricao: c.descricao, data: c.data, valor: reais(c.valor) })),
           acima_do_normal: r.acima.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
         };
       }),
@@ -354,8 +359,16 @@ export function criarServidor(base: string) {
 
   servidor.registerTool(
     "recorrentes",
-    { description: "Cobranças mensais detectadas (assinaturas, contas fixas), com valor, próxima data e a decisão do Paulo.", inputSchema: { pessoa }, annotations: LEITURA },
-    (a) => tentar(async () => (await ler<any[]>("/api/recorrentes", { pessoa: a.pessoa })).map(({ cor, ...r }) => ({ ...r, valor: reais(r.valor) }))),
+    { description: "Cobranças mensais detectadas (assinaturas, contas fixas), uma linha por cobrança, com valor, próxima data e a decisão do Paulo (null = sugestão).", inputSchema: { pessoa }, annotations: LEITURA },
+    (a) =>
+      tentar(async () =>
+        (await ler<any[]>("/api/recorrentes", { pessoa: a.pessoa })).map((r) => ({
+          chave: r.chave, valor_chave: reais(r.valor_chave), descricao: r.descricao, ...(r.antes && { antes: r.antes }),
+          categoria: r.categoria, conta: r.conta, valor: reais(r.valor), vezes: r.vezes, ultima: r.ultima, proxima: r.proxima,
+          situacao: r.situacao, status: r.status, ...(r.proposta && { proposta_esperando_o_paulo: r.proposta }),
+          ...(r.cobrou_depois && { cobrou_depois: { data: r.cobrou_depois.data, valor: reais(r.cobrou_depois.valor) } }),
+        })),
+      ),
   );
 
   servidor.registerTool(
@@ -499,17 +512,20 @@ export function criarServidor(base: string) {
   );
 
   servidor.registerTool(
-    "decidir_recorrente",
+    "propor_recorrente",
     {
-      description: "Marca uma cobrança recorrente como confirmada ou ignorada; null volta a sugestão.",
-      inputSchema: { chave: z.string().min(1).max(300).describe("chave vinda de recorrentes"), status: z.enum(["confirmada", "ignorada"]).nullable() },
+      description: "Propõe confirmar, ignorar ou cancelar uma cobrança recorrente; null propõe voltar a sugestão. Não decide nada: o Paulo aceita ou recusa na tela Recorrentes.",
+      inputSchema: {
+        chave: z.string().min(1).max(300).describe("chave vinda de recorrentes"),
+        valor_chave: z.number().positive().describe("valor_chave vindo de recorrentes, em reais"),
+        status: z.enum(["confirmada", "ignorada", "cancelada"]).nullable(),
+      },
       annotations: TROCA,
     },
     (a) =>
       tentar(async () => {
-        const todas = (await Promise.all(["PF", "PJ"].map((p) => ler<any[]>("/api/recorrentes", { pessoa: p })))).flat();
-        if (!todas.some((r) => r.chave === a.chave)) throw new Error("Nada foi gravado: essa chave não está em recorrentes.");
-        return chamar("PUT", "/api/recorrentes", a);
+        await chamar("POST", "/api/recorrentes/propostas", { chave: a.chave, valor: Math.round(a.valor_chave * 100), status: a.status });
+        return { proposta: a.status ?? "sugerida", falta: "o Paulo aceitar na tela Recorrentes; até lá nada muda" };
       }),
   );
 
