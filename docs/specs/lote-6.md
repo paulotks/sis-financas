@@ -14,8 +14,8 @@ Em worktree (sem `.env`), com cópia da base: tem migração. Sem nenhuma meta, 
   - `guardar`: um valor por mês que tem de sobrar. Sem alvo nem conta ligada.
   - `juntar`: um alvo, medido pelo saldo de **uma** posição do patrimônio (conta, investimento, cofrinho, linha de bens).
   - `quitar`: uma dívida, medida pelo saldo negativo de uma posição (cartão, cheque especial, linha negativa de bens).
-- **Por mês** é digitado. O app **sugere** o valor pelo prazo, mas nada muda sozinho. Vale do mês em diante até a próxima mudança, como o
-  orçamento: mês passado não muda.
+- **Por mês** é digitado. O app **sugere** o valor pelo prazo, mas nada muda sozinho. Vale do mês escolhido em diante até a próxima mudança, como o
+  orçamento: os meses antes dele não mudam (editar olhando um mês passado muda dele em diante, de propósito).
 - **Teto = renda esperada − soma do "por mês"** das metas no mês. Sem renda conhecida, o teto continua o orçado: meta não se desconta dele.
 - **Cores:** amarelo = passou do orçado **ou não sobra para as metas**; vermelho continua só para gastar mais do que entra. Verde passa a
   garantir que a meta cabe. Mês fechado: a conta é contra o que entrou.
