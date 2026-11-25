@@ -11,7 +11,7 @@ export default function Patrimonio() {
   const pessoa = params.get("pessoa") === "PJ" ? "PJ" : "PF";
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["patrimonio", pessoa], queryFn: () => api.patrimonio(pessoa) });
-  const aoSalvar = { onSettled: () => qc.invalidateQueries({ queryKey: ["patrimonio"] }) };
+  const aoSalvar = { onSettled: () => Promise.all([["patrimonio"], ["metas"]].map((queryKey) => qc.invalidateQueries({ queryKey }))) }; // bem ou dívida pode medir uma meta
   const criar = useMutation({ mutationFn: api.criarBem, ...aoSalvar });
   const editar = useMutation({ mutationFn: ({ id, ...d }: { id: number; nome?: string; valor_centavos?: number }) => api.editarBem(id, d), ...aoSalvar });
   const apagar = useMutation({ mutationFn: api.apagarBem, ...aoSalvar });

@@ -168,6 +168,7 @@ export interface Orcamento {
   renda: LinhaRenda[];
   renda_esperada: number | null;
   renda_origem: "definida" | "mediana";
+  metas: number; // o que as metas pedem no mês
   entradas_sem_categoria: number;
 }
 
@@ -185,7 +186,9 @@ export interface Ritmo {
   nao_apareceu: { conta_id: string; conta: string | null; valor: number }[]; // só no mês aberto: teto por cartão, fora de gasto
   parcelas_previstas: number; // só em mês futuro; fora de gasto
   sobra: number;
-  teto: number | null;
+  metas: number; // o que elas pedem no mês
+  falta_metas: number; // quanto falta para sobrar isso (mês aberto: pela projeção)
+  teto: number | null; // renda esperada menos as metas; sem renda, o orçado
   projecao: { min: number; max: number; media: number } | null;
   nivel: "verde" | "amarelo" | "vermelho" | null;
   por_dia: { valor: number; no_ritmo: number | null; livre: number; dias: number; recorrentes: number } | null; // no_ritmo = o que a projeção supõe
@@ -228,10 +231,52 @@ export interface Analises {
   inicio_definido: boolean;
   inicio_antes: string | null; // o automático mudou na virada do mês: era este
   orcado_hoje: number | null;
-  meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
-  dia_a_dia: { dados_ate: string; dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
+  meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; metas: number | null; sobra: number; acumulado: number | null }[];
+  dia_a_dia: { dados_ate: string; dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null; metas: number };
   categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
   comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
+}
+
+/** Só PF. Progresso nulo = nada ligado, ou a posição saiu do patrimônio. */
+export interface Meta {
+  id: number;
+  nome: string;
+  tipo: "guardar" | "juntar" | "quitar";
+  alvo: number | null; // juntar = quanto; quitar = quanto a dívida era
+  prazo: string | null;
+  por_mes: number | null; // o que pede no mês escolhido
+  origem: Posicao["origem"] | null;
+  ref_id: string | null;
+  encerrada_em: string | null;
+  medida: { nome: string | null; conta: string | null; valor: number } | null;
+  falta: number | null;
+  feito: number | null; // quitar: negativo = a dívida cresceu
+  chega: string | null; // com o por_mes digitado
+  precisa: number | null; // por mês, para chegar no prazo
+  andou: { dias: number; por_mes: number; chega: string | null } | null; // de verdade, pelas fotos do saldo
+}
+/** O que pode medir uma meta: dívida só serve para quitar, o resto para juntar. */
+export interface Posicao {
+  origem: "conta" | "investimento" | "bem";
+  ref_id: string;
+  nome: string | null;
+  conta: string | null; // só cofrinho
+  valor: number;
+  serve: "juntar" | "quitar";
+}
+export interface Metas {
+  mes: string;
+  total: number;
+  metas: Meta[];
+  posicoes: Posicao[];
+}
+export interface EdicaoMeta {
+  nome?: string;
+  alvo?: number;
+  prazo?: string | null;
+  por_mes?: number;
+  mes?: string; // o por_mes vale deste mês em diante
+  medida?: Pick<Posicao, "origem" | "ref_id"> | null;
 }
 
 /** Rodapé de Lançamentos: a regra do Resumo sobre a lista inteira. Gastos positivos, já com estornos abatidos; fora = transferências. */
@@ -302,6 +347,11 @@ export const api = {
   editarBem: (id: number, d: { nome?: string; valor_centavos?: number }) => req<Bem>("PATCH", `/api/bens/${id}`, d),
   apagarBem: (id: number) => req<{ ok: true }>("DELETE", `/api/bens/${id}`),
 
+  metas: (mes: string) => req<Metas>("GET", `/api/metas${qs({ mes })}`),
+  criarMeta: (d: EdicaoMeta & { nome: string; tipo: Meta["tipo"] }) => req<Meta>("POST", "/api/metas", d),
+  editarMeta: (id: number, d: EdicaoMeta & { encerrada?: boolean }) => req<Meta>("PATCH", `/api/metas/${id}`, d),
+  apagarMeta: (id: number) => req<{ ok: true }>("DELETE", `/api/metas/${id}`),
+
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
 
   analises: (mes: string) => req<Analises>("GET", `/api/analises${qs({ mes })}`),
@@ -359,13 +409,14 @@ export const nomeDoMes = (mes: string) => nomeMes(mes).split(" ")[0];
 /** "nov/26" */
 export const mesCurto = (mes: string) => `${nomeMes(mes).slice(0, 3).toLowerCase()}/${mes.slice(2, 4)}`;
 /** Com o que o mês aberto se compara (o `teto`): sem renda conhecida, o orçado. */
-export const limiteTexto = (r: Ritmo) => (r.renda.esperada === null ? "o orçado" : "a renda esperada");
+export const limiteTexto = (r: Ritmo) => (r.renda.esperada === null ? "o orçado" : r.metas > 0 ? "a renda menos as metas" : "a renda esperada");
 /** O nível em palavras e símbolo, para não depender só da cor. */
 export const nivelTexto = (r: Ritmo) => {
   if (!r.nivel) return null;
   const limite = r.orcado > 0 ? "orçado" : "renda";
   const fechado = r.situacao === "fechado";
   if (r.nivel === "verde") return { icone: "✓", texto: `${fechado ? "Coube" : "Dentro"} ${limite === "renda" ? (fechado ? "na renda" : "da renda") : (fechado ? "no orçado" : "do orçado")}` };
+  if (r.nivel === "amarelo" && r.falta_metas > 0) return { icone: "!", texto: fechado ? "Não sobrou para as metas" : "Não sobra para as metas" };
   if (r.nivel === "amarelo") return { icone: "!", texto: fechado ? "Passou do orçado" : "Passando do orçado" };
   return { icone: "▲", texto: fechado ? "Gastou mais do que entrou" : "Estourando a renda" };
 };

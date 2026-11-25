@@ -6,6 +6,7 @@ import RitmoLateral from "./components/RitmoLateral";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
 import Orcamento from "./pages/Orcamento";
+import Metas from "./pages/Metas";
 import Recorrentes from "./pages/Recorrentes";
 import Contas from "./pages/Contas";
 import Conexoes from "./pages/Conexoes";
@@ -17,6 +18,7 @@ const MENU = [
   { to: "/resumo", rotulo: "Resumo", icone: "◎" },
   { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡" },
   { to: "/orcamento", rotulo: "Orçamento", icone: "◔" },
+  { to: "/metas", rotulo: "Metas", icone: "⚑" },
   { to: "/analises", rotulo: "Análises", icone: "▥" },
   { to: "/recorrentes", rotulo: "Recorrentes", icone: "∞" },
   { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
@@ -82,6 +84,7 @@ export default function App() {
           <Route path="/resumo" element={<Resumo />} />
           <Route path="/lancamentos" element={<Lancamentos />} />
           <Route path="/orcamento" element={<Orcamento />} />
+          <Route path="/metas" element={<Metas />} />
           <Route path="/analises" element={<Suspense fallback={<p className="mudo">Carregando…</p>}><Analises /></Suspense>} />
           <Route path="/recorrentes" element={<Recorrentes />} />
           <Route path="/contas" element={<Contas />} />

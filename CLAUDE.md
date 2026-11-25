@@ -40,6 +40,7 @@ api/src/
   totais.ts       os totais do mês (BASE_RESUMO, GASTO, SOMA), a régua da renda, o normal das categorias e a lista de recorrentes: consultas, sem rota
   ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em totais.ts)
   patrimonio.ts   soma das posições e foto diária dos saldos
+  metas.ts        o que as metas pedem por mês, progresso pela posição ligada e previsão (as rotas ficam em server.ts)
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
@@ -47,7 +48,7 @@ web/src/
   lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
   components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
-  pages/                Resumo, Lancamentos, Orcamento, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
+  pages/                Resumo, Lancamentos, Orcamento, Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -64,7 +65,7 @@ web/src/
 
 - Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
-- Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
+- Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho, encerrar meta, ligá-la a uma posição ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
 - Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
 - `criar_regra` exige o `total_previsto` da prévia (quantos mudam de categoria: depende da categoria, e sai do mesmo `calcular` da gravação) e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
@@ -86,7 +87,8 @@ web/src/
 - Grupo `transferencia` (Transferência entre contas, Pagamento de fatura, Investimentos) fica **fora do resumo**: não é gasto nem renda. Guardado = entradas − saídas.
 - **Totais do mês:** Resumo, orçamento e o rodapé de Lançamentos usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `totais.ts`). A tela não refaz a regra: lê `soma` e `estorno` do lançamento, `tipo` da categoria. Entrada (em conta ou cartão) com categoria de gasto é **estorno ou reembolso e abate** a categoria; sem categoria não abate (pode ser renda ou fatura paga). Rendimento de conta (`proceeds interests`) é Renda.
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
-- **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. A projeção e a curva do mês param no último dia com dado de todos os bancos (`ultimoDiaComDado`). Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Normal de categoria nulo = não há o que comparar (nunca vira zero). Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
+- **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. A projeção e a curva do mês param no último dia com dado de todos os bancos (`ultimoDiaComDado`). Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Normal de categoria nulo = não há o que comparar (nunca vira zero). Contas e decisões em `docs/specs/lote-3.md`.
+- **Metas** (`metas.ts`, contas em `docs/specs/lote-6.md`): só PF. Teto = renda esperada − o "por mês" das metas (sem renda, o teto é o orçado e a meta não desconta); amarelo = passou do orçado **ou não sobra para as metas**; vermelho só para passar da renda. `metas_mensais` funciona como `orcamentos`: vale do mês em diante, 0 = não pede nada; encerrar põe 0 do mês atual em diante e o passado fica. O mês se mede por entradas − saídas; o alvo, pelo saldo de **uma** posição (`origem` + `ref_id`, sem FK; posição fora do patrimônio = sem medida, nunca zero). Dívida sem "por mês" não mexe no teto: a parcela já é gasto. Nada fixo no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). Cofrinho e caixinha (`salvarReservas` em `sync.ts`) viram investimento de tipo `RESERVA`, que segue a pessoa e o "ocultar" da conta e **só soma com `contas.usa_reservas = 1`** (pergunta no cartão da conta; nulo = não respondeu, e o valor pode estar numa linha de `bens`); o que sai da lista vai a 0, nunca se apaga. A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
 - **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme.
 - **Dado que falta** (`faltas.ts`, regras em `docs/specs/avisos.md`): é aviso, **nunca soma** em gasto, projeção, nível ou patrimônio, e nada é gravado. Parcela prevista só em série à parte. Falta real não se esconde; exceção de banco, só por peça do adaptador (`totalDaFatura`).
@@ -128,7 +130,7 @@ Se um dos dois estiver fora do ar, diga isso ao Paulo e siga com a documentaçã
 
 ## Próximas fases
 
-**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 5 feitos; o que vem agora está em "Ordem e fatias"; Metas ainda não tem spec), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
+**Em andamento: melhorias do [`docs/backlog.md`](docs/backlog.md)** (lotes 1 a 6 feitos; o que vem agora está em "Ordem e fatias"), com specs em `docs/specs/`. Leia a spec do lote antes de implementar e atualize o status no mesmo commit. Nos `docs/`, só padrões (ver Regras de segurança).
 
 1. ~~Conectar bancos e sincronizar; lançamentos editáveis; categorias e regras; resumo do mês~~ (feito em 2026-11-23)
 2. ~~Orçamento mensal (planejado × realizado)~~ (feito em 2026-11-23)

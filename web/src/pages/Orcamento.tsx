@@ -20,7 +20,7 @@ export default function Orcamento() {
   const planejado = q.data?.planejado ?? 0, gasto = q.data?.gasto ?? 0;
   const resta = planejado - gasto;
   const esperada = q.data?.renda_esperada ?? null;
-  const sobra = esperada === null ? null : esperada - planejado;
+  const sobra = esperada === null ? null : esperada - planejado, metas = q.data?.metas ?? 0;
 
   return (
     <section>
@@ -51,6 +51,11 @@ export default function Orcamento() {
             <span className={`pequeno ${sobra < 0 ? "neg" : "mudo"}`}>
               {sobra < 0 ? "▲ O plano não cabe na renda." : "É o que você guarda se cumprir tudo."}
             </span>
+          )}
+          {sobra !== null && sobra >= 0 && metas > 0 && (
+            <Link className={`pequeno ${sobra < metas ? "alerta" : "mudo"}`} to={`/metas?mes=${mes}`}>
+              {sobra < metas ? `▲ Faltam ${dinheiro(metas - sobra)} para as metas (${dinheiro(metas)}) →` : `Cobre as metas (${dinheiro(metas)}) →`}
+            </Link>
           )}
         </div>
         <div className="card">

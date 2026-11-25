@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, LineChart, Rectangle, ReferenceLine, Tooltip, XAxis, YAxis, type BarShapeProps } from "recharts";
+import { Bar, CartesianGrid, ComposedChart, LabelList, Line, LineChart, Rectangle, ReferenceLine, Tooltip, XAxis, YAxis, type BarShapeProps } from "recharts";
 import { api, dataCurta, dinheiro, dinheiroCurto, hoje, mesAtual, mesCurto, nomeDoMes, nomeMes, type Analises as Dados } from "../lib/api";
 import { COR, Dica, eixo, eixoDinheiro, Grafico } from "../components/Grafico";
 import SeletorMes from "../components/SeletorMes";
@@ -11,6 +11,7 @@ const MAIORES = 10;
 const margem = { top: 18, right: 8, bottom: 0, left: 0 };
 const soma = (ns: number[]) => ns.reduce((s, n) => s + n, 0);
 const cor = (v: number) => (v < 0 ? "neg" : "pos");
+const enumerar = (partes: string[]) => new Intl.ListFormat("pt-BR").format(partes);
 
 export default function Analises() {
   const [params, setParams] = useSearchParams();
@@ -140,15 +141,20 @@ function Guardado({ d }: { d: Dados }) {
   if (!fechados.length) return null;
   const total = fechados.at(-1)!.acumulado!;
   const ganho = soma(fechados.map((m) => m.entradas));
-  const tabela = { colunas: ["Mês", "Guardado", "Acumulado"], linhas: fechados.map((m) => [mesCurto(m.mes), dinheiro(m.sobra), dinheiro(m.acumulado)]) };
+  const temMetas = fechados.some((m) => m.metas !== null);
+  const tabela = {
+    colunas: ["Mês", "Guardado", ...(temMetas ? ["Metas"] : []), "Acumulado"],
+    linhas: fechados.map((m) => [mesCurto(m.mes), dinheiro(m.sobra), ...(temMetas ? [dinheiro(m.metas)] : []), dinheiro(m.acumulado)]),
+  };
   return (
     <div className="dois-graficos">
       <Grafico
         titulo="Guardado por mês"
         frase={<>O que entrou menos o gasto. No período, {total < 0 ? "faltou" : "sobrou"} <b className={cor(total)}>{dinheiro(Math.abs(total))}</b>{ganho > 0 && `: ${Math.round((Math.abs(total) / ganho) * 100)}% do que entrou`}.</>}
+        chaves={temMetas ? [{ nome: "Guardado", cor: "var(--pos)" }, { nome: "O que as metas pediam", cor: COR.tinta, forma: "linha" }] : []}
         tabela={tabela}
       >
-        <BarChart data={fechados} responsive style={ALTURA} margin={margem}>
+        <ComposedChart data={fechados} responsive style={ALTURA} margin={margem}>
           <CartesianGrid vertical={false} stroke={COR.grade} />
           <XAxis dataKey="mes" tickFormatter={mesCurto} {...eixo} />
           <YAxis {...eixoDinheiro} />
@@ -158,7 +164,8 @@ function Guardado({ d }: { d: Dados }) {
             dataKey="sobra" name="guardado" maxBarSize={24} radius={[4, 4, 0, 0]} fill={COR.apoio}
             shape={(p: BarShapeProps) => <Rectangle {...p} fill={Number((p.payload as { sobra?: number })?.sobra) < 0 ? "var(--neg)" : "var(--pos)"} />}
           />
-        </BarChart>
+          {temMetas && <Line dataKey="metas" name="metas" stroke={COR.tinta} strokeWidth={2} dot={{ r: 4, fill: COR.tinta, stroke: "var(--painel)", strokeWidth: 2 }} />}
+        </ComposedChart>
       </Grafico>
       <Grafico titulo="Guardado acumulado" frase={<>O que você teria juntado desde {mesCurto(fechados[0].mes)}, mês a mês.</>}>
         <LineChart data={fechados} responsive style={ALTURA} margin={margem}>
@@ -176,15 +183,16 @@ function Guardado({ d }: { d: Dados }) {
 
 /** B: gasto acumulado dia a dia, até o último dia com dado do banco. A frase diz em que dia a curva furou cada limite. */
 function DiaADia({ d }: { d: Dados }) {
-  const { dados_ate, dias, anterior, mes_anterior, ja_lancado, orcado, esperada } = d.dia_a_dia;
+  const { dados_ate, dias, anterior, mes_anterior, ja_lancado, orcado, esperada, metas } = d.dia_a_dia;
+  const comMetas = esperada !== null && metas > 0 ? esperada - metas : null;
   const furou = (limite: number | null) => (limite === null ? 0 : dias.findIndex((v) => v > limite) + 1);
-  const noOrcado = furou(orcado), naRenda = furou(esperada);
+  const noOrcado = furou(orcado), nasMetas = furou(comMetas), naRenda = furou(esperada);
   const dados = Array.from({ length: Math.max(dias.length, anterior?.length ?? 0) }, (_, i) => ({ dia: i + 1, atual: dias[i] ?? null, anterior: anterior?.[i] ?? null }));
   const ultimo = dias.length, antes = anterior?.[Math.min(ultimo, anterior.length) - 1]; // meses de tamanhos diferentes
   const gasto = dias[ultimo - 1] ?? 0, aberto = d.mes === d.mes_atual;
   const [a, m] = d.mes.split("-").map(Number);
   const faltamDias = new Date(a, m, 0).getDate() - Number(hoje().slice(8)) + 1; // contando hoje
-  const limites = [["o orçado", orcado], ["a renda esperada", esperada]] as const;
+  const limites = [["o orçado", orcado], ["a renda menos as metas", comMetas], ["a renda esperada", esperada]] as const;
   // com as parcelas já lançadas até o fim do mês, para bater com o Resumo e o Orçamento
   const resta = limites.filter(([, v]) => v !== null && v >= ja_lancado).map(([nome, v]) => `${dinheiro(v! - ja_lancado)} até ${nome}`);
   const soComParcelas = aberto ? limites.filter(([, v]) => v !== null && v >= gasto && v < ja_lancado).map(([nome]) => nome) : [];
@@ -196,10 +204,11 @@ function DiaADia({ d }: { d: Dados }) {
         <>
           {aberto && dados_ate < hoje() && <>Os dados do banco vão até {dataCurta(dados_ate)}. </>}
           {noOrcado > 0 && <>Passou do orçado no <b className="alerta">dia {noOrcado}</b>. </>}
+          {nasMetas > 0 && <>Passou da renda menos as metas no <b className="alerta">dia {nasMetas}</b>. </>}
           {naRenda > 0 && <>Passou da renda esperada no <b className="neg">dia {naRenda}</b>. </>}
-          {soComParcelas.length > 0 && <>Com o que já está lançado até o fim do mês, passa de <b className="neg">{soComParcelas.join(" e de ")}</b>. </>}
-          {aberto && resta.length > 0 && <>Restam <b>{resta.join(" e ")}</b>, já contando as parcelas lançadas, com {faltamDias === 1 ? "1 dia" : `${faltamDias} dias`} pela frente. </>}
-          {!aberto && !noOrcado && !naRenda && resta.length > 0 && <>Não passou de nenhum limite. </>}
+          {soComParcelas.length > 0 && <>Com o que já está lançado até o fim do mês, passa de <b className="neg">{enumerar(soComParcelas)}</b>. </>}
+          {aberto && resta.length > 0 && <>Restam <b>{enumerar(resta)}</b>, já contando as parcelas lançadas, com {faltamDias === 1 ? "1 dia" : `${faltamDias} dias`} pela frente. </>}
+          {!aberto && !noOrcado && !nasMetas && !naRenda && resta.length > 0 && <>Não passou de nenhum limite. </>}
           {antes !== undefined && (
             <>{aberto ? `Até o dia ${ultimo}` : "No mês todo"}, {gasto > antes ? <b className="neg">{dinheiro(gasto - antes)} a mais</b> : <b>{dinheiro(antes - gasto)} a menos</b>} que {nomeDoMes(mes_anterior).toLowerCase()}.</>
           )}
@@ -209,6 +218,7 @@ function DiaADia({ d }: { d: Dados }) {
         { nome: nomeMes(d.mes), cor: COR.gasto, forma: "linha" },
         ...(anterior ? [{ nome: nomeMes(mes_anterior), cor: COR.apoio, forma: "linha" as const }] : []),
         ...(orcado !== null ? [{ nome: "Orçado", cor: COR.tinta, forma: "tracejada" as const }] : []),
+        ...(comMetas !== null ? [{ nome: "Renda menos as metas", cor: COR.renda, forma: "tracejada" as const }] : []),
         ...(esperada !== null ? [{ nome: "Renda esperada", cor: COR.renda, forma: "linha" as const }] : []),
       ]}
       tabela={{
@@ -222,6 +232,7 @@ function DiaADia({ d }: { d: Dados }) {
         <YAxis {...eixoDinheiro} />
         <Tooltip cursor={{ stroke: COR.apoio }} content={(p) => <Dica p={p} titulo={(x) => `Dia ${x}`} />} />
         {orcado !== null && <ReferenceLine y={orcado} ifOverflow="extendDomain" stroke={COR.tinta} strokeDasharray="4 4" label={esperada !== null && Math.abs(esperada - orcado) < esperada * 0.08 ? undefined : rotulo("Orçado")} />}
+        {comMetas !== null && <ReferenceLine y={comMetas} ifOverflow="extendDomain" stroke={COR.renda} strokeDasharray="4 4" />}
         {esperada !== null && <ReferenceLine y={esperada} ifOverflow="extendDomain" stroke={COR.renda} strokeWidth={2} label={rotulo("Renda esperada")} />}
         {anterior && <Line dataKey="anterior" name={nomeDoMes(mes_anterior).toLowerCase()} stroke={COR.apoio} strokeWidth={2} dot={false} />}
         <Line dataKey="atual" name={nomeDoMes(d.mes).toLowerCase()} stroke={COR.gasto} strokeWidth={2} dot={false} />

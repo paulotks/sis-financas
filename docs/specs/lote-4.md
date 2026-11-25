@@ -15,7 +15,7 @@ Itens 27 a 32 do [backlog](../backlog.md). Decidido com o Paulo em 2026-11-24. S
 |---|---|---|
 | 27 | **A.** Entrou × orçado × gasto por mês | Barras do que entrou (item 76: renda e entradas sem categoria) e do gasto, linha do orçado. Mês sem orçamento: linha pontilhada com o de hoje, identificada como "referência" |
 | 28 | **B.** Gasto acumulado dia a dia | Mês escolhido contra o mês passado, com as linhas do orçado e da renda esperada: onde a curva fura |
-| 29 | **C.** Guardado por mês e acumulado | Barras acima e abaixo de zero, e o acumulado em gráfico separado (nunca dois eixos). Sem meta por enquanto |
+| 29 | **C.** Guardado por mês e acumulado | Barras acima e abaixo de zero, e o acumulado em gráfico separado (nunca dois eixos). Com meta no período, uma linha mostra o que elas pediam (lote 6) |
 | 30 | **E.** Quem estourou | Categoria contra: média dos 3 meses (padrão), mês passado ou orçado. Ordem: maior estouro em reais. No topo, os 3 maiores em frase. A barra abre os lançamentos |
 | 31 | **G.** Já comprometido | 12 meses à frente: parcelas em cor cheia (certas), recorrentes em cor clara (prováveis), contra a renda esperada. Link "revisar recorrentes" |
 | 32 | Mês inicial editável + MCP | Séries novas também no MCP (o MCP acompanha o sistema) |

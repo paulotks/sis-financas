@@ -24,7 +24,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | **7. Regras e busca** (feita em 2026-11-25) | 46 → 47 → 74 → 54 | Rotas de regras e `categorizar.ts`. O 74 separa cálculo de gravação, e o 54 chama a mesma função | não | 5 (mesmo arquivo) |
 | **8. Frentes que esperam a fatura** | 65 (V3, com o 12) e 66 (V4), uma branch por banco | As duas regravam dado e precisam da próxima virada de fatura | regrava: worktree com cópia | 5, e a virada |
 | **9. Totais, Alarme e Análises** (feita em 2026-11-25) | 55 → 73 → 76 → 57 → 49 | O 55 tira os totais do `server.ts`; os outros mexem nesses mesmos trechos | não | 6 |
-| **10. Metas (lote 6)** | 33 | Precisa de spec. Revê o texto do 72 | migração | 1 e 9 |
+| **10. Metas (lote 6)** (feita em 2026-11-25) | 33 | Spec: [specs/lote-6.md](specs/lote-6.md). Revê o texto do 72 | migração | 1 e 9 |
 | **11. Formato único e horários** | 56 → 58 | Tocam API, tela e MCP inteiros: por último, para não conflitar | não | 10 |
 
 - **Por que esta ordem:** primeiro não perder dado (1), depois ler certo (3 a 5), depois avisar o que falta (6). Refinar conta (9) só vale com o dado completo.
@@ -94,6 +94,14 @@ Spec: [specs/lote-5.md](specs/lote-5.md). É o item 11, ampliado. Tem migração
 | 38 | Aviso de cobrança depois de cancelada | P | não | feito (2026-11-24) |
 | 39 | Tela: uma linha por cobrança, Cancelei/Reativar, propostas do Claude | P | não | feito (2026-11-24) |
 | 40 | MCP só propõe decisão de recorrente | P | não | feito (2026-11-24) |
+
+## Lote 6: FEITO (2026-11-25, Metas)
+
+Spec: [specs/lote-6.md](specs/lote-6.md). Tem migração.
+
+| # | Melhoria | Tam. | Base | Status |
+|---|---|---|---|---|
+| 33 | Metas: tela própria (guardar, juntar, quitar dívida), nada fixo no código. Teto do alarme = renda − o que as metas pedem | G | migração | feito (2026-11-25) |
 
 ## Antes do lote 6: base segura (revisão de arquitetura e banco)
 
@@ -185,7 +193,6 @@ No sentido contrário, a validação **reduz a pressa do 48** (sinal igual ao `b
 | 16 | Bens: nome cortado na tela | P | não | Lista em `.bens li` (`styles.css`): a coluna do nome divide espaço com 130px do valor. Não conferido na tela |
 | 18 | Orçamento: sugerir pela média de 3 meses | P | não | Menos urgente: o orçamento já foi definido |
 | 19 | Resumo: % categorizada do mês | P | não | O "gasto real" já existe: `saidas` exclui transferências. Falta só a % |
-| 33 | (**lote 6**, combinado em 2026-11-24) Metas: tela própria (guardar, reserva, quitar dívida), nada fixo no código. O teto do alarme passa a ser renda − meta | G | migração | Pedido na entrevista de 2026-11-24, para o futuro. Aportes em Investimentos e as linhas de `bens` são candidatos a medir o progresso. Tem migração: 41 e 42 antes |
 | 34 | Análises D, F e J: cada R$ 100 da renda, mapa de calor categoria × mês, patrimônio e dívida no tempo | M | não | O J precisa de mais dias em `saldos_diarios` |
 | 35 | Notificação do Windows quando o mês virar vermelho | P | não | Só se o alarme na tela não bastar |
 

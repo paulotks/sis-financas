@@ -58,6 +58,7 @@ function Manchete({ r }: { r: Ritmo }) {
           Entraram {dinheiro(r.renda.recebida)} e saíram {dinheiro(r.gasto)}.{" "}
           {!r.analisado && "A renda deste mês está incompleta: ele fica fora da análise."}
           {r.analisado && esperada && r.gasto > r.renda.recebida && `O mês custou ${(r.gasto / esperada).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mês de renda.`}
+          {r.analisado && r.metas > 0 && (r.falta_metas > 0 ? ` Com as metas (${dinheiro(r.metas)}), faltaram ${dinheiro(r.falta_metas)}.` : ` Deu para as metas (${dinheiro(r.metas)}).`)}
           {temExtra(r) && ` Sem a renda extra de ${dinheiro(r.renda.extra)}, seriam ${dinheiro(r.sobra - r.renda.extra)}.`}
         </p>
       </>
@@ -94,12 +95,13 @@ function Manchete({ r }: { r: Ritmo }) {
   );
 }
 
-/** Gasto (cheio) e projeção (claro) contra as marcas do orçado e da renda. */
+/** Gasto (cheio) e projeção (claro) contra as marcas do orçado, da renda e da renda menos as metas. */
 function Medidor({ r }: { r: Ritmo }) {
   const aberto = r.situacao === "aberto";
   const renda = r.situacao === "fechado" ? r.renda.recebida : r.renda.esperada;
   const marcas = [
     { nome: "Orçado", valor: r.orcado, classe: "orcado" },
+    { nome: "Renda menos as metas", valor: renda !== null && r.metas > 0 ? renda - r.metas : 0, classe: "metas" },
     { nome: r.situacao === "fechado" ? "Renda que entrou" : "Renda esperada", valor: renda ?? 0, classe: "renda" },
   ].filter((m) => m.valor > 0);
   if (!marcas.length || (r.situacao === "fechado" && !r.analisado)) return null;
@@ -128,7 +130,7 @@ const temExtra = (r: Ritmo) => r.renda.esperada !== null && r.renda.extra > r.re
 
 function Frases({ r }: { r: Ritmo }) {
   const { esperada, extra, recebida } = r.renda;
-  const aberto = r.situacao === "aberto";
+  const aberto = r.situacao === "aberto", planejada = (esperada ?? 0) - r.orcado;
   return (
     <ul className="frases">
       {r.nao_apareceu.length > 0 && (
@@ -147,7 +149,9 @@ function Frases({ r }: { r: Ritmo }) {
           <Link to={`/orcamento?mes=${r.mes}`}>
             {r.orcado > esperada
               ? <>Seu orçamento passa da renda esperada em <b className="neg">{dinheiro(r.orcado - esperada)}</b>.</>
-              : <>Cumprindo todo o orçamento, sobram <b>{dinheiro(esperada - r.orcado)}</b>: ele já usa {pct(r.orcado, esperada)} da renda.</>}
+              : r.metas > planejada
+                ? <>Cumprindo todo o orçamento, sobram {dinheiro(planejada)}: faltam <b className="alerta">{dinheiro(r.metas - planejada)}</b> para as metas.</>
+                : <>Cumprindo todo o orçamento, sobram <b>{dinheiro(planejada)}</b>: ele já usa {pct(r.orcado, esperada)} da renda{r.metas > 0 && " e cobre as metas"}.</>}
           </Link>
         </li>
       )}
@@ -176,10 +180,14 @@ function PorDia({ r }: { r: Ritmo }) {
   }
   if (!r.por_dia) return <><small>Renda esperada</small><strong>{dinheiro(r.renda.esperada)}</strong></>;
   const { valor, no_ritmo, livre, dias, recorrentes } = r.por_dia;
-  const detalhe = recorrentes > 0 ? `Já desconta as parcelas lançadas e ${dinheiro(recorrentes)} de recorrentes que ainda vêm.` : "Já desconta as parcelas lançadas.";
+  const descontos = [
+    "as parcelas lançadas", ...(recorrentes > 0 ? [`${dinheiro(recorrentes)} de recorrentes que ainda vêm`] : []),
+    ...(r.metas > 0 && r.renda.esperada !== null ? [`${dinheiro(r.metas)} das metas`] : []),
+  ];
+  const detalhe = `Já desconta ${new Intl.ListFormat("pt-BR").format(descontos)}.`;
   return livre < 0 ? (
     <>
-      <small>Já passou do que cabe no mês</small>
+      <small>{r.metas > 0 && r.gasto + recorrentes <= (r.renda.esperada ?? 0) ? "Já passou do que cabe com as metas" : "Já passou do que cabe no mês"}</small>
       <strong className="neg">{dinheiro(livre)}</strong>
       <p className="mudo pequeno">{detalhe}</p>
     </>

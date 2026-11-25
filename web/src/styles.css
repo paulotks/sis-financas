@@ -144,11 +144,12 @@ code { font-size: 12px; color: #b9b9c6; }
 .medidor .projecao { background: color-mix(in srgb, var(--cor) 40%, var(--painel)); }
 .medidor .trilho i { position: absolute; inset-block: -5px; width: 2px; margin-left: -1px; box-shadow: 0 0 0 2px var(--painel); }
 .medidor i.renda, .chave.renda { background: var(--texto); }
+.medidor i.metas, .chave.metas { background: var(--alerta); }
 .medidor i.orcado, .chave.orcado { background: repeating-linear-gradient(var(--texto) 0 3px, transparent 3px 6px); }
 .medidor ul { display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; margin: 14px 0 0; padding: 0; font-size: 12px; color: var(--mudo); }
 .medidor b { color: var(--texto); font-weight: 600; }
 .chave { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
-.chave.renda, .chave.orcado { width: 2px; height: 12px; border-radius: 0; margin-inline: 4px 11px; vertical-align: -2px; }
+.chave.renda, .chave.orcado, .chave.metas { width: 2px; height: 12px; border-radius: 0; margin-inline: 4px 11px; vertical-align: -2px; }
 .frases { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .frases:empty { display: none; }
 .ritmo-lateral { margin-top: auto; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borda); background: var(--painel); text-decoration: none; }
@@ -205,6 +206,21 @@ code { font-size: 12px; color: #b9b9c6; }
 .bens li { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto; gap: 6px; align-items: center; border-bottom: 1px solid var(--borda); padding: 4px 0; }
 .patrimonio .linha-form .campo { min-width: 0; flex: 1; }
 .campo[aria-invalid="true"] { border-color: var(--neg); }
+
+/* metas */
+.meta { margin-bottom: 14px; }
+.meta header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+.meta header .titulo { margin-left: -6px; }
+.meta .campos { display: grid; grid-template-columns: 140px 140px 160px minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+.meta label { display: flex; flex-direction: column; gap: 4px; color: var(--mudo); font-size: 12px; }
+.meta label input { color: var(--texto); font-size: 14px; border-color: var(--borda); text-align: left; }
+.meta label select { width: 100%; }
+.meta .frases { margin-top: 10px; }
+.meta .frases .botao { padding: 2px 10px; margin-left: 4px; }
+.meta.nova .segmentado { margin-bottom: 12px; }
+.meta.nova .linha-form select { flex: 1 1 200px; min-width: 0; }
+.meta.nova p { margin: 0; }
+.metas-encerradas li { grid-template-columns: minmax(0, 1fr) auto auto; }
 
 /* orçamento */
 .orcamento td a { text-decoration: none; }
@@ -305,6 +321,8 @@ code { font-size: 12px; color: #b9b9c6; }
   .dois-graficos { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
 @media (max-width: 640px) {
+  .meta .campos { grid-template-columns: 1fr 1fr; }
+  .meta .medida { grid-column: 1 / -1; }
   .conteudo { padding: 14px 12px 40px; }
   .cards, .cards.quatro, .duas-colunas, .alarme { grid-template-columns: minmax(0, 1fr); }
   .alarme { grid-template-rows: none; }
