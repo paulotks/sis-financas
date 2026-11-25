@@ -2,7 +2,7 @@ import { agora, centavos, db, transacao } from "./db.js";
 import { env } from "./env.js";
 import { carregarRegras, reaplicarRegras, sugerirCategoria } from "./categorizar.js";
 import { registrarSaldos } from "./patrimonio.js";
-import { ErroPluggy, pluggy, type PConta, type PItem, type PTransacao } from "./pluggy.js";
+import { ErroPluggy, pluggy, type PConta, type PInvestimento, type PItem, type PReserva, type PTransacao } from "./pluggy.js";
 
 export interface ResultadoSync {
   item_id: string;
@@ -73,6 +73,36 @@ function salvarConta(itemId: string, conector: string | null, c: PConta) {
     parecePJ(conector, c) ? "PJ" : "PF",
     c.balance == null ? null : agora(), // de quando é o saldo: sem saldo novo, ficam o último e a data dele
   );
+}
+
+function salvarInvestimento(itemId: string, i: { id: string; nome: string | null; tipo: string | null; subtipo: string | null; saldo: number | null; bruto: PInvestimento | PReserva }) {
+  db.prepare(
+    `INSERT INTO investimentos (id, item_id, nome, tipo, subtipo, saldo_centavos, atualizado_em, bruto) VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET nome=excluded.nome, tipo=excluded.tipo, subtipo=excluded.subtipo,
+       saldo_centavos=COALESCE(excluded.saldo_centavos, saldo_centavos), atualizado_em=excluded.atualizado_em, bruto=excluded.bruto`,
+  ).run(i.id, itemId, i.nome, i.tipo, i.subtipo, i.saldo, agora(), JSON.stringify(i.bruto));
+}
+
+/**
+ * Cofrinhos e caixinhas: vêm na própria conta, fora do `balance` e de /investments. Viram investimento de tipo RESERVA e id "conta:reserva".
+ * O que saiu da lista foi esvaziado: vai a 0, sem apagar a linha (a evolução precisa dela). Assim, se o banco trocar os
+ * identificadores, o total continua certo e só sobram linhas zeradas.
+ * Sem lista e sem o "não tem" explícito (`hasReservedBalance: false`), o banco não informou: fica o último valor.
+ */
+function salvarReservas(itemId: string, c: PConta) {
+  const { reservedBalances, hasReservedBalance } = c.bankData ?? {};
+  const lista = reservedBalances?.length ? reservedBalances : hasReservedBalance === false ? [] : null;
+  if (!lista) return;
+  const prefixo = `${c.id}:`;
+  for (const r of lista)
+    salvarInvestimento(itemId, {
+      id: prefixo + r.identification, nome: r.name?.trim() || "Reserva sem nome", tipo: "RESERVA", subtipo: null,
+      saldo: centavos(r.availableAmounts?.reduce((soma, a) => soma + (a.amount ?? NaN), 0)), bruto: r, // faixa sem valor: fica o último
+    });
+  db.prepare(
+    `UPDATE investimentos SET saldo_centavos = 0, atualizado_em = ?
+     WHERE tipo = 'RESERVA' AND saldo_centavos <> 0 AND substr(id, 1, ?) = ? AND id NOT IN (SELECT value FROM json_each(?))`,
+  ).run(agora(), prefixo.length, prefixo, JSON.stringify(lista.map((r) => prefixo + r.identification)));
 }
 
 /**
@@ -224,7 +254,12 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
     const contas = await pluggy.contas(itemId);
     if (!contas.length && db.prepare("SELECT 1 FROM contas WHERE item_id = ?").get(itemId))
       throw new Error("A Pluggy não devolveu nenhuma conta deste banco; nada foi apagado. Se continuar, a autorização do MeuPluggy pode ter vencido (ver Problemas conhecidos no README)");
-    transacao(() => contas.forEach((c) => salvarConta(itemId, res.conector, c)));
+    transacao(() =>
+      contas.forEach((c) => {
+        salvarConta(itemId, res.conector, c);
+        salvarReservas(itemId, c);
+      }),
+    );
     res.contas = contas.length;
 
     const regras = carregarRegras();
@@ -259,16 +294,11 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       }
     }
 
-    // investimentos (ex.: cofrinhos do Mercado Pago, se o banco expuser)
     await lerSePuder("Investimentos não lidos", async () => {
       const invs = await pluggy.investimentos(itemId);
       transacao(() =>
         invs.forEach((i) =>
-          db.prepare(
-            `INSERT INTO investimentos (id, item_id, nome, tipo, subtipo, saldo_centavos, atualizado_em, bruto) VALUES (?,?,?,?,?,?,?,?)
-             ON CONFLICT(id) DO UPDATE SET nome=excluded.nome, tipo=excluded.tipo, subtipo=excluded.subtipo,
-               saldo_centavos=COALESCE(excluded.saldo_centavos, saldo_centavos), atualizado_em=excluded.atualizado_em, bruto=excluded.bruto`,
-          ).run(i.id, itemId, i.name ?? null, i.type ?? null, i.subtype ?? null, centavos(i.balance ?? i.amount), agora(), JSON.stringify(i)),
+          salvarInvestimento(itemId, { id: i.id, nome: i.name ?? null, tipo: i.type ?? null, subtipo: i.subtype ?? null, saldo: centavos(i.balance ?? i.amount), bruto: i }),
         ),
       );
       res.investimentos = invs.length;

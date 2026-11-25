@@ -35,6 +35,9 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Banco com erro, ou fora de status UPDATED com execucao SUCCESS (em estado): o dado dele pode estar velho, faltando ou repetido. Diga isso
   antes de concluir algo do mês. execucao PARTIAL_SUCCESS = o banco mandou só parte; não é caso de reautorizar.
 - saldo_lido_em de um dia anterior ao de ultimo_sync: o banco não mandou o saldo e vale o último conhecido. Diga a data ao usar o número.
+- Investimento de tipo RESERVA é cofrinho ou caixinha: dinheiro separado dentro da conta, fora do saldo dela. Só soma no patrimônio se
+  usa_cofrinho da conta for true. null = o banco informou a reserva e o Paulo ainda não disse, no cartão da conta na tela Contas, se usa:
+  avise-o (você não responde por ele). false = ele não usa ali: não some.
 - Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
   porque a edição manual nunca mais é alterada por regra. Comece por pendentes_agrupados e use previa_regra antes de criar_regra.
@@ -391,31 +394,28 @@ export function criarServidor(base: string) {
 
   servidor.registerTool(
     "contas",
-    { description: "Contas, cartões e investimentos com saldo, limite e vencimento. Em cartão, saldo = limite usado.", inputSchema: { pessoa }, annotations: LEITURA },
+    { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
         const { contas, investimentos } = await ler<{ contas: any[]; investimentos: any[] }>("/api/contas");
-        // mesma regra de patrimonio.ts: investimento é PJ só se todas as contas do banco forem PJ
-        const donoDoItem = (item: string) => {
-          const doBanco = contas.filter((c) => c.item_id === item);
-          return doBanco.length && doBanco.every((c) => c.pessoa === "PJ") ? "PJ" : "PF";
-        };
         // lista o que sai, campo a campo: número da conta e o retorno bruto do banco ficam de fora
         return {
           contas: contas.filter((c) => c.pessoa === a.pessoa).map((c) => ({
             id: c.id, nome: c.apelido ?? c.nome, instituicao: c.instituicao, tipo: c.tipo, saldo: reais(c.saldo_centavos),
             limite: reais(c.limite_centavos), limite_disponivel: reais(c.limite_disponivel_centavos),
             fechamento: c.fechamento, vencimento: c.vencimento, oculta: !!c.oculta, saldo_lido_em: c.atualizado_em, ultimo_sync: c.ultimo_sync,
+            usa_cofrinho: c.usa_reservas === null ? null : !!c.usa_reservas,
           })),
-          investimentos: investimentos.filter((i) => donoDoItem(i.item_id) === a.pessoa).map((i) => ({
-            nome: i.nome, tipo: i.tipo, subtipo: i.subtipo, saldo: reais(i.saldo_centavos),
+          investimentos: investimentos.filter((i) => i.pessoa === a.pessoa && !(i.tipo === "RESERVA" && !i.saldo_centavos)).map((i) => ({
+            nome: i.nome, tipo: i.tipo, subtipo: i.subtipo, saldo: reais(i.saldo_centavos), conta: i.conta,
             resgatado: JSON.parse(i.bruto ?? "{}").status === "TOTAL_WITHDRAWAL",
+            soma_no_patrimonio: !!i.ativo && !i.oculta,
           })),
         };
       }),
   );
 
-  // ---------------- escrita (sem conectar banco, apagar, trocar PF/PJ ou mexer em bens: isso é só na tela) ----------------
+  // ---------------- escrita (sem conectar banco, apagar, trocar PF/PJ, mexer em bens ou dizer se a conta usa cofrinho: isso é só na tela) ----------------
 
   const ESCRITA = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const TROCA = { ...ESCRITA, destructiveHint: true, idempotentHint: true }; // substitui um valor que já existia

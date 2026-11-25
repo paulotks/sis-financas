@@ -1,27 +1,39 @@
 import { db } from "./db.js";
 
 /**
+ * Investimentos com o dono e se somam hoje. O do banco não tem pessoa: é PJ só se todas as contas do mesmo banco forem PJ; resgatado
+ * (TOTAL_WITHDRAWAL) fica inativo. Reserva (cofrinho, caixinha; ver salvarReservas em sync.ts) é de uma conta: segue a pessoa e o "ocultar"
+ * dela, e só soma com o sim do usuário (`usa_reservas`), porque o valor pode já estar numa linha de `bens`.
+ */
+export const INVESTIMENTOS = `
+  SELECT i.*, c.id AS conta_id, COALESCE(c.apelido, c.nome) AS conta, COALESCE(c.oculta, 0) AS oculta,
+         COALESCE(c.pessoa, CASE WHEN (SELECT MIN(pessoa) FROM contas WHERE item_id = i.item_id) = 'PJ' THEN 'PJ' ELSE 'PF' END) AS pessoa,
+         CASE WHEN i.tipo = 'RESERVA' THEN c.usa_reservas IS 1 ELSE json_extract(i.bruto, '$.status') IS NOT 'TOTAL_WITHDRAWAL' END AS ativo
+  FROM investimentos i LEFT JOIN contas c ON i.tipo = 'RESERVA' AND c.id = substr(i.id, 1, instr(i.id, ':') - 1)`;
+
+/**
  * Tudo o que compõe o patrimônio, uma linha por item. Cartão entra com sinal -1: pelo Open Finance o saldo dele é o
  * limite usado, que já inclui as parcelas futuras (por isso `faturas` não entra: contaria de novo).
- * Investimento não tem pessoa: é PJ só se todas as contas do mesmo banco forem PJ. Resgatado (TOTAL_WITHDRAWAL) fica
- * inativo: não soma hoje, mas continua no histórico.
+ * Inativo não soma hoje, mas continua no histórico.
  */
 const POSICOES = `
   SELECT 'conta' AS origem, id AS ref_id, pessoa, oculta, CASE WHEN tipo = 'CREDIT' THEN -1 ELSE 1 END AS sinal, saldo_centavos AS saldo, 1 AS ativo
   FROM contas WHERE saldo_centavos IS NOT NULL
   UNION ALL
-  SELECT 'investimento', id, CASE WHEN (SELECT MIN(pessoa) FROM contas WHERE item_id = i.item_id) = 'PJ' THEN 'PJ' ELSE 'PF' END, 0, 1,
-         saldo_centavos, json_extract(bruto, '$.status') IS NOT 'TOTAL_WITHDRAWAL'
-  FROM investimentos i WHERE saldo_centavos IS NOT NULL
+  SELECT 'investimento', id, pessoa, oculta, 1, saldo_centavos, ativo FROM (${INVESTIMENTOS}) WHERE saldo_centavos IS NOT NULL
   UNION ALL
   SELECT 'bem', CAST(id AS TEXT), pessoa, 0, 1, valor_centavos, 1 FROM bens`;
 
-/** Guarda a foto de hoje de cada saldo (a última do dia vale). Conta oculta também: se voltar a aparecer, tem histórico. */
+/**
+ * Guarda a foto de hoje de cada saldo (a última do dia vale: o que deixou de somar hoje sai dela). Conta oculta também: se voltar a
+ * aparecer, tem histórico.
+ */
 export function registrarSaldos() {
   db.exec(`
     INSERT INTO saldos_diarios (data, origem, ref_id, saldo_centavos)
     SELECT date('now','localtime'), origem, ref_id, saldo FROM (${POSICOES}) WHERE ativo
-    ON CONFLICT (data, origem, ref_id) DO UPDATE SET saldo_centavos = excluded.saldo_centavos`);
+    ON CONFLICT (data, origem, ref_id) DO UPDATE SET saldo_centavos = excluded.saldo_centavos;
+    DELETE FROM saldos_diarios WHERE data = date('now','localtime') AND (origem, ref_id) NOT IN (SELECT origem, ref_id FROM (${POSICOES}) WHERE ativo)`);
 }
 
 export function patrimonio(pessoa: string) {

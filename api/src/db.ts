@@ -219,6 +219,8 @@ export const MIGRACOES: string[] = [
   CREATE INDEX ix_lanc_categoria ON lancamentos(categoria_id);
   CREATE INDEX ix_lanc_regra     ON lancamentos(regra_id);
   `,
+  // "você usa cofrinho ou caixinha nesta conta?": nulo = ainda não respondeu (a reserva não soma)
+  `ALTER TABLE contas ADD COLUMN usa_reservas INTEGER CHECK (usa_reservas IN (0, 1))`,
 ];
 
 const COPIAS = 14; // de cada tipo

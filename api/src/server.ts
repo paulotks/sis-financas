@@ -4,7 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
 import { copiaDoDia, db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
-import { patrimonio, registrarSaldos } from "./patrimonio.js";
+import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_ACUMULADO, MESES_MEDIANA, nivelDo, projetar, somarMes, type TotalMes } from "./ritmo.js";
@@ -99,22 +99,24 @@ app.get("/api/contas", async () => ({
      ORDER BY ct.pessoa, ct.tipo, COALESCE(ct.apelido, ct.nome)`,
   ).all(),
   investimentos: db.prepare(
-    `SELECT i.*, cx.conector FROM investimentos i JOIN conexoes cx ON cx.item_id = i.item_id ORDER BY i.nome`,
+    `SELECT i.*, cx.conector FROM (${INVESTIMENTOS}) i JOIN conexoes cx ON cx.item_id = i.item_id ORDER BY i.nome`,
   ).all(),
 }));
 
 app.patch("/api/contas/:id", async (req) => {
   const { id } = z.object({ id: uuid }).parse(req.params);
   const d = z
-    .object({ apelido: z.string().max(60).nullable().optional(), pessoa: z.enum(["PF", "PJ"]).optional(), oculta: z.boolean().optional() })
+    .object({ apelido: z.string().max(60).nullable().optional(), pessoa: z.enum(["PF", "PJ"]).optional(), oculta: z.boolean().optional(), usa_reservas: z.boolean().optional() })
     .parse(req.body);
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
   if (d.apelido !== undefined) (sets.push("apelido = ?"), vals.push(d.apelido?.trim() || null));
   if (d.pessoa) (sets.push("pessoa = ?"), vals.push(d.pessoa));
   if (d.oculta !== undefined) (sets.push("oculta = ?"), vals.push(d.oculta ? 1 : 0));
+  if (d.usa_reservas !== undefined) (sets.push("usa_reservas = ?"), vals.push(d.usa_reservas ? 1 : 0));
   if (!sets.length) return { ok: true };
   db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+  if (d.usa_reservas !== undefined) registrarSaldos();
   return ouNaoEncontrado(db.prepare("SELECT * FROM contas WHERE id = ?").get(id), "conta");
 });
 

@@ -1037,6 +1037,73 @@ test("patrimônio: contas + investimentos + bens − cartões e dívidas, sem oc
   assert.equal(fotos(String(carro.id)).length, 0);
 });
 
+test("cofrinho e caixinha: só somam com o sim do usuário; trocar de id, esvaziar ou vir sem dado não estraga o total", async () => {
+  const antes = { paginas, contasFalsas, porPagina };
+  const CONTA = "55555555-5555-4555-8555-555555555555";
+  const fotosAntes = db.prepare("SELECT * FROM saldos_diarios ORDER BY 1,2,3").all();
+  const reserva = (identification: string, ...faixas: (number | null)[]) => ({ identification, name: `Cofre ${identification}`, availableAmounts: faixas.map((amount) => ({ amount })) });
+  const lerBanco = async (bankData: object | null, pessoa = "PF") => {
+    paginas = [[]];
+    contasFalsas = [antes.contasFalsas[0], { id: CONTA, type: "BANK", name: "Conta", balance: 10, bankData }];
+    await sync();
+    return (await chamar("GET", `/api/patrimonio?pessoa=${pessoa}`)).d;
+  };
+  const guardado = () =>
+    Object.fromEntries((db.prepare("SELECT substr(id, 38) AS id, saldo_centavos AS s FROM investimentos WHERE tipo = 'RESERVA' ORDER BY id").all() as any[]).map((r) => [r.id, r.s]));
+  const fotos = () => (db.prepare("SELECT COUNT(*) AS n FROM saldos_diarios WHERE ref_id LIKE ?").get(`${CONTA}:%`) as any).n;
+  const responder = async (d: object) => {
+    assert.equal((await chamar("PATCH", `/api/contas/${CONTA}`, d)).status, 200);
+    return (await chamar("GET", "/api/patrimonio")).d;
+  };
+
+  const base = await lerBanco(null);
+  const doBanco = { hasReservedBalance: true, reservedBalances: [reserva("a", 100, 20.5), { ...reserva("b", 30), name: undefined }] };
+  // sem resposta: guarda, mas não soma nem entra na foto (o valor pode estar numa linha manual)
+  let p = await lerBanco(doBanco);
+  assert.deepEqual([p.total, guardado(), fotos()], [base.total, { a: 12050, b: 3000 }, 0]);
+  const { investimentos, contas } = (await chamar("GET", "/api/contas")).d;
+  assert.deepEqual(investimentos.filter((i: any) => i.conta_id === CONTA).map((i: any) => [i.nome, i.conta, i.ativo]), [["Cofre a", "Conta", 0], ["Reserva sem nome", "Conta", 0]]);
+  assert.equal(contas.find((c: any) => c.id === CONTA).usa_reservas, null);
+  // sim: soma em investimentos e entra na foto de hoje
+  p = await responder({ usa_reservas: true });
+  assert.deepEqual([p.investimentos, p.total, fotos()], [base.investimentos + 15050, base.total + 15050, 2]);
+  const { cliente, usar } = await ligarMcp();
+  const noMcp = async () => {
+    const r = await usar("contas");
+    return [r.contas.find((c: any) => c.id === CONTA).usa_cofrinho, r.investimentos.filter((i: any) => i.tipo === "RESERVA").map((i: any) => [i.saldo, i.conta, i.soma_no_patrimonio])];
+  };
+  assert.deepEqual(await noMcp(), [true, [[120.5, "Conta", true], [30, "Conta", true]]]);
+  // a conta manda: oculta não soma; PJ vai para a empresa
+  assert.equal((await responder({ oculta: true })).total, base.total - 1000);
+  assert.equal((await responder({ oculta: false, pessoa: "PJ" })).investimentos, base.investimentos);
+  assert.equal((await responder({ pessoa: "PF" })).total, base.total + 15050);
+  // o banco trocou os ids: as linhas antigas zeram, o total e o passado não mudam
+  db.prepare("INSERT INTO saldos_diarios VALUES ('2021-01-01', 'investimento', ?, 5000)").run(`${CONTA}:a`);
+  const passado = (h: { data: string; total: number }[]) => h.find((x) => x.data === "2021-01-01")?.total;
+  p = await lerBanco({ hasReservedBalance: true, reservedBalances: [reserva("a2", 100, 20.5), reserva("b2", 30)] });
+  assert.deepEqual([p.total, passado(p.historico), guardado()], [base.total + 15050, 5000, { a: 0, a2: 12050, b: 0, b2: 3000 }]);
+  // sem a lista, o banco não informou: fica o último. Uma faixa sem valor também
+  for (const bd of [null, {}, { hasReservedBalance: null, reservedBalances: null }, { hasReservedBalance: true, reservedBalances: null }, { hasReservedBalance: true, reservedBalances: [] },
+    { hasReservedBalance: true, reservedBalances: [reserva("a2", 1, null), reserva("b2", 30)] }])
+    assert.equal((await lerBanco(bd)).total, base.total + 15050, JSON.stringify(bd));
+  // esvaziou uma, depois todas (o campo some e o banco diz que não há reserva)
+  assert.equal((await lerBanco({ hasReservedBalance: true, reservedBalances: [reserva("b2", 30)] })).total, base.total + 3000);
+  p = await lerBanco({ hasReservedBalance: false });
+  assert.deepEqual([p.total, passado(p.historico)], [base.total, 5000]);
+  // investimento de verdade (outro tipo) nunca é zerado por isto, e o não tira da foto de hoje sem mexer no passado
+  assert.equal(p.investimentos, base.investimentos);
+  await lerBanco(doBanco);
+  p = await responder({ usa_reservas: false });
+  assert.deepEqual([p.total, passado(p.historico), fotos()], [base.total, 5000, 1]);
+  assert.deepEqual(await noMcp(), [false, [[120.5, "Conta", false], [30, "Conta", false]]]); // zerada não aparece
+  await cliente.close();
+
+  ({ paginas, contasFalsas, porPagina } = antes);
+  db.prepare("DELETE FROM contas WHERE id = ?").run(CONTA);
+  db.exec("DELETE FROM investimentos WHERE tipo = 'RESERVA'; DELETE FROM saldos_diarios");
+  for (const f of fotosAntes as any[]) db.prepare("INSERT INTO saldos_diarios VALUES (?,?,?,?)").run(f.data, f.origem, f.ref_id, f.saldo_centavos);
+});
+
 const g = (descricao_original: string, data: string, valor: number, status = "POSTED", conta = "c1") =>
   ({ data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta, status });
 

@@ -144,7 +144,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 
 - **Lê:** estado, resumo, ritmo do mês, análises, orçamento com a renda esperada, lançamentos, compras de um estorno, pendentes agrupados, categorias, regras, prévia de regra, recorrentes, patrimônio e contas.
 - **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, mês inicial da análise e sincronização. Em recorrentes ele só propõe: você aceita ou recusa na tela. **O Cowork pode gravar sem pedir confirmação** (aconteceu em 24/11/2026): use o modo Manual no seletor da conversa ou marque essas ferramentas como "Sempre perguntar", se elas aparecerem em Customize > Connectors. O pedido de "ok" nas convenções é só uma instrução ao modelo, não uma trava.
-- **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens.
+- **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens, dizer se a conta usa cofrinho.
 - O que ele lê passa pela conversa do Claude, na conta em que o Desktop está logado.
 
 ## Segurança
@@ -168,7 +168,8 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Resumo | Ignora transferências entre contas, pagamento de fatura e investimentos, que não são gasto nem renda. Estorno no cartão e reembolso em conta abatem a categoria. |
 | Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. A renda esperada também; sem digitar, é a mediana dos 3 últimos meses fechados. |
 | Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos, uma linha para cada. Você confirma, ignora ou marca que cancelou (e é avisado se cobrarem de novo). |
-| Patrimônio | Contas + investimentos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
+| Patrimônio | Contas + investimentos + cofrinhos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
+| Cofrinhos e caixinhas | Quando o banco informa dinheiro guardado, o cartão da conta (em **Contas**) pergunta se você usa cofrinho ou caixinha ali. Só o “Sim” soma no patrimônio. Se o valor já estava numa linha manual, zere a linha no mesmo dia. |
 
 ### Rotas principais
 
@@ -186,7 +187,7 @@ Vistos no código e na documentação da Pluggy; ainda sem correção.
 - **O que vence:** a autorização do MeuPluggy, um ano depois de conectar. É separada da autorização de cada banco, então o botão **Reautorizar** (que abre o meu.pluggy.ai) não a renova.
 - **Como aparece:** a Pluggy passa a devolver listas vazias. Nada é apagado da sua base, e a conexão fica com erro em **Conexões** (“não devolveu nenhuma conta”).
 - **Como renovar:** **Conectar banco → MeuPluggy**, um banco de cada vez. A Pluggy avisa que o id da conexão pode mudar.
-- **Se o id mudar:** as contas e os lançamentos dos últimos 365 dias podem vir repetidos, sem as suas edições. Ocultar a conta antiga em **Contas** tira a repetição dos totais, mas tira junto o histórico mais antigo. Investimento não tem "ocultar": contaria em dobro no patrimônio.
+- **Se o id mudar:** as contas e os lançamentos dos últimos 365 dias podem vir repetidos, sem as suas edições. Ocultar a conta antiga em **Contas** tira a repetição dos totais, mas tira junto o histórico mais antigo. Cofrinho segue a conta; os outros investimentos não têm "ocultar" e contariam em dobro no patrimônio.
 - **Trava:** com 5 conexões salvas, **Conectar banco** fica desligado. A tela conta toda conexão já salva, e o app não remove nenhuma (remover no meu.pluggy.ai não muda essa conta).
 
 **2. `app:instalar` recusa caminho com espaço**

@@ -49,6 +49,7 @@ export interface Conta {
   vencimento: string | null;
   pessoa: "PF" | "PJ";
   oculta: number;
+  usa_reservas: 0 | 1 | null; // resposta de "usa cofrinho ou caixinha aqui?"; nulo = ainda não respondeu
   conector: string | null;
   imagem_url: string | null;
   ultimo_sync: string | null;
@@ -61,9 +62,12 @@ export const porTipo = (cs: Conta[]) =>
 export interface Investimento {
   id: string;
   nome: string | null;
-  tipo: string | null;
+  tipo: string | null; // RESERVA = cofrinho ou caixinha de uma conta
   saldo_centavos: number | null;
   conector: string | null;
+  conta_id: string | null; // só reserva
+  conta: string | null;
+  oculta: number;
 }
 
 export interface Conexao {
@@ -236,7 +240,7 @@ export const api = {
   sincronizar: (itemId?: string) => req<{ resultados: ResultadoSync[] }>("POST", "/api/sync", { itemId }),
 
   contas: () => req<{ contas: Conta[]; investimentos: Investimento[] }>("GET", "/api/contas"),
-  editarConta: (id: string, d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean }) =>
+  editarConta: (id: string, d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean; usa_reservas?: boolean }) =>
     req<Conta>("PATCH", `/api/contas/${id}`, d),
 
   meses: () => req<string[]>("GET", "/api/meses"),

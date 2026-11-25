@@ -51,6 +51,12 @@ export interface PItem {
   lastUpdatedAt?: string | null;
   connector?: { id: number; name: string; imageUrl?: string };
 }
+/** Dinheiro separado dentro da conta (cofrinho, caixinha): uma faixa por remuneração. */
+export interface PReserva {
+  identification: string;
+  name?: string | null;
+  availableAmounts?: { amount?: number | null }[] | null;
+}
 export interface PConta {
   id: string;
   type: "BANK" | "CREDIT" | string;
@@ -61,7 +67,7 @@ export interface PConta {
   balance?: number | null;
   currencyCode?: string;
   owner?: string | null;
-  bankData?: { transferNumber?: string | null } | null;
+  bankData?: { transferNumber?: string | null; hasReservedBalance?: boolean | null; reservedBalances?: PReserva[] | null } | null;
   creditData?: {
     creditLimit?: number | null;
     availableCreditLimit?: number | null;

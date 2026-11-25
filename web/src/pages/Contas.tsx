@@ -13,6 +13,13 @@ export default function Contas() {
   });
   const [mostrarOcultas, setMostrarOcultas] = useState(false);
   const contas = (q.data?.contas ?? []).filter((c) => mostrarOcultas || !c.oculta);
+  // reserva zerada fica na base (a evolução precisa), mas não na tela; a de conta respondida com "não", também não
+  const usaReservas = new Map(q.data?.contas.map((c) => [c.id, c.usa_reservas]));
+  const investimentos = (q.data?.investimentos ?? []).filter(
+    (i) => (mostrarOcultas || !i.oculta) && !(i.tipo === "RESERVA" && (!i.saldo_centavos || usaReservas.get(i.conta_id!) === 0)),
+  );
+  const reservado = (c: Conta) => (q.data?.investimentos ?? []).reduce((s, i) => s + (i.conta_id === c.id ? i.saldo_centavos ?? 0 : 0), 0);
+  const perguntar = contas.filter((c) => !c.oculta && c.usa_reservas === null && reservado(c));
 
   if (q.data && q.data.contas.length === 0)
     return (
@@ -33,6 +40,13 @@ export default function Contas() {
 
       {(q.error ?? editar.error) && <div className="aviso erro">{(q.error ?? editar.error)!.message}</div>}
 
+      {perguntar.length > 0 && (
+        <div className="aviso">
+          O banco informou dinheiro guardado em {perguntar.map((c) => c.apelido ?? c.nome).join(" e ")}. Responda no cartão da conta se você usa
+          cofrinho ou caixinha ali: até lá, não entra no patrimônio.
+        </div>
+      )}
+
       <Patrimonio />
 
       {(["PF", "PJ"] as const).map((pessoa) => {
@@ -46,7 +60,7 @@ export default function Contas() {
                 <h3>{titulo}</h3>
                 <div className="grade-contas">
                   {daSecao.map((c) => (
-                    <CartaoConta key={c.id} c={c} onEditar={(d) => editar.mutate({ id: c.id, d })} />
+                    <CartaoConta key={c.id} c={c} reservado={reservado(c)} onEditar={(d) => editar.mutate({ id: c.id, d })} />
                   ))}
                 </div>
               </Fragment>
@@ -55,15 +69,17 @@ export default function Contas() {
         );
       })}
 
-      {!!q.data?.investimentos.length && (
+      {investimentos.length > 0 && (
         <>
           <h2>Investimentos e cofrinhos</h2>
           <table className="tabela compacta">
             <tbody>
-              {q.data.investimentos.map((i) => (
+              {investimentos.map((i) => (
                 <tr key={i.id}>
                   <td>{i.nome}</td>
-                  <td className="mudo">{i.conector} · {i.tipo}</td>
+                  <td className="mudo">
+                    {i.tipo === "RESERVA" ? `${i.conta} · cofrinho ou caixinha${usaReservas.get(i.conta_id!) === null ? " · não soma ainda" : ""}` : `${i.conector} · ${i.tipo}`}
+                  </td>
                   <td className="num">{dinheiro(i.saldo_centavos)}</td>
                 </tr>
               ))}
@@ -75,7 +91,7 @@ export default function Contas() {
   );
 }
 
-function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean }) => void }) {
+function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; onEditar: (d: Parameters<typeof api.editarConta>[1]) => void }) {
   const atual = c.apelido ?? c.nome ?? "";
   const [apelido, setApelido] = useState(atual);
   useEffect(() => setApelido(atual), [atual]);
@@ -118,6 +134,29 @@ function CartaoConta({ c, onEditar }: { c: Conta; onEditar: (d: { apelido?: stri
             {c.vencimento && ` · vence ${dataCurta(c.vencimento)}`}
           </small>
         </>
+      )}
+      {(reservado !== 0 || c.usa_reservas !== null) && (
+        <div className="acoes">
+          <small className={c.usa_reservas === null ? "alerta" : "mudo"}>
+            O banco informa {dinheiro(reservado)} guardado. Usa cofrinho ou caixinha aqui?
+          </small>
+          <div className="segmentado pequeno" role="group" aria-label="Usa cofrinho ou caixinha nesta conta?">
+            {([1, 0] as const).map((v) => (
+              <button
+                key={v}
+                className={c.usa_reservas === v ? "ativo" : ""}
+                aria-pressed={c.usa_reservas === v}
+                onClick={() =>
+                  c.usa_reservas !== v &&
+                  (!v || confirm(`Somar ${dinheiro(reservado)} ao patrimônio? Se esse dinheiro já está em "Bens e dívidas (à mão)", zere a linha de lá hoje mesmo: senão conta em dobro.`)) &&
+                  onEditar({ usa_reservas: !!v })
+                }
+              >
+                {v ? "Sim" : "Não"}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <div className="acoes">
         <Link to={`/lancamentos?conta=${c.id}${c.pessoa === "PJ" ? "&pessoa=PJ" : ""}`}>Ver lançamentos</Link>

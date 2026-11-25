@@ -47,10 +47,10 @@ export default function Patrimonio() {
       {b.valor_centavos !== 0 ? (
         <button
           className="icone-botao"
-          title="Quitado ou vendido: zera o valor e guarda a evolução"
-          aria-label={`${b.nome}: quitado ou vendido`}
+          title="Quitado, vendido ou já vem do banco: zera o valor e guarda a evolução"
+          aria-label={`${b.nome}: quitado, vendido ou já vem do banco`}
           onClick={() =>
-            confirm(`"${b.nome}" foi quitado ou vendido? O valor vai a 0 de hoje em diante e os dias anteriores não mudam.`) &&
+            confirm(`"${b.nome}" foi quitado, vendido ou já vem do banco? O valor vai a 0 de hoje em diante e os dias anteriores não mudam.`) &&
             editar.mutate({ id: b.id, valor_centavos: 0 })
           }
         >
@@ -86,7 +86,7 @@ export default function Patrimonio() {
           {d && <LinhaPatrimonio key={pessoa} pontos={d.historico} />}
           <dl className="saldos">
             <dt>Contas</dt><dd>{dinheiro(d?.contas)}</dd>
-            <dt>Investimentos</dt><dd>{dinheiro(d?.investimentos)}</dd>
+            <dt>Investimentos e cofrinhos</dt><dd>{dinheiro(d?.investimentos)}</dd>
             <dt>Bens</dt><dd>{dinheiro(d?.bens)}</dd>
             <dt>Cartões e dívidas</dt><dd>{dinheiro(d ? -d.dividas : null)}</dd>
           </dl>
@@ -121,13 +121,13 @@ export default function Patrimonio() {
               criar.mutate({ nome: nome.trim(), valor_centavos: lido, pessoa }, { onSuccess: () => (setNome(""), setValor("")) });
             }}
           >
-            <input className="campo" name="novo-nome" aria-label="Nome do bem ou dívida" placeholder="Cofrinho, carro…" maxLength={60} value={nome} onChange={(e) => setNome(e.target.value)} />
+            <input className="campo" name="novo-nome" aria-label="Nome do bem ou dívida" placeholder="Carro, imóvel…" maxLength={60} value={nome} onChange={(e) => setNome(e.target.value)} />
             <input className="campo num" name="novo-valor" aria-label="Valor" inputMode="decimal" placeholder="0,00" value={valor} aria-invalid={lido === null} onChange={(e) => setValor(e.target.value)} />
             <button className="botao secundario" disabled={!nome.trim() || !valor.trim() || lido === null || criar.isPending}>Adicionar</button>
           </form>
           <p className="mudo pequeno">
-            Para o que o banco não manda: cofrinhos, carro, imóvel. Dívida vai com sinal de menos (−20.000). Cartões já entram sozinhos
-            pelo limite usado, com as parcelas futuras: não lance de novo.
+            Para o que o banco não manda: carro, imóvel, cofrinho que não aparece na conta. Dívida vai com sinal de menos (−20.000). Cartões já
+            entram sozinhos pelo limite usado, com as parcelas futuras, e o cofrinho que o banco informa, pela conta: não lance de novo.
           </p>
         </div>
       </div>

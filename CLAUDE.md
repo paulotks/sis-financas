@@ -32,7 +32,7 @@ api/src/
   env.ts          carrega ../.env (process.loadEnvFile); porta, DB_PATH, PLUGGY_API_URL
   db.ts           SQLite + MIGRACOES (controle por PRAGMA user_version) + cópias automáticas + helpers
   pluggy.ts       cliente Pluggy: /auth (apiKey em cache ~110 min), /connect_token, items, accounts, bills, investments, /v2/transactions
-  sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
+  sync.ts         item -> contas e cofrinhos -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
   recorrentes.ts  detecta cobranças mensais e aplica as decisões (função pura)
   ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em server.ts)
@@ -60,7 +60,7 @@ web/src/
 
 - Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
-- Sem conectar banco, apagar, trocar PF/PJ, bens ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
+- Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
 - Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
 - `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
@@ -82,7 +82,7 @@ web/src/
 - **Totais do mês:** Resumo e orçamento usam o mesmo SQL (`BASE_RESUMO` e `GASTO` em `server.ts`). Entrada (em conta ou cartão) com categoria de gasto é **estorno ou reembolso e abate** a categoria; sem categoria não abate (pode ser renda ou fatura paga). Rendimento de conta (`proceeds interests`) é Renda.
 - **Orçamento** (`orcamentos`): só PF; o valor vale do mês em diante até a próxima linha da mesma categoria; 0 = sem orçamento.
 - **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
-- **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
+- **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). Cofrinho e caixinha (`salvarReservas` em `sync.ts`) viram investimento de tipo `RESERVA`, que segue a pessoa e o "ocultar" da conta e **só soma com `contas.usa_reservas = 1`** (pergunta no cartão da conta; nulo = não respondeu, e o valor pode estar numa linha de `bens`); o que sai da lista vai a 0, nunca se apaga. A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
 - **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
@@ -95,7 +95,7 @@ web/src/
 - `date` vem em UTC (a documentação manda converter para GMT-3), mas parte das linhas só tem a data (`T00:00Z`) e iria para o dia anterior. Usamos só a parte da data e **não convertemos** (decidido em 2026-11-25; o efeito nos totais é desprezível).
 - Itens do MeuPluggy **não** aceitam refresh pela API; a Pluggy atualiza 1x/dia. Nem o widget (`updateItem`) atualiza o item proxy: reautorizar banco = refazer no meu.pluggy.ai (atualiza sozinho a cada 24h). Limite gratuito: 5 conexões ativas do mesmo titular (a tela Conexões mostra n/5). Widget fixado em v2.7.0.
 - Banco sem faturas (`/bills`) ou investimentos (`/investments`) responde lista vazia, não erro (conferido em 2026-11-25). Só o 404 passa calado; outra falha não interrompe a sincronização, mas fica em `conexoes.erro` (400 é pedido nosso recusado: não esconder). `/accounts`, `/bills` e `/investments` são por página: ler com `todas()`.
-- Cofrinhos do Mercado Pago não aparecem como conta nem em `/investments` (vazio em todos os bancos testados até 2026-11-23). No extrato vêm em par (+X/−X). Até virem, entram como linha manual em `bens`.
+- Cofrinhos e caixinhas vêm em `bankData.reservedBalances` de `GET /accounts`, fora do `balance` e de `/investments` (conferido em 2026-11-25). A lista só vem quando `hasReservedBalance` é `true`; `false` = esvaziou; o resto = o banco não informou (manter o último). Banco pode informar uma sobra de centavos que o dono nem considera caixinha: por isso a pergunta por conta. No extrato do Mercado Pago vêm em par (+X/−X); no do Nubank, guardar e tirar não dá para identificar.
 - O ambiente de nuvem do Claude (Cowork) **não alcança** api.pluggy.ai. Teste real só no PC do Paulo. Para testes automatizados, use um servidor falso via `PLUGGY_API_URL`.
 - Cartões **fora** do Open Finance precisarão de lançamento manual (próxima fase).
 
