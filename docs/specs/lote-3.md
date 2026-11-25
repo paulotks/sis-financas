@@ -14,10 +14,9 @@ Em worktree (sem `.env`), com cópia da base: tem migração e muda o total dos 
 - **Renda esperada** é a régua, por categoria de renda, editada no Orçamento. Sem nada digitado: mediana da renda dos 3 últimos meses fechados.
   Digitado em uma categoria, vale a soma do que foi digitado.
 - **Renda extra** = o que entrou acima da esperada. Não alivia o alarme do mês aberto; no mês fechado conta na sobra, com a nota "sem a renda extra seriam…".
-- **Teto** = renda esperada (sem ela, o orçado). Meta de guardar **não** entra agora nem fixa no código: será uma tela própria (backlog, 33).
-  Quando existir, teto = renda − meta.
+- **Teto** = renda esperada (sem ela, o orçado) − o que as metas pedem, desde o [lote 6](lote-6.md). Nada fixo no código.
 - **Cores**, pela projeção: verde = dentro do orçado; amarelo = passou do orçado e cabe na renda; vermelho = passou da renda. Sem renda
-  conhecida, o máximo é amarelo.
+  conhecida, o máximo é amarelo. Com metas, amarelo é também não sobrar para elas (lote 6).
   Mês fechado: vermelho = gastou mais do que entrou.
 - **Tom** direto, com comparações contra os próprios números ("custou mais de um mês de renda"). Sem sermão e sem nada da internet.
 - **Só PF.** Resumo PJ continua com os 3 cards. Gasto pela data da compra, como hoje. Renda conta no mês em que caiu.

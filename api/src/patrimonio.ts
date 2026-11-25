@@ -36,6 +36,19 @@ export function registrarSaldos() {
     DELETE FROM saldos_diarios WHERE data = date('now','localtime') AND (origem, ref_id) NOT IN (SELECT origem, ref_id FROM (${POSICOES}) WHERE ativo)`);
 }
 
+export interface Posicao { origem: "conta" | "investimento" | "bem"; ref_id: string; nome: string | null; conta: string | null; sinal: 1 | -1; valor: number; serve: "juntar" | "quitar" | null }
+/** O que soma hoje, um por um, com dívida negativa. `serve` = que tipo de meta pode medir: bem zerado (quitado) e cartão sem dívida, nenhum. */
+export const posicoes = (pessoa: string) =>
+  db.prepare(
+    `SELECT p.origem, p.ref_id, COALESCE(ct.apelido, ct.nome, i.nome, b.nome) AS nome, i.conta, p.sinal, p.sinal * p.saldo AS valor,
+            CASE WHEN p.sinal * p.saldo < 0 THEN 'quitar' WHEN p.sinal = 1 AND NOT (p.origem = 'bem' AND p.saldo = 0) THEN 'juntar' END AS serve
+     FROM (${POSICOES}) p
+     LEFT JOIN contas ct ON p.origem = 'conta' AND ct.id = p.ref_id
+     LEFT JOIN (${INVESTIMENTOS}) i ON p.origem = 'investimento' AND i.id = p.ref_id
+     LEFT JOIN bens b ON p.origem = 'bem' AND b.id = CAST(p.ref_id AS INTEGER)
+     WHERE p.ativo AND NOT p.oculta AND p.pessoa = ? ORDER BY p.origem = 'conta', nome`,
+  ).all(pessoa) as unknown as Posicao[];
+
 export function patrimonio(pessoa: string) {
   const atual = db.prepare(
     `SELECT COALESCE(SUM(CASE WHEN origem = 'conta' AND sinal = 1 THEN saldo END), 0) AS contas,

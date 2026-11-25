@@ -60,9 +60,13 @@ export function projetar(p: { gastoAteODia: number; dia: number; diasNoMes: numb
   return { min, max, media: Math.round((min + max) / 2) };
 }
 
+/** Quanto falta para sobrar o que as metas pedem; sem renda conhecida, não se sabe (0). */
+export const faltaParaMetas = (gasto: number, renda: number | null, metas: number) =>
+  renda === null || metas <= 0 ? 0 : Math.max(0, gasto - (renda - metas));
+
 /** Sem renda e sem orçado não há contra o que comparar. */
-export function nivelDo(gasto: number, orcado: number, renda: number | null): Nivel | null {
+export function nivelDo(gasto: number, orcado: number, renda: number | null, metas = 0): Nivel | null {
   if (renda !== null && gasto > renda) return "vermelho";
-  if (orcado > 0 && gasto > orcado) return "amarelo";
+  if ((orcado > 0 && gasto > orcado) || faltaParaMetas(gasto, renda, metas) > 0) return "amarelo";
   return renda !== null || orcado > 0 ? "verde" : null;
 }

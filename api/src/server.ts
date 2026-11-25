@@ -6,10 +6,11 @@ import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
 import { GRUPOS } from "./grupos.js";
-import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
+import { lerMetas, listarMetas, mesmaPosicao, metasDoMes, type Meta } from "./metas.js";
+import { INVESTIMENTOS, patrimonio, posicoes, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, deveCobrar } from "./recorrentes.js";
-import { diasDoMes, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
+import { diasDoMes, faltaParaMetas, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import {
   BASE_RESUMO, diasComDado, ENTRADA, ESTORNO, fimDoMes, GASTO, gastosPorCategoria, historicoPF, LANCAMENTOS, listarRecorrentes, naoApareceuPF,
@@ -56,6 +57,8 @@ const pessoaPFPJ = z.enum(["PF", "PJ"]);
 const mesRe = /^\d{4}-(0[1-9]|1[0-2])$/;
 const diaDeHoje = () => (db.prepare("SELECT date('now','localtime') AS hoje").get() as { hoje: string }).hoje;
 
+const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
+const erro400 = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 400 });
 function ouNaoEncontrado<T>(registro: T | undefined, oQue: string): T {
   if (registro === undefined) throw Object.assign(new Error(`${oQue}: não encontrado(a)`), { statusCode: 404 });
   return registro;
@@ -278,7 +281,7 @@ app.get("/api/resumo", async (req) => {
 app.get("/api/orcamento", async (req) => {
   const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
   const gastos = gastosPorCategoria(mes, "PF");
-  const { cats, anteriores, orcado, esperada, origem } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
+  const { cats, anteriores, orcado, esperada, origem, metas } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
   const linhas = cats
     .map((c) => ({ ...c, planejado: c.grupo === "renda" ? null : c.planejado, realizado: gastos.find((g) => g.categoria_id === c.categoria_id)?.total ?? 0 }))
     .filter((c) => c.grupo !== "renda" || c.realizado); // renda só aparece se teve saída (para o total bater com o Resumo)
@@ -296,7 +299,7 @@ app.get("/api/orcamento", async (req) => {
   }));
   return {
     mes, planejado: orcado, gasto: somar(gastos.map((g) => g.total)), linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0,
-    renda, renda_esperada: esperada, renda_origem: origem, entradas_sem_categoria: doMes.find((e) => e.categoria_id === null)?.total ?? 0,
+    renda, renda_esperada: esperada, renda_origem: origem, metas, entradas_sem_categoria: doMes.find((e) => e.categoria_id === null)?.total ?? 0,
   };
 });
 
@@ -318,10 +321,8 @@ app.get("/api/ritmo", async (req) => {
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
   const situacao = mes === mesAtual ? "aberto" : mes < mesAtual ? "fechado" : "futuro";
   const historico = historicoPF(mesAtual);
-  const { totais, inicio, anteriores, cats, orcado, esperada, origem } = reguaDoMes(mes, mesAtual, historico);
+  const { totais, inicio, anteriores, cats, orcado, esperada, origem, metas, teto } = reguaDoMes(mes, mesAtual, historico);
   const { entradas, saidas } = totaisDoMes(mes, "PF");
-  // sem renda esperada, o orçado é o único limite
-  const teto = esperada ?? (orcado || null);
   const analisado = inicio !== null && mes >= inicio;
 
   const lista = situacao === "aberto" ? listarRecorrentes("PF", hoje) : [];
@@ -353,16 +354,17 @@ app.get("/api/ritmo", async (req) => {
     .sort((a, b) => b.acima - a.acima)
     .slice(0, 3);
 
+  // contra a renda, não contra o teto: sem renda conhecida, passar do orçado é amarelo, não "estourando a renda"
+  const contra = situacao === "aberto" ? { gasto: projecao?.media ?? saidas, renda: esperada } : situacao === "fechado" && analisado ? { gasto: saidas, renda: entradas } : null;
+
   return {
     mes, situacao, hoje, dados_ate, inicio, inicio_antes: historico.inicio_antes, analisado,
     renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
-    orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
+    orcado, gasto: saidas, sobra: entradas - saidas, metas, teto, projecao,
     nao_apareceu: situacao === "aberto" ? naoApareceuPF(hoje) : [],
     parcelas_previstas: situacao === "futuro" ? (previstasPF(hoje).get(mes) ?? 0) : 0, // fora do gasto
-    // contra a renda, não contra o teto: sem renda conhecida, passar do orçado é amarelo, não "estourando a renda"
-    nivel: situacao === "aberto" ? nivelDo(projecao?.media ?? saidas, orcado, esperada)
-      : situacao === "fechado" && analisado ? nivelDo(saidas, orcado, entradas)
-      : null,
+    nivel: contra && nivelDo(contra.gasto, orcado, contra.renda, metas),
+    falta_metas: contra ? faltaParaMetas(contra.gasto, contra.renda, metas) : 0,
     por_dia: situacao === "aberto" && teto !== null ? { valor: Math.trunc(livre / dias), no_ritmo: projecao && Math.round((projecao.media - saidas) / dias), livre, dias, recorrentes } : null,
     acumulado: noFim.length ? { de: noFim[0].mes, ate: noFim.at(-1)!.mes, meses: noFim.length, entradas: ganho, gasto, sobra: ganho - gasto } : null,
     acima,
@@ -385,9 +387,9 @@ app.get("/api/analises", async (req) => {
   let acumulado = 0;
   const atual = historico.totais.filter((t) => t.mes === mesAtual && naAnalise(t.mes));
   const meses = [...fechadosAntes(historico.totais, mesAtual, MESES_ACUMULADO, inicio), ...atual].map((t) => {
-    const aberto = t.mes === mesAtual, sobra = t.entradas - t.gasto;
+    const aberto = t.mes === mesAtual, sobra = t.entradas - t.gasto, { orcado, metas } = reguaDoMes(t.mes, mesAtual, historico);
     if (!aberto) acumulado += sobra;
-    return { mes: t.mes, aberto, entradas: t.entradas, gasto: t.gasto, orcado: reguaDoMes(t.mes, mesAtual, historico).orcado || null, sobra, acumulado: aberto ? null : acumulado };
+    return { mes: t.mes, aberto, entradas: t.entradas, gasto: t.gasto, orcado: orcado || null, metas: metas || null, sobra, acumulado: aberto ? null : acumulado };
   });
 
   // dia a dia: gasto acumulado do mês (no aberto, até o último dia com dado do banco) contra o mês anterior
@@ -428,7 +430,7 @@ app.get("/api/analises", async (req) => {
       dados_ate,
       dias: naAnalise(mes) ? porDia(mes) : [], anterior: naAnalise(mes_anterior) ? porDia(mes_anterior) : null, mes_anterior,
       ja_lancado: totaisDoMes(mes, "PF").saidas, // com as parcelas de data futura: é o gasto do Resumo e do Orçamento
-      orcado: regua.orcado || null, esperada: regua.esperada,
+      orcado: regua.orcado || null, esperada: regua.esperada, metas: regua.metas,
     },
     categorias, comprometido,
   };
@@ -507,10 +509,79 @@ app.patch("/api/bens/:id", async (req) => {
 app.delete("/api/bens/:id", async (req) => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   return transacao(() => {
-    db.prepare("DELETE FROM saldos_diarios WHERE origem = 'bem' AND ref_id = ?").run(String(id)); // o id pode ser reaproveitado
+    // o id pode ser reaproveitado: nem a evolução nem a meta podem passar para outra linha
+    db.prepare("DELETE FROM saldos_diarios WHERE origem = 'bem' AND ref_id = ?").run(String(id));
+    db.prepare("UPDATE metas SET origem = NULL, ref_id = NULL WHERE origem = 'bem' AND ref_id = ?").run(String(id));
     db.prepare("DELETE FROM bens WHERE id = ?").run(id);
     return { ok: true };
   });
+});
+
+// ---------------- metas (só PF; as contas ficam em metas.ts) ----------------
+
+const camposDaMeta = z.object({
+  nome: z.string().trim().min(1).max(60),
+  alvo: z.number().int().positive().max(1e12).nullable(),
+  prazo: z.string().regex(mesRe).nullable(),
+  medida: z.object({ origem: z.enum(["conta", "investimento", "bem"]), ref_id: z.string().min(1).max(200) }).nullable(),
+  por_mes: z.number().int().min(0).max(1e11),
+  mes: z.string().regex(mesRe), // o por_mes vale deste mês em diante
+}).partial();
+
+/** Confere a meta como ela vai ficar e grava. Meta encerrada não volta a pedir nada sem ser reaberta. */
+function gravarMeta(atual: Meta | undefined, tipo: Meta["tipo"], d: z.infer<typeof camposDaMeta> & { encerrada?: boolean }) {
+  const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
+  const m = {
+    nome: d.nome ?? atual?.nome ?? "", alvo: d.alvo !== undefined ? d.alvo : (atual?.alvo ?? null), prazo: d.prazo !== undefined ? d.prazo : (atual?.prazo ?? null),
+    ...(d.medida !== undefined ? { origem: d.medida?.origem ?? null, ref_id: d.medida?.ref_id ?? null } : { origem: atual?.origem ?? null, ref_id: atual?.ref_id ?? null }),
+    encerrada_em: d.encerrada === undefined ? (atual?.encerrada_em ?? null) : d.encerrada ? (atual?.encerrada_em ?? mesAtual) : null,
+  };
+  if (tipo === "guardar" && (m.alvo ?? m.prazo ?? m.origem) !== null) throw erro400("meta de guardar por mês não tem alvo, prazo nem posição ligada");
+  if (d.medida) {
+    const p = posicoes("PF").find((x) => mesmaPosicao(x, m));
+    // só na escolha: a dívida que já estava ligada pode ter chegado a zero
+    if (p?.serve !== tipo) throw erro400(tipo === "quitar" ? "escolha um cartão ou dívida com saldo a pagar" : "escolha uma conta, investimento, cofrinho ou bem com saldo");
+    if (tipo === "quitar" && d.alvo === undefined && (m.alvo === null || atual?.origem)) m.alvo = -p.valor; // sem tamanho digitado, ou dívida trocada: o de hoje
+  }
+  if (tipo === "juntar" && m.alvo === null) throw erro400("falta o alvo: quanto juntar");
+  if (d.por_mes && m.encerrada_em) throw conflito("a meta está encerrada: reabra antes de definir o valor por mês");
+  return transacao(() => {
+    if (!m.encerrada_em && lerMetas(mesAtual).some((x) => x.id !== atual?.id && !x.encerrada_em && mesmaPosicao(x, m))) throw conflito("essa posição já mede outra meta: contaria o mesmo dinheiro duas vezes");
+    const vals = [m.nome, m.alvo, m.prazo, m.origem, m.ref_id, m.encerrada_em];
+    const { id } = (atual
+      ? db.prepare("UPDATE metas SET nome = ?, alvo_centavos = ?, prazo = ?, origem = ?, ref_id = ?, encerrada_em = ? WHERE id = ? RETURNING id").get(...vals, atual.id)
+      : db.prepare("INSERT INTO metas (nome, alvo_centavos, prazo, origem, ref_id, encerrada_em, tipo) VALUES (?,?,?,?,?,?,?) RETURNING id").get(...vals, tipo)) as { id: number };
+    const pedir = (mes: string, valor: number) =>
+      db.prepare("INSERT INTO metas_mensais (meta_id, mes, valor_centavos) VALUES (?,?,?) ON CONFLICT(meta_id, mes) DO UPDATE SET valor_centavos = excluded.valor_centavos").run(id, mes, valor);
+    if (d.por_mes !== undefined) pedir(d.mes ?? mesAtual, d.por_mes);
+    if (d.encerrada) {
+      db.prepare("DELETE FROM metas_mensais WHERE meta_id = ? AND mes > ?").run(id, mesAtual);
+      pedir(mesAtual, 0);
+    }
+    return listarMetas(d.mes ?? mesAtual, hoje).find((x) => x.id === id);
+  });
+}
+
+app.get("/api/metas", async (req) => {
+  const hoje = diaDeHoje(), todas = posicoes("PF");
+  const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
+  return { mes, total: metasDoMes(mes), metas: listarMetas(mes, hoje, todas), posicoes: todas.filter((p) => p.serve) };
+});
+app.post("/api/metas", async (req) => {
+  const { tipo, ...d } = camposDaMeta.required({ nome: true }).extend({ tipo: z.enum(["guardar", "juntar", "quitar"]) }).parse(req.body);
+  return gravarMeta(undefined, tipo, d);
+});
+const metaOu404 = (id: number) => ouNaoEncontrado(lerMetas(diaDeHoje().slice(0, 7)).find((m) => m.id === id), "meta");
+app.patch("/api/metas/:id", async (req) => {
+  const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
+  const d = camposDaMeta.extend({ encerrada: z.boolean().optional() }).parse(req.body), atual = metaOu404(id);
+  return gravarMeta(atual, atual.tipo, d);
+});
+/** Muda o veredito dos meses em que ela pedia algo: a tela só oferece para as encerradas. */
+app.delete("/api/metas/:id", async (req) => {
+  const { id } = metaOu404(z.object({ id: z.coerce.number().int() }).parse(req.params).id);
+  db.prepare("DELETE FROM metas WHERE id = ?").run(id);
+  return { ok: true };
 });
 
 // ---------------- categorias e regras ----------------
@@ -528,7 +599,6 @@ const listarCategorias = () =>
   ).all() as { id: number; nome: string; grupo: string; cor: string | null; lancamentos: number; regras: number; orcamentos: number }[])
     .map((c) => ({ ...c, tipo: tipoDoGrupo(c.grupo), usos: c.lancamentos + c.regras + c.orcamentos, fixa: NOMES_FIXOS.has(c.nome) }));
 const categoriaOu404 = (id: number) => ouNaoEncontrado(listarCategorias().find((c) => c.id === id), "categoria");
-const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
 const recusarNomeFixo = (nome: string) => {
   if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar, renomear nem mudar de grupo`);
 };

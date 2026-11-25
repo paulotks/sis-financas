@@ -4,6 +4,7 @@
  */
 import { db } from "./db.js";
 import { faltasDosCartoes, previstas } from "./faltas.js";
+import { metasDoMes } from "./metas.js";
 import { detectarRecorrentes, type Decisao, type Gasto } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_MEDIANA, somarMes, type TotalMes } from "./ritmo.js";
 
@@ -88,15 +89,16 @@ export function historicoPF(mesAtual: string) {
   return { totais, inicio, inicio_automatico, inicio_definido: !!escolhido, inicio_antes: !escolhido && inicio && antes !== inicio ? antes : null };
 }
 
-/** A renda que serve de régua no mês, o histórico de onde ela saiu e o orçado de gasto. Só PF. */
+/** A renda que serve de régua no mês, o histórico de onde ela saiu, o orçado de gasto e o que as metas pedem. Só PF. */
 export function reguaDoMes(mes: string, mesAtual: string, { totais, inicio } = historicoPF(mesAtual)) {
   const anteriores = fechadosAntes(totais, mes < mesAtual ? mes : mesAtual, MESES_MEDIANA, inicio);
   const cats = planejadoPorCategoria(mes);
   const definida = somar(cats.filter((c) => c.grupo === "renda").map((c) => c.planejado));
+  const orcado = somar(cats.filter((c) => c.grupo !== "renda").map((c) => c.planejado));
+  const esperada = definida || mediana(anteriores.map((t) => t.renda)) || null, metas = metasDoMes(mes);
   return {
-    totais, inicio, anteriores, cats,
-    orcado: somar(cats.filter((c) => c.grupo !== "renda").map((c) => c.planejado)),
-    esperada: definida || mediana(anteriores.map((t) => t.renda)) || null,
+    totais, inicio, anteriores, cats, orcado, esperada, metas,
+    teto: esperada === null ? orcado || null : esperada - metas, // sem renda esperada, o orçado é o único limite
     origem: definida ? ("definida" as const) : ("mediana" as const),
   };
 }

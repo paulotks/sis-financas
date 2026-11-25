@@ -227,6 +227,27 @@ export const MIGRACOES: string[] = [
   `ALTER TABLE contas ADD COLUMN usa_reservas INTEGER CHECK (usa_reservas IN (0, 1))`,
   // código COMPE do banco (todos chegam como MeuPluggy): escolhe o adaptador; nulo = ainda não se sabe
   `ALTER TABLE conexoes ADD COLUMN banco TEXT`,
+  // metas (só PF): o que cada uma pede por mês sai do teto do alarme
+  `
+  CREATE TABLE metas (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    tipo          TEXT NOT NULL CHECK (tipo IN ('guardar','juntar','quitar')),
+    alvo_centavos INTEGER CHECK (alvo_centavos > 0),       -- juntar = quanto; quitar = quanto a dívida era
+    prazo         TEXT,                                    -- AAAA-MM
+    origem        TEXT CHECK (origem IN ('conta','investimento','bem')),   -- de onde sai o progresso, como em saldos_diarios
+    ref_id        TEXT,
+    encerrada_em  TEXT,                                    -- AAAA-MM
+    criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    CHECK ((origem IS NULL) = (ref_id IS NULL))
+  );
+  CREATE TABLE metas_mensais (
+    meta_id        INTEGER NOT NULL REFERENCES metas(id) ON DELETE CASCADE,
+    mes            TEXT NOT NULL,                          -- AAAA-MM; vale deste mês em diante, até a próxima linha da meta
+    valor_centavos INTEGER NOT NULL CHECK (valor_centavos >= 0),
+    PRIMARY KEY (meta_id, mes)
+  );
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo
