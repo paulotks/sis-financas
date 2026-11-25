@@ -61,7 +61,7 @@ export const chaveDe = (descricao: string) =>
 
 /**
  * Quem recebeu, sem a forma de pagamento: o banco escreve "Pagamento de conta X S.A." num mês e "Pagamento com Pix X SA" no outro.
- * A decisão continua guardada pela chave inteira.
+ * A decisão continua guardada pela chave inteira; a antiga (valor 0) acha as cobranças por este nome.
  */
 const nomeDe = (chave: string) =>
   chave
@@ -85,11 +85,11 @@ type Cobranca = Gasto & { chave: string; nome: string };
 type Serie = Cobranca[];
 
 /** A série que a cobrança continua: a de valor mais próximo entre as que combinam no dia e no valor. */
-function aMaisProxima(series: Serie[], c: Cobranca, intervalos: [number, number][]) {
+function aMaisProxima(series: Serie[], c: Cobranca, intervalo: [number, number]) {
   let melhor: Serie | undefined, menor = TOLERANCIA_VALOR;
   for (const s of series) {
     const u = s.at(-1)!, n = dias(u.data, c.data), d = diferenca(u.valor, c.valor);
-    if (d <= menor && intervalos.some((i) => entre(n, i))) [melhor, menor] = [s, d];
+    if (d <= menor && entre(n, intervalo)) [melhor, menor] = [s, d];
   }
   return melhor;
 }
@@ -106,7 +106,7 @@ function montarSeries(cobrancas: Cobranca[]): Serie[] {
         const u = s.at(-1)!;
         return !doNome.some((x) => x.data > c.data && entre(dias(u.data, x.data), MES) && diferenca(u.valor, x.valor) < diferenca(u.valor, c.valor));
       });
-      const s = aMaisProxima(livres, c, [MES]);
+      const s = aMaisProxima(livres, c, MES);
       if (s) s.push(c);
       else series.push([c]);
     }
@@ -117,7 +117,7 @@ function montarSeries(cobrancas: Cobranca[]): Serie[] {
   for (const s of inicio.sort((a, b) => (a[0].data < b[0].data ? -1 : 1))) {
     const c = s[0];
     const combinam = juntas.filter((a) => a.at(-1)!.nome === c.nome || (a.at(-1)!.conta === c.conta && mesmoNome(a.at(-1)!.nome, c.nome)));
-    const anterior = aMaisProxima(combinam, c, [MES]) ?? aMaisProxima(combinam, c, [MES_PULADO]);
+    const anterior = aMaisProxima(combinam, c, MES) ?? aMaisProxima(combinam, c, MES_PULADO);
     if (anterior) anterior.push(...s);
     else juntas.push(s);
   }

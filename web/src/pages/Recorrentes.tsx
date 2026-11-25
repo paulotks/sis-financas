@@ -21,7 +21,7 @@ export default function Recorrentes() {
   const acao = (r: Recorrente, status: Recorrente["status"], rotulo: string) => (
     <button
       className="botao secundario"
-      aria-label={`${rotulo}: ${r.descricao}`}
+      aria-label={`${rotulo}: ${r.descricao}, ${dinheiro(r.valor)}`}
       disabled={decidir.isPending}
       onClick={() => decidir.mutate({ chave: r.chave, valor: r.valor_chave, status })}
     >
