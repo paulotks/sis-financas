@@ -182,8 +182,8 @@ function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Re
   const texto = padrao.trim();
   const valido = texto.length >= 3;
   const previa = useQuery({
-    queryKey: ["previaRegra", texto, sentido],
-    queryFn: () => api.previaRegra(texto, sentido),
+    queryKey: ["previaRegra", texto, sentido, categoria],
+    queryFn: () => api.previaRegra(texto, sentido, categoria),
     enabled: valido,
     placeholderData: keepPreviousData,
   });
@@ -241,14 +241,19 @@ function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Re
         ))}
         {n && (
           <p className="mudo">
-            {n.total === 0 ? "Nenhum lançamento parecido; vale para os próximos." : `${n.total} parecido(s), ${n.pendentes} sem categoria.`}
+            {n.parecidos} parecido(s);{" "}
+            {n.total === 0 ? "nenhum muda de categoria, vale para os próximos." : `${n.total} ${n.total > 1 ? "mudam" : "muda"} de categoria (${n.pendentes} sem categoria hoje).`}
           </p>
         )}
         {!!n?.exemplos.length && (
           <ul className="exemplos">
             {n.exemplos.slice(0, EXEMPLOS).map((x) => (
-              <li key={`${x.descricao}|${x.categoria}`}>
-                <code>{x.descricao}</code> <span className="mudo">{x.qtd > 1 && `×${x.qtd} `}hoje: {x.categoria ?? "sem categoria"}</span>
+              <li key={`${x.descricao}|${x.categoria}|${x.vai_para}`}>
+                <code>{x.descricao}</code>{" "}
+                <span className="mudo">
+                  {x.qtd > 1 && `×${x.qtd} `}hoje: {x.categoria ?? "sem categoria"}
+                  {x.vai_para !== undefined && ` → ${x.vai_para ?? "sem categoria"}`}
+                </span>
               </li>
             ))}
             {n.descricoes > EXEMPLOS && <li className="mudo">e mais {n.descricoes - EXEMPLOS} descrição(ões)</li>}

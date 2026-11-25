@@ -9,9 +9,12 @@ interface Alcance {
 }
 interface Regra extends Alcance {
   id: number;
+  prioridade: number;
   categoria_id: number;
   descricao: string | null;
 }
+
+export const PRIORIDADE_PADRAO = 50; // a da coluna, em db.ts
 
 /** Categoria da Pluggy (em inglês) -> nossa categoria. Primeiro termo que aparecer vence. */
 const MAPA_PLUGGY: [string, string][] = [
@@ -108,19 +111,22 @@ export function limparCacheCategorias() {
   idsPorNome = null;
 }
 
-export function carregarRegras(): Regra[] {
-  // texto mais longo antes de sentido/conta: senão uma regra nova e curta, só de saída, passaria na frente de toda regra antiga específica
-  return db.prepare(
-    `SELECT id, padrao, sentido, conta_id, categoria_id, descricao FROM regras
-     ORDER BY prioridade DESC, length(padrao) DESC, conta_id IS NOT NULL DESC, sentido IS NOT NULL DESC`,
-  ).all() as unknown as Regra[];
-}
+/** Texto mais longo antes de sentido/conta: senão uma regra nova e curta, só de saída, passaria na frente de toda regra antiga específica. */
+const precedencia = (a: Regra, b: Regra) =>
+  b.prioridade - a.prioridade ||
+  b.padrao.length - a.padrao.length ||
+  Number(b.conta_id !== null) - Number(a.conta_id !== null) ||
+  Number(b.sentido !== null) - Number(a.sentido !== null) ||
+  a.id - b.id;
+
+export const carregarRegras = () =>
+  (db.prepare("SELECT id, padrao, sentido, conta_id, categoria_id, descricao, prioridade FROM regras").all() as unknown as Regra[]).sort(precedencia);
 
 /** A regra que já existe com este texto (maiúsculas não contam, com ou sem acento), sentido e conta: repetir corrige essa, não cria outra. */
 export const regraIgual = (regras: Regra[], a: Alcance) =>
   regras.find((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase() && r.sentido === a.sentido && r.conta_id === a.conta_id);
 
-/** Única comparação de regra com lançamento: a prévia e a aplicação usam a mesma, para baterem. */
+/** Única comparação de regra com lançamento. */
 const alcanca = (r: Alcance, l: Movimento) =>
   (r.sentido === null || r.sentido === (l.valor_centavos < 0 ? "saida" : "entrada")) &&
   (r.conta_id === null || r.conta_id === l.conta_id) &&
@@ -142,36 +148,8 @@ export function sugerirCategoria(l: Movimento, regras: Regra[], banco: string | 
   return { categoria_id: null, regra_id: null, descricao: null };
 }
 
-/**
- * Quantos lançamentos uma regra com esse alcance pegaria (fora os editados à mão): mesma comparação de sugerirCategoria.
- * Nos exemplos, o que já tem categoria vem primeiro: é o que a regra trocaria.
- */
-export function contarParecidos(alcance: Alcance) {
-  const parecidos = (
-    db.prepare(
-      `SELECT l.descricao_original, l.valor_centavos, l.conta_id, l.categoria_id, c.nome AS categoria
-       FROM lancamentos l LEFT JOIN categorias c ON c.id = l.categoria_id WHERE l.categoria_manual = 0`,
-    ).all() as unknown as (Movimento & { categoria_id: number | null; categoria: string | null })[]
-  ).filter((l) => alcanca(alcance, l));
-  const grupos = new Map<string, { descricao: string | null; categoria: string | null; qtd: number }>();
-  for (const l of parecidos) {
-    const chave = `${l.categoria_id}|${l.descricao_original}`;
-    const g = grupos.get(chave) ?? { descricao: l.descricao_original, categoria: l.categoria, qtd: 0 };
-    g.qtd++;
-    grupos.set(chave, g);
-  }
-  const exemplos = [...grupos.values()].sort((a, b) => Number(a.categoria === null) - Number(b.categoria === null) || b.qtd - a.qtd);
-  return {
-    total: parecidos.length,
-    pendentes: parecidos.filter((l) => l.categoria_id === null).length,
-    descricoes: exemplos.length,
-    exemplos: exemplos.slice(0, 20),
-  };
-}
-
-/** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
-export function reaplicarRegras(): number {
-  const regras = carregarRegras();
+/** A categoria que cada lançamento não editado à mão teria com estas regras. Não grava: a prévia e a gravação usam este mesmo cálculo. */
+function calcular(regras: Regra[]) {
   const linhas = db
     .prepare(
       `SELECT l.id, l.descricao_original, l.categoria_pluggy, l.valor_centavos, l.conta_id, l.categoria_id, l.regra_id, l.categoria_manual,
@@ -189,14 +167,47 @@ export function reaplicarRegras(): number {
     categoriaPorNome,
   };
   const trocas = trocasDe(linhas, contexto);
+  return alvo.map((l) => ({ l, ...(trocas.has(l.id) ? { categoria_id: trocas.get(l.id)!, regra_id: null } : sugestoes.get(l.id)!) }));
+}
+
+/**
+ * O que gravar esta regra mudaria. `total` é o mesmo número que a gravação devolve: desconta o que outra regra ganha e inclui o que o Pix no
+ * crédito puxa junto. Depende da categoria (uma de transferência desfaz o Pix no crédito); sem ela, supõe uma de gasto que ninguém tem.
+ * `parecidos` = os que têm o texto, mudem ou não. Nos exemplos, o que já tem categoria vem primeiro, e `vai_para` é o que não vai para a da regra.
+ */
+export function previaDaRegra(alcance: Alcance, categoria_id = -1) {
+  const regras = carregarRegras();
+  const igual = regraIgual(regras, alcance);
+  const nova: Regra = { ...(igual ?? { ...alcance, id: Infinity, prioridade: PRIORIDADE_PADRAO, descricao: null }), categoria_id };
+  const linhas = calcular([...regras.filter((r) => r !== igual), nova].sort(precedencia));
+  const mudam = linhas.filter((m) => m.categoria_id !== m.l.categoria_id);
+  const nomes = new Map((db.prepare("SELECT id, nome FROM categorias").all() as { id: number; nome: string }[]).map((c) => [c.id, c.nome]));
+  const nome = (id: number | null) => nomes.get(id ?? 0) ?? null;
+  const grupos = new Map<string, { descricao: string | null; categoria: string | null; vai_para?: string | null; qtd: number }>();
+  for (const { l, categoria_id: vai } of mudam) {
+    const chave = `${l.categoria_id}|${vai}|${l.descricao_original}`;
+    const g = grupos.get(chave) ?? { descricao: l.descricao_original, categoria: nome(l.categoria_id), ...(vai !== categoria_id && { vai_para: nome(vai) }), qtd: 0 };
+    g.qtd++;
+    grupos.set(chave, g);
+  }
+  const exemplos = [...grupos.values()].sort((a, b) => Number(a.categoria === null) - Number(b.categoria === null) || b.qtd - a.qtd);
+  return {
+    parecidos: linhas.filter(({ l }) => alcanca(alcance, l)).length,
+    total: mudam.length,
+    pendentes: mudam.filter(({ l }) => l.categoria_id === null).length,
+    descricoes: exemplos.length,
+    exemplos: exemplos.slice(0, 20),
+  };
+}
+
+/** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
+export function reaplicarRegras(): number {
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
-  for (const l of alvo) {
-    const s = trocas.has(l.id) ? { categoria_id: trocas.get(l.id)!, regra_id: null } : sugestoes.get(l.id)!;
-    if (s.categoria_id !== l.categoria_id || s.regra_id !== l.regra_id) {
-      upd.run(s.categoria_id, s.regra_id, l.id);
-      if (s.categoria_id !== l.categoria_id) n++;
-    }
+  for (const { l, categoria_id, regra_id } of calcular(carregarRegras())) {
+    if (categoria_id === l.categoria_id && regra_id === l.regra_id) continue;
+    upd.run(categoria_id, regra_id, l.id);
+    if (categoria_id !== l.categoria_id) n++;
   }
   return n;
 }

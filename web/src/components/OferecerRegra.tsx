@@ -14,7 +14,7 @@ export default function OferecerRegra({ l, onFechar }: { l: Lancamento; onFechar
   const valido = texto.length >= 3 && contido;
   const previa = useQuery({
     queryKey: ["previaRegra", texto, sentido, l.categoria_id],
-    queryFn: () => api.previaRegra(texto, sentido),
+    queryFn: () => api.previaRegra(texto, sentido, l.categoria_id),
     enabled: valido,
     placeholderData: keepPreviousData,
   });
@@ -22,7 +22,7 @@ export default function OferecerRegra({ l, onFechar }: { l: Lancamento; onFechar
     mutationFn: () => api.criarRegra({ padrao: texto, sentido, categoria_id: l.categoria_id! }),
     onSuccess: ({ recategorizados }) => {
       qc.invalidateQueries();
-      onFechar(`Regra criada: ${recategorizados} lançamento(s) foram para ${l.categoria}.`);
+      onFechar(`Regra criada para ${l.categoria}: ${recategorizados} lançamento(s) mudaram de categoria.`);
     },
   });
   const n = previa.data;
@@ -44,8 +44,8 @@ export default function OferecerRegra({ l, onFechar }: { l: Lancamento; onFechar
         {!contido ? "o texto precisa estar na descrição original"
           : !valido ? "use pelo menos 3 letras"
           : !n ? "…"
-          : n.total === 0 ? "nenhum outro parecido; vale para os próximos"
-          : `${n.total} parecido(s), ${n.pendentes} sem categoria`}
+          : n.total === 0 ? "nenhum outro muda; vale para os próximos"
+          : `${n.total} ${n.total > 1 ? "mudam" : "muda"} de categoria (${n.pendentes} sem categoria hoje)`}
       </span>
       <button className="botao" disabled={!valido || criar.isPending}>Criar regra</button>
       <button type="button" className="botao secundario" onClick={() => onFechar()}>Agora não</button>

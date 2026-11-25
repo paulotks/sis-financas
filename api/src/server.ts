@@ -10,7 +10,7 @@ import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_ACUMULADO, MESES_MEDIANA, nivelDo, projetar, somarMes, type TotalMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
-import { carregarRegras, contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras, regraIgual } from "./categorizar.js";
+import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 
 migrar();
 copiaDoDia();
@@ -652,7 +652,10 @@ const alcanceRegra = z.object({
   sentido: z.enum(["saida", "entrada"]).nullable().default(null), // nulo = os dois
   conta_id: uuid.nullable().default(null), // nulo = todas
 });
-app.get("/api/regras/previa", async (req) => contarParecidos(alcanceRegra.parse(req.query)));
+app.get("/api/regras/previa", async (req) => {
+  const { categoria_id, ...alcance } = alcanceRegra.extend({ categoria_id: z.coerce.number().int().optional() }).parse(req.query);
+  return previaDaRegra(alcance, categoria_id);
+});
 /** Cria a regra; se já existe uma com o mesmo texto (maiúsculas não contam), sentido e conta, troca a categoria dela: é o Paulo corrigindo. */
 app.post("/api/regras", async (req) => {
   const d = alcanceRegra.extend({ categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
@@ -662,7 +665,7 @@ app.post("/api/regras", async (req) => {
       ? db.prepare("UPDATE regras SET categoria_id = ?, descricao = COALESCE(?, descricao), prioridade = COALESCE(?, prioridade) WHERE id = ? RETURNING *")
         .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)
       : db.prepare("INSERT INTO regras (padrao, sentido, conta_id, categoria_id, descricao, prioridade) VALUES (?,?,?,?,?,?) RETURNING *")
-        .get(d.padrao, d.sentido, d.conta_id, d.categoria_id, d.descricao ?? null, d.prioridade ?? 50);
+        .get(d.padrao, d.sentido, d.conta_id, d.categoria_id, d.descricao ?? null, d.prioridade ?? PRIORIDADE_PADRAO);
     return { regra: r, recategorizados: reaplicarRegras() };
   });
 });

@@ -64,7 +64,7 @@ web/src/
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
 - Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
-- `criar_regra` exige o `total_previsto` da prévia e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
+- `criar_regra` exige o `total_previsto` da prévia (quantos mudam de categoria: depende da categoria, e sai do mesmo `calcular` da gravação) e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
 

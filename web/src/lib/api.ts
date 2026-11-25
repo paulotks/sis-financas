@@ -187,12 +187,13 @@ export interface Ritmo {
   canceladas_cobradas: { descricao: string; data: string; valor: number }[]; // só no mês aberto
 }
 
-/** O que uma regra pegaria; nos exemplos, o que já tem categoria vem primeiro (é o que ela trocaria). */
+/** O que uma regra mudaria (`total`); nos exemplos, o que já tem categoria vem primeiro. `parecidos` = os que têm o texto, mudem ou não. */
 export interface PreviaRegra {
+  parecidos: number;
   total: number;
   pendentes: number;
   descricoes: number;
-  exemplos: { descricao: string | null; categoria: string | null; qtd: number }[];
+  exemplos: { descricao: string | null; categoria: string | null; vai_para?: string | null; qtd: number }[]; // vai_para: não vai para a da regra
 }
 
 export type Sentido = "saida" | "entrada";
@@ -290,7 +291,8 @@ export const api = {
   mesclarCategoria: (id: number, destino: number) =>
     req<{ ok: true; lancamentos: number; regras: number }>("POST", `/api/categorias/${id}/mesclar`, { destino }),
   regras: () => req<Regra[]>("GET", "/api/regras"),
-  previaRegra: (padrao: string, sentido: Sentido | null) => req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao, sentido: sentido ?? undefined })}`),
+  previaRegra: (padrao: string, sentido: Sentido | null, categoria: number | null) =>
+    req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao, sentido: sentido ?? undefined, categoria_id: categoria ?? undefined })}`),
   criarRegra: (d: { padrao: string; sentido: Sentido | null; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
   apagarRegra: (id: number) => req<{ ok: boolean; recategorizados: number }>("DELETE", `/api/regras/${id}`),
 };

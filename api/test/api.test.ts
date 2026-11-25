@@ -455,7 +455,7 @@ test("regra aprende: a prévia bate com o aplicado, repetir o texto troca a cate
   const padrao = sugerirPadrao("UBER *TRIP 123 2/3");
   assert.equal(padrao, "UBER *TRIP");
   const previa = await chamar("GET", `/api/regras/previa?padrao=${encodeURIComponent(padrao)}`);
-  assert.deepEqual([previa.d.total, previa.d.pendentes, previa.d.descricoes, previa.d.exemplos.length], [3, 3, 3, 3]); // o editado à mão não entra na conta
+  assert.deepEqual([previa.d.parecidos, previa.d.total, previa.d.pendentes, previa.d.descricoes, previa.d.exemplos.length], [3, 3, 3, 3, 3]); // o editado à mão não entra na conta
   const criada = await chamar("POST", "/api/regras", { padrao, categoria_id: 4 });
   assert.equal(criada.d.recategorizados, 3);
   assert.deepEqual(["u1", "u2", "u3", "mao"].map((i) => lanc(i).categoria_id), [4, 4, 4, 14]);
@@ -643,24 +643,24 @@ test("regra por sentido e por conta: só pega o seu lado, convive com o mesmo te
   for (const [conta, valor] of [[a, -100], [a, -200], [a, 300], [b, -400], [b, 500]] as const)
     novoLanc(conta, "2017-01-01", valor, null, { descricao_original: "Pix Fulana Loja" });
   const cats = () => db.prepare("SELECT categoria_id AS c FROM lancamentos WHERE data = '2017-01-01' ORDER BY abs(valor_centavos)").all().map((l: any) => l.c);
-  /** Cria a regra conferindo que a prévia contou o mesmo que mudou (só vale quando nenhuma outra regra disputa os lançamentos). */
-  const criar = async (padrao: string, categoria_id: number, extra: Record<string, string> = {}, confere = false) => {
-    const previa = (await chamar("GET", `/api/regras/previa?${new URLSearchParams({ padrao, ...extra })}`)).d;
+  /** Cria a regra conferindo que a prévia contou o mesmo que mudou, com ou sem outra regra disputando. */
+  const criar = async (padrao: string, categoria_id: number, extra: Record<string, string> = {}) => {
+    const previa = (await chamar("GET", `/api/regras/previa?${new URLSearchParams({ padrao, categoria_id: String(categoria_id), ...extra })}`)).d;
     const r = await chamar("POST", "/api/regras", { padrao, categoria_id, ...extra });
     assert.equal(r.status, 200);
-    if (confere) assert.equal(r.d.recategorizados, previa.total);
-    return { ...r.d.regra, total: previa.total } as { id: number; total: number; categoria_id: number };
+    assert.equal(r.d.recategorizados, previa.total);
+    return { ...r.d.regra, conta: [previa.parecidos, previa.total] } as { id: number; conta: [number, number]; categoria_id: number };
   };
 
-  const saida = await criar("pix fulana", 9, { sentido: "saida" }, true);
-  assert.deepEqual([saida.total, cats()], [3, [9, 9, null, 9, null]]);
-  const entrada = await criar("PIX FULANA", 18, { sentido: "entrada" }, true); // mesmo texto, outro sentido: convive
+  const saida = await criar("pix fulana", 9, { sentido: "saida" });
+  assert.deepEqual([saida.conta, cats()], [[3, 3], [9, 9, null, 9, null]]);
+  const entrada = await criar("PIX FULANA", 18, { sentido: "entrada" }); // mesmo texto, outro sentido: convive
   assert.notEqual(entrada.id, saida.id);
-  assert.deepEqual([entrada.total, cats()], [2, [9, 9, 18, 9, 18]]);
+  assert.deepEqual([entrada.conta, cats()], [[2, 2], [9, 9, 18, 9, 18]]);
 
   // mesmo texto, para tudo: existe, mas perde para as que têm sentido; repetir troca a categoria em vez de duplicar
   const geral = await criar("pix fulana", 21);
-  assert.deepEqual([geral.total, cats()], [5, [9, 9, 18, 9, 18]]);
+  assert.deepEqual([geral.conta, cats()], [[5, 0], [9, 9, 18, 9, 18]]);
   const repetida = await criar("Pix Fulana", 11);
   assert.deepEqual([repetida.id, repetida.categoria_id], [geral.id, 11]);
   assert.equal((await criar("pix fulana", 13, { sentido: "saida" })).id, saida.id);
@@ -668,12 +668,16 @@ test("regra por sentido e por conta: só pega o seu lado, convive com o mesmo te
 
   // por conta: só a conta b; e com sentido e conta juntos
   const daB = await criar("pix fulana", 8, { conta_id: b });
-  assert.deepEqual([daB.total, cats()], [2, [13, 13, 18, 8, 8]]);
+  assert.deepEqual([daB.conta, cats()], [[2, 2], [13, 13, 18, 8, 8]]);
   const daBsaida = await criar("pix fulana", 3, { conta_id: b, sentido: "saida" });
-  assert.deepEqual([daBsaida.total, cats()], [1, [13, 13, 18, 3, 8]]);
+  assert.deepEqual([daBsaida.conta, cats()], [[1, 1], [13, 13, 18, 3, 8]]);
   // texto mais longo vence, mesmo sem sentido: regra antiga e específica não perde para uma nova e curta
   const longa = await criar("pix fulana loja", 10);
-  assert.deepEqual(cats(), [10, 10, 10, 10, 10]);
+  assert.deepEqual([longa.conta, cats()], [[5, 5], [10, 10, 10, 10, 10]]);
+  // sem escolher a categoria (a tela mostra a prévia antes): conta o que a regra ganharia
+  const semCategoria = async (padrao: string) => (await chamar("GET", `/api/regras/previa?${new URLSearchParams({ padrao })}`)).d;
+  assert.deepEqual([await semCategoria("pix fulana"), await semCategoria("PIX FULANA LOJA")].map((p) => [p.parecidos, p.total, p.pendentes]), [[5, 0, 0], [5, 5, 0]]);
+  assert.deepEqual((await semCategoria("pix fulana loja")).exemplos, [{ descricao: "Pix Fulana Loja", categoria: "Alimentação fora", qtd: 5 }]);
 
   assert.equal((await chamar("POST", "/api/regras", { padrao: "pix fulana", categoria_id: 3, sentido: "x" })).status, 400);
   assert.equal((await chamar("POST", "/api/regras", { padrao: "pix fulana", categoria_id: 3, conta_id: ITEM2 })).status, 400); // conta que não existe
@@ -962,6 +966,28 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
     else assert.deepEqual(pernas(semNome), [null, "Mercado", null], `banco ${banco}`);
   }
   await chamar("DELETE", `/api/regras/${regra}`);
+
+  // a prévia conta o que o Pix no crédito puxa: o texto só está no Pix, mas quem muda são as três parcelas da cobrança, que herdam dele
+  const id = operacao("2031-05-10T12:00:00Z", 10000, { pix: { descricao_original: "Transferência enviada|Ciclana QWZ" }, parcelas: 3 });
+  reaplicarRegras();
+  assert.deepEqual(pernas(id), [FORA, FORA, null]);
+  const criarRegra = async (categoria_id: number) => {
+    const previa = (await chamar("GET", `/api/regras/previa?padrao=ciclana+qwz&categoria_id=${categoria_id}`)).d;
+    const antes = tudo();
+    assert.deepEqual((await chamar("GET", `/api/regras/previa?padrao=ciclana+qwz&categoria_id=${categoria_id}`)).d, previa);
+    assert.deepEqual(tudo(), antes); // a prévia não grava
+    const r = (await chamar("POST", "/api/regras", { padrao: "ciclana qwz", categoria_id })).d;
+    assert.equal(r.recategorizados, previa.total);
+    return { regra: r.regra.id, previa };
+  };
+  const gasto = await criarRegra(8);
+  assert.deepEqual([gasto.previa.parecidos, gasto.previa.total, gasto.previa.pendentes], [1, 3, 3]);
+  assert.deepEqual([gasto.previa.exemplos, pernas(id)], [[{ descricao: "Pagamento de pix", categoria: null, qtd: 3 }], [FORA, FORA, "Pet"]]);
+  // para uma categoria de transferência, o Pix no crédito não mexe na operação: as outras pernas voltam ao que eram, e a prévia diz para onde vão
+  const fora = await criarRegra(TRANSFERENCIA);
+  assert.deepEqual([fora.previa.parecidos, fora.previa.total, pernas(id)], [1, 4, [null, FORA, null]]);
+  assert.deepEqual(fora.previa.exemplos.map((x: any) => [x.categoria, x.vai_para, x.qtd]), [["Pet", null, 3], [FORA, null, 1]]);
+  await chamar("DELETE", `/api/regras/${fora.regra}`);
   db.prepare("DELETE FROM lancamentos WHERE id LIKE 'pix%'").run();
 });
 
@@ -1409,15 +1435,17 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
 
   reaplicarRegras(); // como na subida da API: limpa a categoria que os testes acima puseram direto na base, sem regra
 
-  const previa = await usar("previa_regra", { padrao: "padoca" });
-  assert.deepEqual([previa.total, previa.sem_categoria, previa.ja_categorizados], [3, 3, 0]);
+  const previa = await usar("previa_regra", { padrao: "padoca", categoria_id: 10 });
+  assert.deepEqual([previa.parecidos, previa.total, previa.sem_categoria, previa.ja_categorizados], [3, 3, 3, 0]);
+  assert.match((await usar("previa_regra", { padrao: "padoca" })).erro, /categoria_id/); // o total depende dela
   const antes = cats();
   assert.match((await usar("criar_regra", { padrao: "padoca", categoria_id: 10, total_previsto: 4 })).erro, /Nada foi gravado.* 3 /);
   assert.deepEqual([cats(), (await usar("regras")).length], [antes, 0]);
   assert.equal((await usar("criar_regra", { padrao: "padoca", categoria_id: 10, total_previsto: 3 })).recategorizados, 3);
   assert.deepEqual(cats(), [MERCADO, 10, 10, 10]);
 
-  const outra = await usar("previa_regra", { padrao: "PADOCA" });
+  assert.deepEqual((({ parecidos, total }) => [parecidos, total])(await usar("previa_regra", { padrao: "PADOCA", categoria_id: 10 })), [3, 0]); // já está lá
+  const outra = await usar("previa_regra", { padrao: "PADOCA", categoria_id: 13 });
   assert.deepEqual([outra.ja_categorizados, outra.exemplos[0].categoria], [3, "Alimentação fora"]);
   assert.match((await usar("criar_regra", { padrao: "PADOCA", categoria_id: 13, total_previsto: 3 })).erro, /já existe a regra "padoca"/);
   assert.deepEqual(cats(), [MERCADO, 10, 10, 10]);
@@ -1431,14 +1459,14 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
 
   // sentido: a prévia conta só aquele lado; texto que já tem regra (mesmo de outro alcance) continua pedindo substituir
   const entra = { padrao: "padoca", sentido: "entrada" };
-  assert.equal((await usar("previa_regra", entra)).total, 1);
+  assert.equal((await usar("previa_regra", { ...entra, categoria_id: RENDA })).total, 1);
   assert.match((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 3 })).erro, /Nada foi gravado.* 1 /);
   assert.match((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 1 })).erro, /já existe a regra "padoca" → /);
   assert.equal((await usar("criar_regra", { ...entra, categoria_id: RENDA, total_previsto: 1, substituir: true })).recategorizados, 1);
   assert.deepEqual(cats(), [MERCADO, 13, RENDA, 13]);
   assert.match((await usar("criar_regra", { ...entra, categoria_id: 10, total_previsto: 1 })).erro, /"padoca" \(só entrada\) → Renda/);
   const daConta = { padrao: "padoca", conta_id: (lanc(itens[0].id) as any).conta_id };
-  assert.equal((await usar("previa_regra", daConta)).total, 2);
+  assert.equal((await usar("previa_regra", { ...daConta, categoria_id: 10 })).total, 2);
   // saída e entrada não se cruzam, mas a regra geral cruza com as duas
   assert.match((await usar("criar_regra", { padrao: "padoca", sentido: "saida", categoria_id: 10, total_previsto: 2 })).erro, /"padoca" → Lazer/);
   assert.deepEqual((await usar("regras")).filter((r: any) => r.padrao === "padoca").map((r: any) => r.sentido), [undefined, "entrada"]);

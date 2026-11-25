@@ -349,24 +349,25 @@ export function criarServidor(base: string) {
     ),
   );
 
-  /** Onde a regra vale: a prévia e a criação precisam receber o mesmo, senão o total não bate. */
-  const alcance = {
+  /** Onde a regra vale e para que categoria leva: a prévia e a criação precisam receber o mesmo, senão o total não bate. */
+  const regra = {
     padrao: z.string().trim().min(3).max(120).describe("trecho contido na descrição original; maiúsculas não contam"),
     sentido: z.enum(["saida", "entrada"]).optional().describe("só saída ou só entrada; sem isto, os dois"),
     conta_id: z.string().uuid().optional().describe("só nesta conta (id da ferramenta contas); sem isto, todas"),
+    categoria_id: categoriaId,
   };
 
   servidor.registerTool(
     "previa_regra",
     {
-      description: "O que uma regra com esse texto (e sentido e conta) pegaria, sem gravar nada (PF, PJ e contas ocultas). ja_categorizados = no máximo quantos teriam a categoria trocada (outra regra mais específica ou prioritária pode vencer); o número real vem em recategorizados, ao criar. Confira os exemplos antes.",
-      inputSchema: alcance,
+      description: "O que mudaria ao criar (ou trocar) uma regra com esse texto, sentido, conta e categoria, sem gravar nada (PF, PJ e contas ocultas). total = quantos mudam de categoria, o mesmo que criar_regra vai mudar: desconta o que outra regra ganha e inclui o que o Pix no crédito puxa junto. ja_categorizados = quantos desses perdem uma categoria que já tinham. vai_para, num exemplo, = muda para essa e não para a da regra (null = fica sem categoria). parecidos = quantos têm o texto, mudem ou não: mostra se ele é genérico. Confira os exemplos antes.",
+      inputSchema: regra,
       annotations: LEITURA,
     },
     (a) =>
       tentar(async () => {
         const p = await ler("/api/regras/previa", a);
-        return { total: p.total, sem_categoria: p.pendentes, ja_categorizados: p.total - p.pendentes, descricoes_distintas: p.descricoes, exemplos: p.exemplos };
+        return { total: p.total, parecidos: p.parecidos, sem_categoria: p.pendentes, ja_categorizados: p.total - p.pendentes, descricoes_distintas: p.descricoes, exemplos: p.exemplos };
       }),
   );
 
@@ -437,18 +438,17 @@ export function criarServidor(base: string) {
     {
       description: "Cria uma regra e já recategoriza passado e futuro (menos o editado à mão). Só depois de previa_regra e do ok do Paulo. Para desfazer, o Paulo apaga a regra na tela Categorias.",
       inputSchema: {
-        ...alcance,
-        categoria_id: categoriaId,
-        total_previsto: z.number().int().min(0).describe("o total que previa_regra devolveu para este mesmo texto, sentido e conta"),
+        ...regra,
+        total_previsto: z.number().int().min(0).describe("o total que previa_regra devolveu para este mesmo texto, sentido, conta e categoria"),
         substituir: z.boolean().default(false).describe("true só se já há regra com esse texto: troca a categoria da que tem o mesmo sentido e conta ou, se ela cobre só parte, cria outra ao lado"),
       },
       annotations: TROCA,
     },
     (a) =>
       tentar(async () => {
-        const previa = await ler("/api/regras/previa", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id });
+        const previa = await ler("/api/regras/previa", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
         if (previa.total !== a.total_previsto) {
-          throw new Error(`Nada foi gravado: a regra pegaria ${previa.total} lançamento(s), não ${a.total_previsto}. Rode previa_regra e confirme com o Paulo.`);
+          throw new Error(`Nada foi gravado: a regra mudaria ${previa.total} lançamento(s), não ${a.total_previsto}. Rode previa_regra e confirme com o Paulo.`);
         }
         const mesmoTexto = (await ler<any[]>("/api/regras")).filter((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase());
         const existente = mesmoTexto.find((r) => r.sentido === (a.sentido ?? null) && r.conta_id === (a.conta_id ?? null));
