@@ -1542,9 +1542,9 @@ test("ritmo: contas puras", () => {
   assert.deepEqual([mediana([]), mediana([3, 1, 2]), mediana([4, 1])], [null, 2, 3]);
   assert.deepEqual([somarMes("2026-01", -1), somarMes("2026-12", 1)], ["2025-12", "2027-01"]);
 
-  const base = { gastoAteHoje: 1000, dia: 10, diasNoMes: 30, depoisDoDia: [500, 900, 700], jaLancado: 1000 };
+  const base = { gastoAteODia: 1000, dia: 10, diasNoMes: 30, depoisDoDia: [500, 900, 700], jaLancado: 1000 };
   assert.deepEqual(projetar(base), { min: 1700, max: 3000, media: 2350 });
-  assert.equal(projetar({ ...base, dia: 4 }), null); // cedo demais
+  assert.deepEqual([4, 0].map((dia) => projetar({ ...base, dia })), [null, null]); // cedo demais, ou nenhum dado no mês
   assert.deepEqual(projetar({ ...base, depoisDoDia: [] }), { min: 3000, max: 3000, media: 3000 }); // sem histórico
   assert.deepEqual(projetar({ ...base, jaLancado: 2500 }), { min: 2500, max: 3000, media: 2750 }); // parcela futura é piso
 
@@ -1693,6 +1693,63 @@ test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o in
   const pelo = await usar("analises", { mes: m1 });
   assert.deepEqual([pelo.mes_a_mes.length, pelo.mes_a_mes[2].gasto, pelo.gasto_acumulado_por_dia.dias.at(-1)], [4, r1.saidas / 100, r1.saidas / 100]);
   await cliente.close();
+});
+
+test("projeção e curva do mês param no último dia com dado de todos os bancos; o que falta do mês conta de hoje", async () => {
+  // meses e renda do teste do ritmo; o relógio é a data de atualização das conexões
+  const antigas = db.prepare("SELECT item_id, atualizado_pluggy FROM conexoes").all() as { item_id: string; atualizado_pluggy: string | null }[];
+  const OUTRO = "73737373-7373-4373-8373-737373737373";
+  db.prepare("INSERT INTO conexoes (item_id, conector) VALUES (?, 'Outro banco')").run(OUTRO);
+  const conta = novaConta("BANK", { item: OUTRO });
+  const lido = (item: string, data: string | null) => db.prepare("UPDATE conexoes SET atualizado_pluggy = ? WHERE item_id = ?").run(data, item);
+  const ver = async () => ({ r: (await chamar("GET", "/api/ritmo")).d, a: (await chamar("GET", "/api/analises")).d });
+  for (const c of antigas) lido(c.item_id, null);
+
+  const { r: sem, a: semA } = await ver(); // nenhum banco disse: vale hoje
+  const { hoje, mes } = sem, menos = (n: number) => new Date(Date.parse(hoje) - n * 86_400_000).toISOString().slice(0, 10);
+  const as12 = (data: string) => new Date(`${data}T12:00:00`).toISOString(); // meio-dia local
+  assert.deepEqual([sem.dados_ate, semA.dia_a_dia.dados_ate, semA.dia_a_dia.dias.length], [hoje, hoje, Number(hoje.slice(8))]);
+
+  lido(ITEM, as12(hoje));
+  lido(OUTRO, as12(menos(1)));
+  const gastoDeHoje = 12345; // chegou por um banco só: fica fora da conta até o outro chegar lá
+  novoLanc(conta, hoje, -gastoDeHoje, MERCADO, { id: "de_hoje" });
+  const { r, a } = await ver(), ontem = menos(1), dias = ontem < `${mes}-01` ? 0 : Number(ontem.slice(8));
+  assert.deepEqual([r.dados_ate, a.dia_a_dia.dados_ate, a.dia_a_dia.dias], [ontem, ontem, semA.dia_a_dia.dias.slice(0, dias)]);
+  assert.equal(r.gasto, sem.gasto + gastoDeHoje); // o Resumo não muda
+  assert.deepEqual([r.por_dia.dias, r.por_dia.livre], [sem.por_dia.dias, sem.por_dia.livre - gastoDeHoje]);
+  const curvas = await Promise.all([1, 2, 3].map(async (k) => (await chamar("GET", `/api/analises?mes=${somarMes(mes, -k)}`)).d.dia_a_dia.dias as number[]));
+  const fim = new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5)), 0)).getUTCDate();
+  assert.deepEqual(r.projecao, projetar({
+    gastoAteODia: a.dia_a_dia.dias.at(-1) ?? 0, dia: dias, diasNoMes: fim, jaLancado: r.gasto,
+    depoisDoDia: curvas.map((c) => c.at(-1)! - (dias ? c[Math.min(dias, c.length) - 1] : 0)),
+  }));
+
+  // banco parado há dias não segura os outros; oculto ou PJ não conta; data no futuro não passa de hoje
+  lido(OUTRO, as12(menos(9)));
+  assert.equal((await ver()).r.dados_ate, hoje);
+  lido(OUTRO, as12(menos(1)));
+  for (const [coluna, valor, volta] of [["oculta", 1, 0], ["pessoa", "PJ", "PF"]] as const) {
+    db.prepare(`UPDATE contas SET ${coluna} = ? WHERE id = ?`).run(valor, conta);
+    assert.equal((await ver()).r.dados_ate, hoje, coluna);
+    db.prepare(`UPDATE contas SET ${coluna} = ? WHERE id = ?`).run(volta, conta);
+  }
+  for (const i of [ITEM, OUTRO]) lido(i, as12(menos(-1)));
+  assert.equal((await ver()).r.dados_ate, hoje);
+
+  // ninguém sincroniza há um mês: sem dado no mês não há projeção nem curva, e o mês continua na análise
+  for (const i of [ITEM, OUTRO]) lido(i, as12(menos(40)));
+  const velho = await ver();
+  assert.deepEqual([velho.r.projecao, velho.a.dia_a_dia.dias, velho.a.dia_a_dia.ja_lancado], [null, [], r.gasto]);
+  assert.ok(velho.a.categorias.length > 0 && velho.a.dia_a_dia.anterior.length > 0);
+  const { cliente, usar } = await ligarMcp();
+  assert.equal((await usar("ritmo_do_mes")).dados_do_banco_ate, menos(40));
+  assert.equal((await usar("analises")).gasto_acumulado_por_dia.dados_do_banco_ate, menos(40));
+  assert.ok(!("dados_do_banco_ate" in (await usar("ritmo_do_mes", { mes: somarMes(mes, -1) }))));
+  await cliente.close();
+
+  db.prepare("DELETE FROM conexoes WHERE item_id = ?").run(OUTRO); // a conta e o lançamento vão junto
+  for (const c of antigas) lido(c.item_id, c.atualizado_pluggy);
 });
 
 test("parcelas previstas: só de compra que o banco não manda adiante, do mês seguinte em diante, e cada compra uma vez só", () => {

@@ -99,6 +99,20 @@ export function normalPorCategoria(anteriores: TotalMes[]) {
   };
 }
 
+/**
+ * Último dia com dado de todos os bancos PF visíveis: depois dele, dia sem gasto pode ser só dado que não chegou. Banco 48 h atrás do mais
+ * novo não segura os outros (a tela já o acusa).
+ */
+export function ultimoDiaComDado(hoje: string) {
+  const { dia } = db.prepare(
+    `WITH bancos AS (SELECT julianday(atualizado_pluggy) AS lido FROM conexoes WHERE item_id IN (SELECT item_id FROM contas WHERE pessoa = 'PF' AND oculta = 0))
+     SELECT date(MIN(lido), 'localtime') AS dia FROM bancos WHERE lido >= (SELECT MAX(lido) FROM bancos) - 2`,
+  ).get() as { dia: string | null };
+  return dia !== null && dia < hoje ? dia : hoje;
+}
+/** Quantos dias do mês têm dado; 0 = os dados ainda são do mês anterior. */
+export const diasComDado = (mes: string, ate: string) => (ate < `${mes}-01` ? 0 : Number(ate.slice(8)));
+
 /** Deve cobrar de novo: conta no alarme. Sugestão conta até ser ignorada. */
 export const deveCobrar = (r: Recorrente) => r.status !== "ignorada" && r.status !== "cancelada" && r.situacao !== "parada";
 

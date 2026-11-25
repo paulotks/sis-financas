@@ -171,6 +171,8 @@ export interface Orcamento {
 export interface Ritmo {
   mes: string;
   situacao: "aberto" | "fechado" | "futuro";
+  hoje: string;
+  dados_ate: string; // último dia com dado de todos os bancos: a projeção não conta os dias depois dele
   analisado: boolean; // falso = antes do primeiro mês com a renda completa
   renda: { esperada: number | null; origem: "definida" | "mediana"; recebida: number; extra: number };
   orcado: number;
@@ -221,7 +223,7 @@ export interface Analises {
   inicio_definido: boolean;
   orcado_hoje: number | null;
   meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
-  dia_a_dia: { dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
+  dia_a_dia: { dados_ate: string; dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
   categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
   comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
 }

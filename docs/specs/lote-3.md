@@ -27,9 +27,9 @@ Em worktree (sem `.env`), com cópia da base: tem migração e muda o total dos 
 
 - **Meses analisados:** a partir do primeiro mês com renda categorizada de pelo menos **metade** da mediana dos 3 últimos fechados. Antes disso a
   renda está incompleta (conta ainda não conectada) e o prejuízo seria falso. Editável no lote 4.
-- **Projeção** (a partir do dia 5), média de dois métodos, mostrada como faixa:
-  1. regra de três: gasto até hoje ÷ dias × dias do mês;
-  2. gasto até hoje + mediana do que saiu **depois deste dia** nos 3 últimos meses fechados (sem histórico, só o 1).
+- **Projeção** (com 5 dias de dados), média de dois métodos, mostrada como faixa:
+  1. regra de três: gasto até o último dia com dado do banco (item 73) ÷ dias × dias do mês;
+  2. o mesmo gasto + mediana do que saiu **depois deste dia** nos 3 últimos meses fechados (sem histórico, só o 1).
 
   Nunca menor que o que já está lançado no mês (parcelas com data futura). Testado em três meses passados: cada método sozinho errou de 12% a
   26%, a média dos dois uns 10%. O 1 exagera quando caem as contas fixas; o 2 esconde mês fora do padrão. Dois métodos mais elaborados

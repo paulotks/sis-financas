@@ -20,8 +20,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Investimentos também é do grupo "transferencia": investir não é gasto e resgatar não é renda. Guardado = entradas − saídas.
 - "Como está meu mês?", "estou guardando?", "posso gastar?": comece por ritmo_do_mes. A régua é a renda esperada (definida no orçamento ou a
   mediana dos 3 últimos meses fechados); renda extra não alivia o mês aberto. Nível: verde = dentro do orçado; amarelo = passou do orçado e
-  cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção; mês fechado: gastou mais do que entrou). A projeção é estimativa:
-  diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
+  cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção; mês fechado: gastou mais do que entrou). A projeção é estimativa,
+  feita só com os dias que já têm dado do banco (dados_do_banco_ate): diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -196,7 +196,7 @@ export function criarServidor(base: string) {
       tentar(async () => {
         const r = await ler("/api/ritmo", { mes: a.mes });
         return {
-          mes: r.mes, situacao: r.situacao, hoje: r.hoje, nivel: r.nivel, analisado: r.analisado, analise_desde: r.inicio,
+          mes: r.mes, situacao: r.situacao, hoje: r.hoje, ...(r.situacao === "aberto" && { dados_do_banco_ate: r.dados_ate }), nivel: r.nivel, analisado: r.analisado, analise_desde: r.inicio,
           renda_esperada: reais(r.renda.esperada), renda_esperada_vem_de: r.renda.esperada === null ? null : r.renda.origem,
           entrou: reais(r.renda.recebida), renda_extra: reais(r.renda.extra),
           orcado: reais(r.orcado), sobra_planejada: r.renda.esperada === null ? null : reais(r.renda.esperada - r.orcado),
@@ -233,7 +233,7 @@ export function criarServidor(base: string) {
             sobra: reais(m.sobra), guardado_acumulado: reais(m.acumulado),
           })),
           gasto_acumulado_por_dia: {
-            dias: d.dia_a_dia.dias.map(reais), com_o_ja_lancado_ate_o_fim_do_mes: reais(d.dia_a_dia.ja_lancado), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
+            ...(d.mes === d.mes_atual && { dados_do_banco_ate: d.dia_a_dia.dados_ate }), dias: d.dia_a_dia.dias.map(reais), com_o_ja_lancado_ate_o_fim_do_mes: reais(d.dia_a_dia.ja_lancado), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
             orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada),
           },
           categorias: d.categorias.map((c: any) => ({

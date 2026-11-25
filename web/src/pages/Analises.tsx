@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, LineChart, Rectangle, ReferenceLine, Tooltip, XAxis, YAxis, type BarShapeProps } from "recharts";
-import { api, dinheiro, dinheiroCurto, mesAtual, mesCurto, nomeDoMes, nomeMes, type Analises as Dados } from "../lib/api";
+import { api, dataCurta, dinheiro, dinheiroCurto, hoje, mesAtual, mesCurto, nomeDoMes, nomeMes, type Analises as Dados } from "../lib/api";
 import { COR, Dica, eixo, eixoDinheiro, Grafico } from "../components/Grafico";
 import SeletorMes from "../components/SeletorMes";
 
@@ -38,7 +38,7 @@ export default function Analises() {
             <h2>Dentro do mês</h2>
             <SeletorMes mes={mes} onChange={(m) => setParams({ mes: m }, { replace: true })} />
           </header>
-          {d.dia_a_dia.dias.length === 0 ? (
+          {d.mes > d.mes_atual || d.mes < d.inicio ? (
             <p className="mudo">{nomeMes(d.mes)} {d.mes > d.mes_atual ? "ainda não começou." : "fica antes do mês inicial da análise."}</p>
           ) : (
             <>
@@ -173,16 +173,16 @@ function Guardado({ d }: { d: Dados }) {
   );
 }
 
-/** B: gasto acumulado dia a dia. A frase diz em que dia a curva furou cada limite. */
+/** B: gasto acumulado dia a dia, até o último dia com dado do banco. A frase diz em que dia a curva furou cada limite. */
 function DiaADia({ d }: { d: Dados }) {
-  const { dias, anterior, mes_anterior, ja_lancado, orcado, esperada } = d.dia_a_dia;
+  const { dados_ate, dias, anterior, mes_anterior, ja_lancado, orcado, esperada } = d.dia_a_dia;
   const furou = (limite: number | null) => (limite === null ? 0 : dias.findIndex((v) => v > limite) + 1);
   const noOrcado = furou(orcado), naRenda = furou(esperada);
   const dados = Array.from({ length: Math.max(dias.length, anterior?.length ?? 0) }, (_, i) => ({ dia: i + 1, atual: dias[i] ?? null, anterior: anterior?.[i] ?? null }));
   const ultimo = dias.length, antes = anterior?.[Math.min(ultimo, anterior.length) - 1]; // meses de tamanhos diferentes
   const gasto = dias[ultimo - 1], aberto = d.mes === d.mes_atual;
   const [a, m] = d.mes.split("-").map(Number);
-  const faltamDias = new Date(a, m, 0).getDate() - ultimo + 1; // contando hoje
+  const faltamDias = new Date(a, m, 0).getDate() - Number(hoje().slice(8)) + 1; // contando hoje
   const limites = [["o orçado", orcado], ["a renda esperada", esperada]] as const;
   // com as parcelas já lançadas até o fim do mês, para bater com o Resumo e o Orçamento
   const resta = limites.filter(([, v]) => v !== null && v >= ja_lancado).map(([nome, v]) => `${dinheiro(v! - ja_lancado)} até ${nome}`);
@@ -193,6 +193,7 @@ function DiaADia({ d }: { d: Dados }) {
       titulo="Gasto acumulado, dia a dia"
       frase={
         <>
+          {aberto && dados_ate < hoje() && <>Os dados do banco vão até {dataCurta(dados_ate)}. </>}
           {noOrcado > 0 && <>Passou do orçado no <b className="alerta">dia {noOrcado}</b>. </>}
           {naRenda > 0 && <>Passou da renda esperada no <b className="neg">dia {naRenda}</b>. </>}
           {soComParcelas.length > 0 && <>Com as parcelas já lançadas, passa de <b className="neg">{soComParcelas.join(" e de ")}</b>. </>}

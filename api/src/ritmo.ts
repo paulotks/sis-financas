@@ -1,6 +1,6 @@
 /** Ritmo do mês: a renda aguenta o gasto? Funções puras, em centavos; quem lê a base é totais.ts. */
 
-/** Antes deste dia o mês tem pouco gasto para projetar o resto. */
+/** Com menos dias de dados que isto, o mês tem pouco gasto para projetar o resto. */
 const DIA_MINIMO = 5;
 export const MESES_MEDIANA = 3;
 export const MESES_ACUMULADO = 6;
@@ -50,11 +50,12 @@ export function inicioDaAnalise(totais: TotalMes[], mesAtual: string): string | 
 /**
  * Faixa do gasto no fim do mês, por dois métodos: a regra de três exagera quando caem as contas fixas, e o histórico esconde mês fora do
  * padrão. A média dos dois errou menos que cada um (spec do lote 3). Nunca menor que o já lançado (parcelas com data futura).
+ * `dia` = o último com dado do banco (0 = nenhum no mês): dividir por dia sem dado puxaria a projeção para baixo.
  */
-export function projetar(p: { gastoAteHoje: number; dia: number; diasNoMes: number; depoisDoDia: number[]; jaLancado: number }) {
+export function projetar(p: { gastoAteODia: number; dia: number; diasNoMes: number; depoisDoDia: number[]; jaLancado: number }) {
   if (p.dia < DIA_MINIMO) return null;
-  const regraDeTres = (p.gastoAteHoje / p.dia) * p.diasNoMes;
-  const tipico = p.gastoAteHoje + (mediana(p.depoisDoDia) ?? regraDeTres - p.gastoAteHoje);
+  const regraDeTres = (p.gastoAteODia / p.dia) * p.diasNoMes;
+  const tipico = p.gastoAteODia + (mediana(p.depoisDoDia) ?? regraDeTres - p.gastoAteODia);
   const [min, max] = [regraDeTres, tipico].map((v) => Math.max(Math.round(v), p.jaLancado)).sort((a, b) => a - b);
   return { min, max, media: Math.round((min + max) / 2) };
 }

@@ -30,6 +30,8 @@ export default function Alarme({ mes }: { mes: string }) {
   );
 }
 
+/** Dia sem dado do banco não entra na projeção: diz até onde ela vai. */
+const ate = (r: Ritmo) => (r.dados_ate < r.hoje ? ` (os dados vão até ${dataCurta(r.dados_ate)})` : "");
 const pct = (parte: number, todo: number) => `${Math.round((parte / todo) * 100)}%`;
 const cor = (valor: number) => (valor < 0 ? "neg" : "pos");
 
@@ -76,7 +78,7 @@ function Manchete({ r }: { r: Ritmo }) {
       <>
         <small>Gasto de {nome} até agora</small>
         <strong>{dinheiro(r.gasto)}</strong>
-        <p className="mudo">De {dinheiro(r.teto)} ({limite}). A projeção do mês aparece a partir do dia 5.</p>
+        <p className="mudo">De {dinheiro(r.teto)} ({limite}). A projeção do mês aparece com 5 dias de dados do banco{ate(r)}.</p>
       </>
     );
   const diferenca = r.teto - r.projecao.media;
@@ -86,7 +88,7 @@ function Manchete({ r }: { r: Ritmo }) {
       <small>No ritmo atual, {nome} contra {limite}</small>
       <strong className={cor(diferenca)}>{dinheiroCurto(diferenca)}</strong>
       <p className="mudo">
-        O gasto deve ficar {min === max ? `em ${dinheiroCurto(max)}` : `entre ${dinheiroCurto(min)} e ${dinheiroCurto(max)}`}; {limite} é {dinheiroCurto(r.teto)}.
+        O gasto deve ficar {min === max ? `em ${dinheiroCurto(max)}` : `entre ${dinheiroCurto(min)} e ${dinheiroCurto(max)}`}; {limite} é {dinheiroCurto(r.teto)}{ate(r)}.
       </p>
     </>
   );

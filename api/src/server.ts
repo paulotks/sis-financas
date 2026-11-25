@@ -11,8 +11,8 @@ import { chaveDe } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import {
-  BASE_RESUMO, deveCobrar, ENTRADA, fimDoMes, GASTO, gastosPorCategoria, historicoPF, listarRecorrentes, naoApareceuPF, normalPorCategoria,
-  periodo, previstasPF, reguaDoMes, somar, totaisDoMes, totaisPorMes,
+  BASE_RESUMO, deveCobrar, diasComDado, ENTRADA, fimDoMes, GASTO, gastosPorCategoria, historicoPF, listarRecorrentes, naoApareceuPF, normalPorCategoria,
+  periodo, previstasPF, reguaDoMes, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 
@@ -309,15 +309,14 @@ app.get("/api/ritmo", async (req) => {
   const recorrentes = somar(lista.filter((r) => deveCobrar(r) && r.proxima.slice(0, 7) <= mes).map((r) => r.valor));
   const gastoEntre = (de: string, ate: string) =>
     (db.prepare(`SELECT COALESCE(SUM(${GASTO}),0) AS total ${BASE_RESUMO}`).get(de, ate, "PF") as { total: number }).total;
-  const dia = Number(hoje.slice(8)), diasNoMes = diasDoMes(mes);
-  const gastoAteHoje = situacao === "aberto" ? gastoEntre(`${mes}-01`, hoje) : 0;
+  const diasNoMes = diasDoMes(mes), dados_ate = ultimoDiaComDado(hoje), dia = diasComDado(mes, dados_ate);
   const projecao = situacao === "aberto"
     ? projetar({
-        gastoAteHoje, dia, diasNoMes, jaLancado: saidas,
+        gastoAteODia: gastoEntre(`${mes}-01`, dados_ate), dia, diasNoMes, jaLancado: saidas,
         depoisDoDia: anteriores.map((t) => gastoEntre(`${t.mes}-${String(dia + 1).padStart(2, "0")}`, fimDoMes(t.mes))),
       })
     : null;
-  const dias = diasNoMes - dia + 1; // contando hoje
+  const dias = diasNoMes - Number(hoje.slice(8)) + 1; // contando hoje
   const livre = (teto ?? 0) - saidas - recorrentes;
 
   const noFim = fechadosAntes(totais, situacao === "fechado" ? somarMes(mes, 1) : mesAtual, MESES_ACUMULADO, inicio);
@@ -335,7 +334,7 @@ app.get("/api/ritmo", async (req) => {
     .slice(0, 3);
 
   return {
-    mes, situacao, hoje, inicio, analisado,
+    mes, situacao, hoje, dados_ate, inicio, analisado,
     renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
     orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
     nao_apareceu: situacao === "aberto" ? naoApareceuPF(hoje) : [],
@@ -370,12 +369,12 @@ app.get("/api/analises", async (req) => {
     return { mes: t.mes, aberto, entradas: t.entradas, gasto: t.gasto, orcado: reguaDoMes(t.mes, mesAtual, historico).orcado || null, sobra, acumulado: aberto ? null : acumulado };
   });
 
-  // dia a dia: gasto acumulado do mês (até hoje, se aberto) contra o mês anterior
-  const regua = reguaDoMes(mes, mesAtual, historico);
+  // dia a dia: gasto acumulado do mês (no aberto, até o último dia com dado do banco) contra o mês anterior
+  const regua = reguaDoMes(mes, mesAtual, historico), dados_ate = ultimoDiaComDado(hoje);
   const porDia = (m: string) => {
     const dias = db.prepare(`SELECT l.data AS data, SUM(${GASTO}) AS total ${BASE_RESUMO} GROUP BY 1`).all(...periodo(m, "PF")) as { data: string; total: number | null }[];
     let soma = 0;
-    return Array.from({ length: m === mesAtual ? Number(hoje.slice(8)) : diasDoMes(m) }, (_, i) =>
+    return Array.from({ length: m === mesAtual ? diasComDado(m, dados_ate) : diasDoMes(m) }, (_, i) =>
       (soma += dias.find((d) => Number(d.data.slice(8)) === i + 1)?.total ?? 0));
   };
   const mes_anterior = somarMes(mes, -1);
@@ -404,6 +403,7 @@ app.get("/api/analises", async (req) => {
     mes, mes_atual: mesAtual, inicio, inicio_automatico: historico.inicio_automatico, inicio_definido: historico.inicio_definido,
     meses, orcado_hoje: orcado_hoje || null,
     dia_a_dia: {
+      dados_ate,
       dias: naAnalise(mes) ? porDia(mes) : [], anterior: naAnalise(mes_anterior) ? porDia(mes_anterior) : null, mes_anterior,
       ja_lancado: totaisDoMes(mes, "PF").saidas, // com as parcelas de data futura: é o gasto do Resumo e do Orçamento
       orcado: regua.orcado || null, esperada: regua.esperada,
