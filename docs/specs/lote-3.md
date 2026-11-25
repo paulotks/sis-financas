@@ -54,7 +54,7 @@ Em worktree (sem `.env`), com cópia da base: tem migração e muda o total dos 
 
 ## Testes
 
-- Funções puras: mediana, projeção (antes do dia 5, sem histórico, piso do já lançado), nível, início da análise, renda esperada.
+- Funções puras: mediana, projeção (com menos de 5 dias de dados, sem histórico, piso do já lançado), nível, início da análise, renda esperada.
 - `GET /api/ritmo`: gasto e entradas iguais aos do Resumo; mês aberto, fechado e futuro; recorrente ignorada não desconta; PJ e oculta fora.
 - Orçamento: planejado de renda não entra no planejado de gasto; a soma continua igual ao Resumo.
 - Migração: Investimentos muda de grupo e não entra em entradas nem saídas.

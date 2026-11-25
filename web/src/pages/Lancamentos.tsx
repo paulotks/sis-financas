@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dataCurta, dinheiro, mesAtual, nomePluggy, porTipo, type Categoria, type Lancamento } from "../lib/api";
 import ComprasDoEstorno from "../components/ComprasDoEstorno";
 import OferecerRegra from "../components/OferecerRegra";
@@ -46,6 +46,8 @@ export default function Lancamentos() {
   const qc = useQueryClient();
   const chave = ["lancamentos", filtros];
   const lista = useQuery({ queryKey: chave, queryFn: () => api.lancamentos(filtros) });
+  // chave própria: depois de uma edição a lista não recarrega, e o rodapé sim
+  const totais = useQuery({ queryKey: ["totaisLancamentos", filtros], queryFn: () => api.totaisLancamentos(filtros), placeholderData: keepPreviousData });
   const categorias = useQuery({ queryKey: ["categorias"], queryFn: api.categorias });
   const contas = useQuery({ queryKey: ["contas"], queryFn: api.contas });
   const grupos = porTipo((contas.data?.contas ?? []).filter((c) => c.pessoa === filtros.pessoa));
@@ -69,13 +71,7 @@ export default function Lancamentos() {
   });
 
   const itens = lista.data?.itens ?? [];
-  const totais = useMemo(() => {
-    const vis = itens.filter((l) => l.soma);
-    return {
-      entradas: vis.filter((l) => l.valor_centavos > 0).reduce((s, l) => s + l.valor_centavos, 0),
-      saidas: vis.filter((l) => l.valor_centavos < 0).reduce((s, l) => s - l.valor_centavos, 0),
-    };
-  }, [itens]);
+  const t = totais.data;
 
   return (
     <section>
@@ -131,7 +127,7 @@ export default function Lancamentos() {
       </div>
 
       {aviso && <div className="aviso">{aviso}</div>}
-      {lista.error && <div className="aviso erro">{lista.error.message}</div>}
+      {(lista.error ?? totais.error) && <div className="aviso erro">{(lista.error ?? totais.error)!.message}</div>}
 
       <div className="tabela-wrap">
         <table className="tabela">
@@ -188,12 +184,23 @@ export default function Lancamentos() {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4}>
+              <td colSpan={2}>
                 {itens.length} lançamento(s)
-                {lista.data && lista.data.total > itens.length && ` de ${lista.data.total}: lista e totais cortados, use os filtros`}
+                {lista.data && lista.data.total > itens.length && ` de ${lista.data.total}: lista cortada, use os filtros (os totais contam todos)`}
               </td>
-              <td className="num" colSpan={2}>
-                <span className="pos">{dinheiro(totais.entradas)}</span> · <span className="neg">{dinheiro(-totais.saidas)}</span>
+              <td className={`num ${totais.isPlaceholderData ? "recarregando" : ""}`} colSpan={4}>
+                {t && (
+                  <>
+                    <span title="A mesma regra do Resumo: estorno e reembolso abatem o gasto; o ignorado não soma">
+                      Entradas <span className="pos">{dinheiro(t.entradas)}</span> · Gastos <span className="neg">{dinheiro(t.gastos)}</span>
+                    </span>
+                    {(t.fora_entrou > 0 || t.fora_saiu > 0) && (
+                      <div className="sub" title="Transferências entre contas, pagamentos de fatura e investimentos: não são gasto nem renda">
+                        fora do resumo: entrou {dinheiro(t.fora_entrou)}, saiu {dinheiro(t.fora_saiu)}
+                      </div>
+                    )}
+                  </>
+                )}
               </td>
             </tr>
           </tfoot>

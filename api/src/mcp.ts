@@ -272,7 +272,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "lancamentos",
     {
-      description: "Lista lançamentos, do mais novo ao mais antigo. Filtre por mês, categoria, conta, tipo de conta, estornos ou texto; use limite e pular para paginar.",
+      description: "Lista lançamentos, do mais novo ao mais antigo. Filtre por mês, categoria, conta, tipo de conta, estornos ou texto; use limite e pular para paginar. soma = do filtro inteiro, não da página, pela regra do resumo (estorno e reembolso abatem o gasto); fora_do_resumo = as transferências.",
       inputSchema: {
         mes: mes.optional(),
         categoria_id: categoriaId.optional(),
@@ -289,12 +289,14 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const { itens, total } = await ler("/api/lancamentos", {
+        const filtro = {
           mes: a.mes, categoria: a.categoria_id, conta: a.conta_id ?? a.tipo_conta, busca: a.busca,
           pendentes: a.pendentes ? 1 : undefined, estornos: a.estornos ? 1 : undefined, pessoa: a.pessoa,
-        });
+        };
+        const [{ itens, total }, t] = await Promise.all([ler("/api/lancamentos", filtro), ler("/api/lancamentos/totais", filtro)]);
         return {
           total,
+          soma: { entradas: reais(t.entradas), gastos: reais(t.gastos), fora_do_resumo: { entrou: reais(t.fora_entrou), saiu: reais(t.fora_saiu) } },
           pular: a.pular,
           ...(total > itens.length && { aviso: `só os ${itens.length} mais novos podem ser lidos; refine o filtro` }),
           itens: itens.slice(a.pular, a.pular + a.limite).map(enxugar),

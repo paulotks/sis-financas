@@ -13,7 +13,7 @@ import { diasDoMes, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, 
 import { salvarConexao, sincronizar } from "./sync.js";
 import {
   BASE_RESUMO, diasComDado, ENTRADA, ESTORNO, fimDoMes, GASTO, gastosPorCategoria, historicoPF, LANCAMENTOS, listarRecorrentes, naoApareceuPF,
-  normalPorCategoria, periodo, previstasPF, reguaDoMes, SOMA, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
+  NO_RESUMO, normalPorCategoria, periodo, previstasPF, reguaDoMes, SOMA, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 
@@ -151,7 +151,8 @@ const formatarLanc = (r: Record<string, unknown>) => ({
   categoria_manual: !!r.categoria_manual,
 });
 
-app.get("/api/lancamentos", async (req) => {
+/** Os filtros da tela Lançamentos: a lista e os totais dela usam o mesmo trecho. */
+function filtroDeLancamentos(query: unknown) {
   const q = z
     .object({
       mes: z.string().regex(mesRe).optional(),
@@ -162,7 +163,7 @@ app.get("/api/lancamentos", async (req) => {
       estornos: z.enum(["1", "0"]).optional(),
       pessoa: z.enum(["PF", "PJ"]).optional(),
     })
-    .parse(req.query);
+    .parse(query);
   const onde: string[] = ["ct.oculta = 0"];
   const vals: (string | number)[] = [];
   if (q.mes) (onde.push("l.data BETWEEN ? AND ?"), vals.push(`${q.mes}-01`, fimDoMes(q.mes)));
@@ -179,10 +180,30 @@ app.get("/api/lancamentos", async (req) => {
     const b = simplificar(q.busca);
     vals.push(b, b, b);
   }
-  const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde.join(" AND ")} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
+  return { onde: onde.join(" AND "), vals };
+}
+
+app.get("/api/lancamentos", async (req) => {
+  const { onde, vals } = filtroDeLancamentos(req.query);
+  const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
   // total de verdade: a lista para em 2000 e a tela precisa saber que foi cortada
-  const { total } = db.prepare(`SELECT COUNT(*) AS total ${LANCAMENTOS} WHERE ${onde.join(" AND ")}`).get(...vals) as { total: number };
+  const { total } = db.prepare(`SELECT COUNT(*) AS total ${LANCAMENTOS} WHERE ${onde}`).get(...vals) as { total: number };
   return { itens, total };
+});
+
+/**
+ * Soma da lista inteira (sem o corte), pela regra do Resumo: o mês sem outro filtro dá os mesmos números de lá. O que é transferência vem à
+ * parte, para não parecer que sumiu.
+ */
+app.get("/api/lancamentos/totais", async (req) => {
+  const { onde, vals } = filtroDeLancamentos(req.query);
+  const soma = (valor: string, se: string) => `COALESCE(SUM(${valor}) FILTER (WHERE ${se}), 0)`;
+  const fora = `${SOMA} AND cat.grupo = 'transferencia'`;
+  return db.prepare(
+    `SELECT ${soma(ENTRADA, NO_RESUMO)} AS entradas, ${soma(GASTO, NO_RESUMO)} AS gastos,
+       ${soma("l.valor_centavos", `${fora} AND l.valor_centavos > 0`)} AS fora_entrou, ${soma("-l.valor_centavos", `${fora} AND l.valor_centavos < 0`)} AS fora_saiu
+     ${LANCAMENTOS} WHERE ${onde}`,
+  ).get(...vals);
 });
 
 /**

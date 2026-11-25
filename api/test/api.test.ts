@@ -557,6 +557,42 @@ test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência
   assert.ok(!o.linhas.some((l: any) => ["transferencia", "renda"].includes(l.grupo)));
 });
 
+test("rodapé de Lançamentos: o mês sem filtro dá o mesmo que o Resumo, a transferência vem à parte e nada é cortado", async () => {
+  const totais = async (q: string) => (({ entradas, gastos, fora_entrou, fora_saiu }) => [entradas, gastos, fora_entrou, fora_saiu])((await chamar("GET", `/api/lancamentos/totais?${q}`)).d);
+  for (const mes of (await chamar("GET", "/api/meses")).d)
+    for (const pessoa of ["PF", "PJ"]) {
+      const r = (await chamar("GET", `/api/resumo?mes=${mes}&pessoa=${pessoa}`)).d;
+      assert.deepEqual((await totais(`mes=${mes}&pessoa=${pessoa}`)).slice(0, 2), [r.entradas, r.saidas], `${mes} ${pessoa}`);
+    }
+  // os lançamentos de 2020-03 são os do teste de cima
+  assert.deepEqual(await totais("mes=2020-03&pessoa=PF"), [53400, 11200, 0, 999]);
+  assert.deepEqual(await totais(`mes=2020-03&pessoa=PF&categoria=${MERCADO}`), [0, 10500, 0, 0]);
+  assert.deepEqual(await totais("mes=2020-03&pessoa=PF&pendentes=1"), [3400, 700, 0, 0]);
+  assert.deepEqual(await totais("mes=2020-03&pessoa=PF&estornos=1"), [3000, -2000, 0, 0]); // só o abatimento: gasto negativo
+  assert.deepEqual(await totais("mes=2020-03&pessoa=PJ"), [0, 999, 0, 0]);
+  assert.deepEqual(await totais("mes=2020-03&pessoa=PF&busca=nada%20disso"), [0, 0, 0, 0]);
+  assert.equal((await chamar("GET", "/api/lancamentos/totais?mes=2020-13")).status, 400);
+
+  // além de 2000 a lista é cortada, os totais não
+  const conta = novaConta("BANK");
+  transacao(() => {
+    for (let i = 0; i < 2005; i++) novoLanc(conta, "2014-05-10", -1, MERCADO);
+    novoLanc(conta, "2014-05-11", 700, TRANSFERENCIA);
+    novoLanc(conta, "2014-05-11", 900, TRANSFERENCIA, { ignorado: 1 });
+    novoLanc(conta, "2014-05-11", -900, TRANSFERENCIA, { status: "REMOVIDO" });
+    novoLanc(conta, "2014-05-11", 900, RENDA, { ignorado: 1 });
+  });
+  const lista = (await chamar("GET", `/api/lancamentos?conta=${conta}`)).d;
+  assert.deepEqual([lista.itens.length, lista.total], [2000, 2009]);
+  assert.deepEqual(await totais(`conta=${conta}`), [0, 2005, 700, 0]);
+  const { cliente, usar } = await ligarMcp();
+  const pelo = await usar("lancamentos", { conta_id: conta, limite: 1 });
+  assert.deepEqual([pelo.total, pelo.itens.length, pelo.soma], [2009, 1, { entradas: 0, gastos: 20.05, fora_do_resumo: { entrou: 7, saiu: 0 } }]);
+  assert.match(pelo.aviso, /2000/);
+  await cliente.close();
+  db.prepare("DELETE FROM contas WHERE id = ?").run(conta);
+});
+
 test("categoria: apaga só se estiver vazia; em uso ou com nome do mapa dá 409 e nada some", async () => {
   const conta = novaConta("BANK");
   const criar = async (nome: string) => (await chamar("POST", "/api/categorias", { nome, grupo: "financeiro" })).d.id as number;

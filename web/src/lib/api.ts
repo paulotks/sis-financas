@@ -234,6 +234,24 @@ export interface Analises {
   comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
 }
 
+/** Rodapé de Lançamentos: a regra do Resumo sobre a lista inteira. Gastos positivos, já com estornos abatidos; fora = transferências. */
+export interface TotaisLancamentos {
+  entradas: number;
+  gastos: number;
+  fora_entrou: number;
+  fora_saiu: number;
+}
+
+export interface FiltroLancamentos {
+  mes?: string;
+  conta?: string;
+  categoria?: number;
+  busca?: string;
+  pendentes?: boolean;
+  estornos?: boolean;
+  pessoa?: string;
+}
+
 async function req<T>(metodo: string, url: string, corpo?: unknown): Promise<T> {
   const r = await fetch(url, {
     method: metodo,
@@ -252,6 +270,8 @@ const qs = (p: Record<string, string | number | undefined | false>) => {
   return t ? `?${t}` : "";
 };
 
+const qsLancamentos = (f: FiltroLancamentos) => qs({ ...f, pendentes: f.pendentes ? "1" : undefined, estornos: f.estornos ? "1" : undefined });
+
 export const api = {
   connectToken: (itemId?: string) => req<{ accessToken: string }>("POST", "/api/pluggy/connect-token", { itemId }),
   conexoes: () => req<Conexao[]>("GET", "/api/conexoes"),
@@ -263,11 +283,8 @@ export const api = {
     req<Conta>("PATCH", `/api/contas/${id}`, d),
 
   meses: () => req<string[]>("GET", "/api/meses"),
-  lancamentos: (f: { mes?: string; conta?: string; categoria?: number; busca?: string; pendentes?: boolean; estornos?: boolean; pessoa?: string }) =>
-    req<{ itens: Lancamento[]; total: number }>(
-      "GET",
-      `/api/lancamentos${qs({ ...f, pendentes: f.pendentes ? "1" : undefined, estornos: f.estornos ? "1" : undefined })}`,
-    ),
+  lancamentos: (f: FiltroLancamentos) => req<{ itens: Lancamento[]; total: number }>("GET", `/api/lancamentos${qsLancamentos(f)}`),
+  totaisLancamentos: (f: FiltroLancamentos) => req<TotaisLancamentos>("GET", `/api/lancamentos/totais${qsLancamentos(f)}`),
   editarLancamento: (
     id: string,
     d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean },
