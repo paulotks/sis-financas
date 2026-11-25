@@ -465,6 +465,14 @@ test("regra aprende: a prévia bate com o aplicado, repetir o texto troca a cate
   assert.deepEqual(["u1", "mao"].map((i) => lanc(i).categoria_id), [13, 14]);
 
   assert.equal((await chamar("POST", "/api/regras", { padrao: "ab", categoria_id: 4 })).status, 400);
+  // letra com acento em outra caixa é o mesmo texto: corrige a regra que existe (e a lista não ganha a segunda); outro sentido é outra regra
+  const acento = (await chamar("POST", "/api/regras", { padrao: "ÁGUA XYZ", categoria_id: 2 })).d.regra;
+  const repetida = (await chamar("POST", "/api/regras", { padrao: "água xyz", categoria_id: 3 })).d.regra;
+  assert.deepEqual([repetida.id, repetida.padrao, repetida.categoria_id], [acento.id, "ÁGUA XYZ", 3]);
+  const soSaida = (await chamar("POST", "/api/regras", { padrao: "água xyz", sentido: "saida", categoria_id: 3 })).d.regra;
+  assert.notEqual(soSaida.id, acento.id);
+  for (const r of [acento, soSaida]) await chamar("DELETE", `/api/regras/${r.id}`);
+
   assert.equal((await chamar("DELETE", `/api/regras/${criada.d.regra.id}`)).status, 200);
   assert.equal(lanc("u1").categoria_id, null);
   db.prepare("DELETE FROM lancamentos WHERE id = 'mao'").run();
@@ -1397,7 +1405,7 @@ test("MCP: regra só grava com a prévia certa, não troca outra sem querer e re
   const trocada = await usar("criar_regra", { padrao: "PADOCA", categoria_id: 13, total_previsto: 3, substituir: true });
   assert.equal(trocada.categoria_anterior, "Alimentação fora");
   assert.deepEqual(cats(), [MERCADO, 13, 13, 13]);
-  // acento: para a API "ÁGUA" e "água" são textos diferentes; o MCP não pode criar a segunda regra
+  // acento em outra caixa é o mesmo texto: corrige a regra, não cria a segunda
   await usar("criar_regra", { padrao: "ÁGUA XYZ", categoria_id: 2, total_previsto: 0 });
   await usar("criar_regra", { padrao: "água xyz", categoria_id: 3, total_previsto: 0, substituir: true });
   assert.deepEqual((await usar("regras")).map((r: any) => [r.padrao, r.categoria_id]).sort(), [["padoca", 13], ["ÁGUA XYZ", 3]]);

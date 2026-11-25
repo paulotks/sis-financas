@@ -192,8 +192,7 @@ function NovaRegra({ categorias, regras }: { categorias: Categoria[]; regras: Re
   const existente = mesmoTexto.find((r) => r.sentido === sentido && r.conta_id === null); // regra por conta se cria pelo Claude
   const outras = mesmoTexto.filter((r) => r !== existente);
   const criar = useMutation({
-    // o texto já gravado, e não o novo: a API só ignora maiúsculas sem acento e criaria uma segunda regra
-    mutationFn: () => api.criarRegra({ padrao: (existente ?? mesmoTexto[0])?.padrao ?? texto, sentido, categoria_id: categoria! }),
+    mutationFn: () => api.criarRegra({ padrao: texto, sentido, categoria_id: categoria! }),
     onSuccess: () => {
       setPadrao("");
       setSentido(null);

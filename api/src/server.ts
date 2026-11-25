@@ -10,7 +10,7 @@ import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_ACUMULADO, MESES_MEDIANA, nivelDo, projetar, somarMes, type TotalMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
-import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
+import { carregarRegras, contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras, regraIgual } from "./categorizar.js";
 
 migrar();
 copiaDoDia();
@@ -656,8 +656,7 @@ app.get("/api/regras/previa", async (req) => contarParecidos(alcanceRegra.parse(
 app.post("/api/regras", async (req) => {
   const d = alcanceRegra.extend({ categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
   return transacao(() => {
-    const atual = db.prepare("SELECT id FROM regras WHERE padrao = ? COLLATE NOCASE AND sentido IS ? AND conta_id IS ?")
-      .get(d.padrao, d.sentido, d.conta_id) as { id: number } | undefined;
+    const atual = regraIgual(carregarRegras(), d); // em JS: o NOCASE do SQLite não vale para letra com acento
     const r = atual
       ? db.prepare("UPDATE regras SET categoria_id = ?, descricao = COALESCE(?, descricao), prioridade = COALESCE(?, prioridade) WHERE id = ? RETURNING *")
         .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)

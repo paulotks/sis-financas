@@ -116,6 +116,10 @@ export function carregarRegras(): Regra[] {
   ).all() as unknown as Regra[];
 }
 
+/** A regra que já existe com este texto (maiúsculas não contam, com ou sem acento), sentido e conta: repetir corrige essa, não cria outra. */
+export const regraIgual = (regras: Regra[], a: Alcance) =>
+  regras.find((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase() && r.sentido === a.sentido && r.conta_id === a.conta_id);
+
 /** Única comparação de regra com lançamento: a prévia e a aplicação usam a mesma, para baterem. */
 const alcanca = (r: Alcance, l: Movimento) =>
   (r.sentido === null || r.sentido === (l.valor_centavos < 0 ? "saida" : "entrada")) &&

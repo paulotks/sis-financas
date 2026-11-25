@@ -458,8 +458,7 @@ export function criarServidor(base: string) {
           const onde = [cruza.sentido && `só ${cruza.sentido}`, cruza.conta && `só ${cruza.conta}`].filter(Boolean).join(", ");
           throw new Error(`Nada foi gravado: já existe a regra "${cruza.padrao}"${onde && ` (${onde})`} → ${cruza.categoria}. Confirme com o Paulo e use substituir: true.`);
         }
-        // o texto já gravado, e não o novo: a API só ignora maiúsculas sem acento e criaria uma segunda regra
-        const r = await chamar("POST", "/api/regras", { padrao: (existente ?? mesmoTexto[0])?.padrao ?? a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
+        const r = await chamar("POST", "/api/regras", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
         return { regra_id: r.regra.id, padrao: r.regra.padrao, ...(a.sentido && { sentido: a.sentido }), recategorizados: r.recategorizados, ...(existente && { categoria_anterior: existente.categoria }) };
       }),
   );
