@@ -216,18 +216,32 @@ export const MIGRACOES: string[] = [
   `,
 ];
 
-export function migrar() {
-  const versao = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
-  for (let i = versao; i < MIGRACOES.length; i++) {
-    db.exec("BEGIN");
-    try {
-      db.exec(MIGRACOES[i]);
-      db.exec(`PRAGMA user_version = ${i + 1}`);
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
+/**
+ * Com foreign_keys ligado, o DROP TABLE de uma migração que recria `contas` apagaria lançamentos e faturas em cascata, sem erro.
+ * Desligar só vale fora da transação (dentro o SQLite ignora); em troca, nenhuma migração termina com registro órfão.
+ */
+export function migrar(banco = db, migracoes = MIGRACOES) {
+  const versao = Number((banco.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  banco.exec("PRAGMA foreign_keys = OFF");
+  try {
+    for (let i = versao; i < migracoes.length; i++) {
+      banco.exec("BEGIN");
+      try {
+        banco.exec(migracoes[i]);
+        const orfaos = banco.prepare("PRAGMA foreign_key_check").all() as { table: string; parent: string }[];
+        if (orfaos.length) {
+          const onde = [...new Set(orfaos.map((o) => `${o.table} -> ${o.parent}`))].join(", ");
+          throw new Error(`migração ${i + 1} desfeita: deixaria ${orfaos.length} registro(s) órfão(s) (${onde})`);
+        }
+        banco.exec(`PRAGMA user_version = ${i + 1}`);
+        banco.exec("COMMIT");
+      } catch (e) {
+        banco.exec("ROLLBACK");
+        throw e;
+      }
     }
+  } finally {
+    banco.exec("PRAGMA foreign_keys = ON");
   }
 }
 

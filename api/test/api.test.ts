@@ -51,7 +51,7 @@ Object.assign(process.env, {
   SYNC_DIAS_INICIAIS: "365",
 });
 const { app } = await import("../src/server.js");
-const { db, MIGRACOES } = await import("../src/db.js");
+const { db, migrar, MIGRACOES } = await import("../src/db.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
@@ -489,6 +489,51 @@ test("migração das regras: mesmas regras com os mesmos ids, valendo para tudo,
   assert.throws(() => m.exec("INSERT INTO regras (padrao, categoria_id, sentido) VALUES ('uber', 4, 'saida')"), /UNIQUE/);
   assert.equal((m.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check, "ok");
   m.close();
+});
+
+/** Base na versão atual, com uma conta, um lançamento categorizado, uma fatura, uma regra e um orçamento. */
+function baseComDados(caminho = ":memory:") {
+  const m = new DatabaseSync(caminho);
+  MIGRACOES.forEach((sql) => m.exec(sql));
+  m.exec(`PRAGMA user_version = ${MIGRACOES.length};
+    INSERT INTO conexoes (item_id) VALUES ('i'); INSERT INTO contas (id, item_id, apelido) VALUES ('c', 'i', 'minha conta');
+    INSERT INTO lancamentos (id, conta_id, data, valor_centavos, categoria_id, notas) VALUES ('l', 'c', '2026-01-01', -1, 3, 'minha nota');
+    INSERT INTO faturas (id, conta_id) VALUES ('f', 'c');
+    INSERT INTO regras (padrao, categoria_id, conta_id) VALUES ('mercado', 3, 'c');
+    INSERT INTO orcamentos (categoria_id, mes, valor_centavos) VALUES (3, '2026-01', 100)`);
+  return m;
+}
+const pragma = (m: DatabaseSync, nome: string) => Object.values(m.prepare(`PRAGMA ${nome}`).get() as object)[0];
+const conteudo = (m: DatabaseSync) =>
+  JSON.stringify((m.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[])
+    .map(({ name }) => [name, m.prepare(`SELECT * FROM ${name}`).all()]));
+
+test("migração que recria tabela não apaga nada em cascata e as referências continuam valendo", () => {
+  for (const tabela of ["contas", "categorias"]) {
+    const m = baseComDados();
+    const antes = conteudo(m);
+    const { sql } = m.prepare("SELECT sql FROM sqlite_master WHERE name = ?").get(tabela) as { sql: string };
+    migrar(m, [...MIGRACOES, `${sql.replace(tabela, `${tabela}_nova`)}; INSERT INTO ${tabela}_nova SELECT * FROM ${tabela};
+      DROP TABLE ${tabela}; ALTER TABLE ${tabela}_nova RENAME TO ${tabela};`]);
+    assert.equal(conteudo(m), antes, tabela);
+    assert.deepEqual([pragma(m, "user_version"), pragma(m, "foreign_keys")], [MIGRACOES.length + 1, 1]);
+    assert.throws(() => m.exec("INSERT INTO lancamentos (id, conta_id, data, valor_centavos) VALUES ('x', 'não existe', '2026-01-01', -1)"), /FOREIGN KEY/);
+    assert.throws(() => m.exec("DELETE FROM categorias WHERE id = 3"), /FOREIGN KEY/);
+    m.close();
+  }
+});
+
+test("migração que deixa registro órfão ou dá erro é desfeita inteira, e as chaves estrangeiras voltam a valer", () => {
+  for (const [ruim, erro] of [["DELETE FROM contas", /migração \d+.*(faturas|lancamentos|regras)/], ["DELETE FROM faturas; SELECT * FROM nao_existe", /no such table/]] as const) {
+    const m = baseComDados();
+    const antes = conteudo(m);
+    assert.throws(() => migrar(m, [...MIGRACOES, "CREATE TABLE boa (x)", ruim, "CREATE TABLE depois (x)"]), erro);
+    assert.equal(pragma(m, "user_version"), MIGRACOES.length + 1); // a anterior fica; a ruim e a seguinte, não
+    m.exec("DROP TABLE boa");
+    assert.equal(conteudo(m), antes);
+    assert.equal(pragma(m, "foreign_keys"), 1);
+    m.close();
+  }
 });
 
 test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da conta saem juntas e o resultado do mês não muda", async () => {
