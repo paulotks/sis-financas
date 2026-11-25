@@ -933,6 +933,19 @@ test("recorrentes: troca de nome, forma de pagamento, várias no mesmo lugar e m
   assert.equal(ver(plano, [decisao("Plano Pet", 5300, "cancelada", "2026-06-01 09:00:00")]).find((r) => r.valor === 5300)!.cobrou_depois, null); // as outras do lugar continuam
 });
 
+test("recorrentes: histórico grande não trava a tela (conta as datas lidas, que o relógio varia)", () => {
+  const doisAnos = Array.from({ length: 730 }, (_, i) => g("Padaria", new Date(Date.UTC(2024, 0, 1 + i)).toISOString().slice(0, 10), 100 * 2 ** (i % 7)));
+  const parse = Date.parse;
+  let lidas = 0;
+  Date.parse = (texto) => (lidas++, parse(texto));
+  try {
+    detectarRecorrentes(doisAnos, "2025-12-31");
+  } finally {
+    Date.parse = parse;
+  }
+  assert.ok(lidas < 1_000_000, `${lidas} datas lidas`); // procurando em toda série, eram quase 2,5 milhões
+});
+
 test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a decisão", async () => {
   const conta = novaConta("CREDIT");
   const serie = (nome: string, categoria: number | null, extra: Record<string, string | number> = {}) =>

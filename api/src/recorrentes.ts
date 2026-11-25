@@ -104,7 +104,7 @@ function montarSeries(cobrancas: Cobranca[]): Serie[] {
       // nem uma compra no mesmo lugar, dias antes, se a cobrança de valor mais próximo ainda vem
       const livres = series.filter((s) => {
         const u = s.at(-1)!;
-        return !doNome.some((x) => x.data > c.data && entre(dias(u.data, x.data), MES) && diferenca(u.valor, x.valor) < diferenca(u.valor, c.valor));
+        return entre(dias(u.data, c.data), MES) && !doNome.some((x) => x.data > c.data && entre(dias(u.data, x.data), MES) && diferenca(u.valor, x.valor) < diferenca(u.valor, c.valor));
       });
       const s = aMaisProxima(livres, c, MES);
       if (s) s.push(c);
