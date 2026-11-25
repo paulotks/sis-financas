@@ -32,6 +32,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
+- Banco com erro, ou fora de status UPDATED com execucao SUCCESS (em estado): o dado dele pode estar velho, faltando ou repetido. Diga isso
+  antes de concluir algo do mês. execucao PARTIAL_SUCCESS = o banco mandou só parte; não é caso de reautorizar.
 - saldo_lido_em de um dia anterior ao de ultimo_sync: o banco não mandou o saldo e vale o último conhecido. Diga a data ao usar o número.
 - Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
@@ -142,7 +144,7 @@ export function criarServidor(base: string) {
         ]);
         return {
           agora: new Date().toISOString(),
-          bancos: conexoes.map((c) => ({ contas: c.nomes_contas ?? c.conector, status: c.status, ultimo_sync: c.ultimo_sync, dados_do_banco_de: c.atualizado_pluggy, erro: c.erro })),
+          bancos: conexoes.map((c) => ({ contas: c.nomes_contas ?? c.conector, status: c.status, execucao: c.status_execucao, ultimo_sync: c.ultimo_sync, dados_do_banco_de: c.atualizado_pluggy, erro: c.erro })),
           mes_atual: { mes: ritmo.mes, nivel: ritmo.nivel },
           meses: { primeiro: meses.at(-1) ?? null, ultimo: meses[0] ?? null },
           pendentes_de_categoria: { PF: pf.total, PJ: pj.total },

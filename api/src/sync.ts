@@ -136,9 +136,24 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
 }
 
 /**
+ * Dá para apagar o que não veio? Só se o banco entregou a lista inteira desta conta. OUTDATED, erro de login ou atualização
+ * em andamento podem trazer só um pedaço, e sucesso parcial depende do produto que falhou (`statusDetail`; outro produto,
+ * como investimentos, não impede). Na dúvida, não apaga: um repetido por uns dias é melhor que um gasto perdido.
+ * O PARTIAL_SUCCESS aparece na documentação da Pluggy nos dois campos.
+ */
+function listaCompleta({ status, executionStatus, statusDetail }: PItem, c: PConta) {
+  if (status === "UPDATED" && executionStatus === "SUCCESS") return true;
+  const parcial = status === "PARTIAL_SUCCESS" || (status === "UPDATED" && executionStatus === "PARTIAL_SUCCESS");
+  const veio = (p: "transactions" | "creditCards") => statusDetail?.[p]?.isUpdated === true;
+  return parcial && veio("transactions") && (c.type !== "CREDIT" || veio("creditCards"));
+}
+
+/**
  * Quando a fatura fecha, a Pluggy pode apagar um lançamento e recriá-lo com outro id; sem isto, o antigo ficaria e
  * contaria em dobro. O que o Paulo editou passa para o substituto; sem substituto, o editado fica como REMOVIDO:
  * aparece na lista, não soma, e volta ao normal se o banco o devolver (o status vem do banco a cada sincronização).
+ * Candidato a substituto: chegou nesta sincronização ou depois da última vez que o antigo veio (se a limpeza ficou parada,
+ * ver listaCompleta), e o Paulo ainda não editou.
  * ponytail: substituto = mesma parcela e 2 de 3 entre valor, data e descrição; usar o providerId se isso errar com dados reais.
  */
 function removerSumidos(contaId: string, de: string, lista: PTransacao[], novos: string[]) {
@@ -146,24 +161,27 @@ function removerSumidos(contaId: string, de: string, lista: PTransacao[], novos:
   const maisAntigo = lista.reduce((m, t) => (t.date < m ? t.date : m), lista[0].date).slice(0, 10);
   const limite = [de, diasAtras(DIAS_CONFERENCIA), maisAntigo].sort()[2];
   const sumidos = db.prepare(
-    `SELECT id, data, descricao, descricao_original, valor_centavos, parcela, categoria_id, categoria_manual, notas, tags, ignorado,
+    `SELECT id, data, descricao, descricao_original, valor_centavos, parcela, categoria_id, categoria_manual, notas, tags, ignorado, atualizado_em,
        COALESCE(descricao,'') NOT IN (COALESCE(descricao_original,''), COALESCE(json_extract(bruto,'$.description'),'')) AS descricao_editada
      FROM lancamentos
      WHERE conta_id = ? AND data > ? AND bruto IS NOT NULL AND id NOT IN (SELECT value FROM json_each(?))`,
   ).all(contaId, limite, JSON.stringify(lista.map((t) => t.id))) as {
     id: string; data: string; descricao: string; descricao_original: string; valor_centavos: number; parcela: number | null;
-    categoria_id: number | null; categoria_manual: number; notas: string | null; tags: string; ignorado: number; descricao_editada: number;
+    categoria_id: number | null; categoria_manual: number; notas: string | null; tags: string; ignorado: number; atualizado_em: string | null;
+    descricao_editada: number;
   }[];
-  const livres = new Set(novos);
+  const livres = new Set(lista.map((t) => t.id));
   const buscar = db.prepare(
     `SELECT id FROM lancamentos
-     WHERE id IN (SELECT value FROM json_each(?)) AND parcela IS ? AND (valor_centavos = ?) + (data = ?) + (descricao_original = ?) >= 2
+     WHERE id IN (SELECT value FROM json_each(?)) AND (id IN (SELECT value FROM json_each(?)) OR criado_em > ?)
+       AND NOT categoria_manual AND NOT ignorado AND notas IS NULL AND tags = '[]'
+       AND parcela IS ? AND (valor_centavos = ?) + (data = ?) + (descricao_original = ?) >= 2
      ORDER BY (valor_centavos = ?) + (descricao_original = ?) DESC, abs(julianday(data) - julianday(?)) LIMIT 1`,
   );
   for (const s of sumidos) {
     if (s.categoria_manual || s.ignorado || s.notas || s.tags !== "[]" || s.descricao_editada) {
-      const par = buscar.get(JSON.stringify([...livres]), s.parcela, s.valor_centavos, s.data, s.descricao_original,
-        s.valor_centavos, s.descricao_original, s.data) as { id: string } | undefined;
+      const par = buscar.get(JSON.stringify([...livres]), JSON.stringify(novos), s.atualizado_em, s.parcela, s.valor_centavos, s.data,
+        s.descricao_original, s.valor_centavos, s.descricao_original, s.data) as { id: string } | undefined;
       if (!par) {
         db.prepare("UPDATE lancamentos SET status = 'REMOVIDO' WHERE id = ?").run(s.id);
         continue;
@@ -204,6 +222,8 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
     res.conector = item.connector?.name ?? null;
 
     const contas = await pluggy.contas(itemId);
+    if (!contas.length && db.prepare("SELECT 1 FROM contas WHERE item_id = ?").get(itemId))
+      throw new Error("A Pluggy não devolveu nenhuma conta deste banco; nada foi apagado. Se continuar, a autorização do MeuPluggy pode ter vencido (ver Problemas conhecidos no README)");
     transacao(() => contas.forEach((c) => salvarConta(itemId, res.conector, c)));
     res.contas = contas.length;
 
@@ -217,7 +237,7 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       // só grava com todas as páginas em mãos, numa transação: conta inteira ou nada
       const r = transacao(() => {
         const r = salvarTransacoes(lista, regras);
-        removerSumidos(c.id, de, lista, r.novos);
+        if (listaCompleta(item, c)) removerSumidos(c.id, de, lista, r.novos);
         return r;
       });
       res.novos += r.novos.length;

@@ -47,6 +47,7 @@ export interface PItem {
   id: string;
   status?: string;
   executionStatus?: string;
+  statusDetail?: Partial<Record<"transactions" | "creditCards", { isUpdated?: boolean } | null>> | null;
   lastUpdatedAt?: string | null;
   connector?: { id: number; name: string; imageUrl?: string };
 }

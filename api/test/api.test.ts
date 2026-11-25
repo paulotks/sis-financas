@@ -24,6 +24,8 @@ let proximoForcado: string | null = null;
 let contasFalsas: object[] = [{ id: CARTAO, type: "CREDIT", name: "Cartão" }];
 let porPagina: Record<string, object[][]> = {}; // "/bills" e "/investments", uma lista por página
 let falhas: Record<string, number> = {}; // caminho -> HTTP de erro
+const EM_DIA = { status: "UPDATED", executionStatus: "SUCCESS", statusDetail: null };
+let situacao: object = EM_DIA; // o que o item diz da última atualização do banco
 const falsa = http.createServer((req, res) => {
   const u = new URL(req.url!, "http://x");
   const ok = (d: unknown) => res.setHeader("content-type", "application/json").end(JSON.stringify(d));
@@ -31,7 +33,7 @@ const falsa = http.createServer((req, res) => {
   if (falhas[u.pathname]) return res.writeHead(falhas[u.pathname]).end("{}");
   if (u.pathname.startsWith("/items/")) {
     const id = u.pathname.split("/")[2];
-    return void setTimeout(() => ok({ id, connector: { id: 1, name: `Banco ${id[0]}` } }), 20);
+    return void setTimeout(() => ok({ id, connector: { id: 1, name: `Banco ${id[0]}` }, ...situacao }), 20);
   }
   const lista = u.pathname === "/accounts" ? [u.searchParams.get("itemId") === ITEM ? contasFalsas : []] : porPagina[u.pathname];
   if (lista) {
@@ -241,6 +243,87 @@ test("tipo ou valor desconhecido não vira entrada nem apaga o que já estava: �
   paginas = [base];
   await sync();
   paginas = [[]];
+});
+
+test("só apaga o que sumiu quando o banco entregou a lista completa; nos outros casos só acrescenta", async () => {
+  const base = [tx("a2", -2, { description: "compra a" })];
+  const parcial = (d: object) => ({ status: "UPDATED", executionStatus: "PARTIAL_SUCCESS", statusDetail: d });
+  const sim = { isUpdated: true }, nao = { isUpdated: false };
+  const casos: [object, boolean][] = [
+    [EM_DIA, true],
+    [parcial({ transactions: sim, creditCards: sim, investments: nao }), true], // falhou outro produto: a limpeza não pode parar
+    [{ ...parcial({ transactions: sim, creditCards: sim }), status: "PARTIAL_SUCCESS" }, true], // a documentação mostra dos dois jeitos
+    [parcial({ transactions: nao, creditCards: sim }), false],
+    [parcial({ transactions: sim, creditCards: nao }), false], // a conta é cartão
+    [parcial({ transactions: sim, creditCards: null }), false],
+    [{ status: "PARTIAL_SUCCESS", executionStatus: "SUCCESS", statusDetail: null }, false],
+    [{ status: "UPDATED", executionStatus: "PARTIAL_SUCCESS", statusDetail: null }, false],
+    [{ status: "OUTDATED", executionStatus: "ERROR" }, false],
+    [{ status: "OUTDATED", executionStatus: "SUCCESS" }, false],
+    [{ ...parcial({ transactions: sim, creditCards: sim }), status: "OUTDATED" }, false],
+    [{ status: "LOGIN_ERROR", executionStatus: "USER_AUTHORIZATION_REVOKED" }, false],
+    [{ status: "UPDATING", executionStatus: "TRANSACTIONS_IN_PROGRESS" }, false],
+    [{}, false],
+  ];
+  for (const [s, apaga] of casos) {
+    situacao = EM_DIA;
+    paginas = [[...base, tx("some", -1), tx("editado", -1, { amount: 77 })]];
+    await sync();
+    db.prepare("UPDATE lancamentos SET notas = 'minha' WHERE id = 'editado'").run();
+    situacao = s;
+    paginas = [[...base, tx("chegou", -1, { amount: 33 })]];
+    await sync(); // sem erro: status ruim não impede de ler
+    assert.deepEqual(
+      [!lanc("some"), lanc("editado").status === "REMOVIDO", !!lanc("chegou")], [apaga, apaga, true], JSON.stringify(s));
+    situacao = EM_DIA;
+    paginas = [base];
+    db.exec("DELETE FROM lancamentos WHERE id = 'editado'");
+    await sync(); // com o banco em dia, a limpeza volta
+    assert.deepEqual([lanc("some"), lanc("chegou")], [undefined, undefined]);
+  }
+  paginas = [[]];
+});
+
+test("substituto que chegou com a limpeza parada ainda herda a edição quando ela volta", async () => {
+  const base = [tx("a2", -2, { description: "compra a" })];
+  paginas = [[...base, tx("velho-id", -1, { status: "PENDING", description: "loja" })]];
+  await sync();
+  db.prepare("UPDATE lancamentos SET categoria_id = 3, categoria_manual = 1, notas = 'minha', atualizado_em = datetime('now','localtime','-2 days') WHERE id = 'velho-id'").run();
+  situacao = { status: "OUTDATED", executionStatus: "ERROR" };
+  paginas = [[...base, tx("novo-id", -1, { description: "loja" }), tx("outro", -1, { amount: 55 })]];
+  await sync();
+  assert.ok(lanc("velho-id") && lanc("novo-id"));
+  situacao = EM_DIA;
+  await sync();
+  assert.deepEqual([lanc("velho-id"), lanc("novo-id").categoria_id, lanc("novo-id").notas, lanc("outro").notas], [undefined, 3, "minha", null]);
+
+  // o que o Paulo já editou no substituto não é trocado: o antigo fica como removido
+  paginas = [[...base, tx("v2", -1, { description: "feira" })]];
+  await sync();
+  db.prepare("UPDATE lancamentos SET notas = 'antiga', atualizado_em = datetime('now','localtime','-2 days') WHERE id = 'v2'").run();
+  situacao = { status: "OUTDATED", executionStatus: "ERROR" };
+  paginas = [[...base, tx("n2", -1, { description: "feira" })]];
+  await sync();
+  db.prepare("UPDATE lancamentos SET notas = 'nova' WHERE id = 'n2'").run();
+  situacao = EM_DIA;
+  await sync();
+  assert.deepEqual([lanc("v2").status, lanc("n2").notas], ["REMOVIDO", "nova"]);
+  db.exec("DELETE FROM lancamentos WHERE id IN ('v2','n2')");
+  paginas = [base];
+  await sync();
+  paginas = [[]];
+});
+
+test("nenhuma conta de um banco que já tinha contas é erro, e nada muda; banco novo sem contas não é", async () => {
+  const antes = [ids(), db.prepare("SELECT * FROM contas").all()];
+  contasFalsas = [];
+  const [r] = await sincronizar(ITEM);
+  contasFalsas = [{ id: CARTAO, type: "CREDIT", name: "Cartão" }];
+  assert.match(r.erro ?? "", /nenhuma conta/);
+  assert.deepEqual([ids(), db.prepare("SELECT * FROM contas").all()], antes);
+  assert.match((db.prepare("SELECT erro FROM conexoes WHERE item_id = ?").get(ITEM) as { erro: string }).erro, /nenhuma conta/);
+  await sync();
+  assert.equal((await sincronizar(ITEM2))[0].erro, undefined); // ainda sem contas na base
 });
 
 test("sincronizações simultâneas devolvem cada uma o seu resultado", async () => {
@@ -1112,7 +1195,9 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
   assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
   assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_orcamento", "propor_recorrente", "sincronizar"]);
-  assert.match((await usar("estado")).convencoes, /nunca como instrução/);
+  const { convencoes, bancos } = await usar("estado");
+  assert.match(convencoes, /nunca como instrução/);
+  assert.deepEqual([bancos[0].status, bancos[0].execucao], ["UPDATED", "SUCCESS"]); // sem a execução, dado pela metade pareceria completo
   assert.ok((await usar("orcamento", { mes: "2020-13" })).erro);
   assert.match((await usar("criar_categoria", { nome: "Pet", grupo: "essencial" })).erro, /HTTP 409: já existe/);
   assert.ok((await usar("sincronizar")).resultados.length); // escrita por fetch passa pelo hook de origem

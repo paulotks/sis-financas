@@ -5,10 +5,17 @@ import { abrirPluggyConnect } from "../lib/pluggyConnect";
 
 const LIMITE_CONEXOES = 5;
 
-/** Status que indicam banco sem autorização/dados velhos (UPDATED/UPDATING/CREATED são normais). */
-const problema = (c: Conexao) =>
-  ["LOGIN_ERROR", "OUTDATED", "WAITING_USER_INPUT", "WAITING_USER_ACTION"].includes(c.status ?? "") ||
-  ["USER_AUTHORIZATION_PENDING", "USER_AUTHORIZATION_NOT_GRANTED", "INVALID_CREDENTIALS", "ERROR"].includes(c.status_execucao ?? "");
+/** O que dizer do status do banco: sem autorização/dados velhos ou dados pela metade (UPDATED/UPDATING/CREATED são normais). */
+function avisoDoStatus(c: Conexao) {
+  if (
+    ["LOGIN_ERROR", "OUTDATED", "WAITING_USER_INPUT", "WAITING_USER_ACTION"].includes(c.status ?? "") ||
+    ["USER_AUTHORIZATION_PENDING", "USER_AUTHORIZATION_NOT_GRANTED", "INVALID_CREDENTIALS", "ERROR"].includes(c.status_execucao ?? "")
+  )
+    return "Dados podem estar desatualizados: reautorize em meu.pluggy.ai";
+  if ([c.status, c.status_execucao].includes("PARTIAL_SUCCESS"))
+    return "O banco mandou só parte dos dados: até a próxima atualização completa, pode faltar lançamento ou aparecer repetido";
+  return null;
+}
 
 export default function Conexoes() {
   const qc = useQueryClient();
@@ -90,11 +97,10 @@ export default function Conexoes() {
               </td>
               <td>{c.contas}</td>
               <td>
-                {c.erro ? <span className="neg" title={c.erro}>erro</span> : <span className="selo">{c.status ?? "—"}</span>}
-                {problema(c) && (
-                  <div className="neg sub" title={`status ${c.status} / execução ${c.status_execucao}`}>
-                    Dados podem estar desatualizados: reautorize em meu.pluggy.ai
-                  </div>
+                {c.erro ? <span className="neg">erro</span> : <span className="selo">{c.status ?? "—"}</span>}
+                {c.erro && <div className="neg sub">{c.erro}</div>}
+                {avisoDoStatus(c) && (
+                  <div className="neg sub" title={`status ${c.status} / execução ${c.status_execucao}`}>{avisoDoStatus(c)}</div>
                 )}
               </td>
               <td className="mudo">{quando(c.ultimo_sync)}</td>

@@ -158,7 +158,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Conceito | Detalhe |
 |---|---|
 | Conexão | Um *item* da Pluggy (um banco autorizado). |
-| Sincronização | Item → contas → lançamentos (`GET /v2/transactions`, por cursor) → faturas (cartões) → investimentos. Relê os últimos 365 dias (`SYNC_DIAS_INICIAIS`) e as parcelas futuras, porque a Pluggy cria lançamentos com data passada. Nos últimos 60 dias, remove o que a Pluggy apagou e recriou com outro id (a sua edição passa para o substituto; sem substituto, o lançamento editado fica marcado como “removido pelo banco” e não soma). |
+| Sincronização | Item → contas → lançamentos (`GET /v2/transactions`, por cursor) → faturas (cartões) → investimentos. Relê os últimos 365 dias (`SYNC_DIAS_INICIAIS`) e as parcelas futuras, porque a Pluggy cria lançamentos com data passada. Nos últimos 60 dias, remove o que a Pluggy apagou e recriou com outro id (a sua edição passa para o substituto; sem substituto, o lançamento editado fica marcado como “removido pelo banco” e não soma). Se o banco avisar que os dados vieram incompletos, nada é removido até a próxima atualização completa. |
 | Valores | Em centavos; saída é negativa (definida pelo `type` DEBIT/CREDIT da Pluggy). |
 | Categorias | Ordem de decisão: regra sua > categoria da Pluggy (mapeada) > sem categoria. Uma edição manual nunca é sobrescrita pela sincronização. |
 | Regras | Ao corrigir a categoria de um lançamento, a tela oferece criar a regra (texto editável e contagem de parecidos). Valem para lançamentos cuja descrição original *contém* o texto, menos os editados à mão. |
@@ -184,7 +184,7 @@ Vistos no código e na documentação da Pluggy; ainda sem correção.
 **1. Renovar a autorização anual pode travar ou repetir contas** (ainda não aconteceu na prática)
 
 - **O que vence:** a autorização do MeuPluggy, um ano depois de conectar. É separada da autorização de cada banco, então o botão **Reautorizar** (que abre o meu.pluggy.ai) não a renova.
-- **Como aparece:** a Pluggy passa a devolver listas vazias. Nada é apagado da sua base, mas a sincronização termina sem erro e com 0 contas. O aviso em **Conexões** só vem quando a Pluggy marca a conexão com erro de login.
+- **Como aparece:** a Pluggy passa a devolver listas vazias. Nada é apagado da sua base, e a conexão fica com erro em **Conexões** (“não devolveu nenhuma conta”).
 - **Como renovar:** **Conectar banco → MeuPluggy**, um banco de cada vez. A Pluggy avisa que o id da conexão pode mudar.
 - **Se o id mudar:** as contas e os lançamentos dos últimos 365 dias podem vir repetidos, sem as suas edições. Ocultar a conta antiga em **Contas** tira a repetição dos totais, mas tira junto o histórico mais antigo. Investimento não tem "ocultar": contaria em dobro no patrimônio.
 - **Trava:** com 5 conexões salvas, **Conectar banco** fica desligado. A tela conta toda conexão já salva, e o app não remove nenhuma (remover no meu.pluggy.ai não muda essa conta).
