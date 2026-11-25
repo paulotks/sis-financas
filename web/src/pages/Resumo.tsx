@@ -133,7 +133,7 @@ function Recentes({ mes, pessoa, verTodos }: { mes: string; pessoa: string; verT
   });
   // parcelas futuras do mês ocupariam o topo da lista
   const limite = hoje();
-  const itens = (lista.data?.itens ?? []).filter((l) => l.data <= limite && !l.ignorado && l.status !== "REMOVIDO").slice(0, RECENTES);
+  const itens = (lista.data?.itens ?? []).filter((l) => l.data <= limite && l.soma).slice(0, RECENTES);
   const erro = lista.error ?? editar.error;
 
   return (

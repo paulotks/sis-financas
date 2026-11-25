@@ -112,14 +112,12 @@ export default function Categorias() {
 }
 
 /** Só se mescla gasto com gasto, renda com renda e transferência com transferência (senão mudaria o total do mês). */
-const tipo = (c: Categoria) => (c.grupo === "renda" || c.grupo === "transferencia" ? c.grupo : "gasto");
-
 function Mesclar({ categorias }: { categorias: CategoriaComUsos[] }) {
   const qc = useQueryClient();
   const [deId, setDe] = useState<number | null>(null);
   const [paraId, setPara] = useState<number | null>(null);
   const de = categorias.find((c) => c.id === deId && !c.fixa);
-  const destinos = de ? categorias.filter((c) => c.id !== de.id && tipo(c) === tipo(de)) : [];
+  const destinos = de ? categorias.filter((c) => c.id !== de.id && c.tipo === de.tipo) : [];
   const para = destinos.find((c) => c.id === paraId);
   const mesclar = useMutation({
     mutationFn: (v: { de: CategoriaComUsos; para: CategoriaComUsos }) => api.mesclarCategoria(v.de.id, v.para.id),

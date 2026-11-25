@@ -17,8 +17,7 @@ export default function Orcamento() {
   });
 
   const linhas = q.data?.linhas ?? [];
-  const planejado = soma(linhas, "planejado");
-  const gasto = soma(linhas, "realizado") + (q.data?.sem_categoria ?? 0);
+  const planejado = q.data?.planejado ?? 0, gasto = q.data?.gasto ?? 0;
   const resta = planejado - gasto;
   const esperada = q.data?.renda_esperada ?? null;
   const sobra = esperada === null ? null : esperada - planejado;

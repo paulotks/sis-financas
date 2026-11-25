@@ -9,10 +9,15 @@ import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_MEDIANA, soma
 
 export const fimDoMes = (mes: string) => `${mes}-${diasDoMes(mes)}`;
 
+/** Todo lançamento, com a conta (ct) e a categoria (cat). */
+export const LANCAMENTOS = "FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id";
+/** Ignorado pelo usuário ou removido pelo banco não soma em nada. */
+export const SOMA = "l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'";
+/** Crédito em cartão que não é pagamento de fatura nem transferência. */
+export const ESTORNO = `ct.tipo IS 'CREDIT' AND l.valor_centavos > 0 AND ${SOMA} AND cat.grupo IS NOT 'transferencia'`;
 /** O que conta no mês. Resumo e orçamento usam este mesmo trecho: se um mudar, o outro muda junto. */
-export const BASE_RESUMO = `FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
-  WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
-    AND COALESCE(cat.grupo, '') <> 'transferencia'`;
+export const BASE_RESUMO = `${LANCAMENTOS}
+  WHERE l.data BETWEEN ? AND ? AND ct.pessoa = ? AND ct.oculta = 0 AND ${SOMA} AND cat.grupo IS NOT 'transferencia'`;
 /**
  * Gasto em centavos positivos; NULL = é entrada. Dinheiro que entra já com categoria de gasto é estorno ou reembolso e abate a
  * categoria. Sem categoria não abate: pode ser renda, ou um pagamento de fatura ainda não marcado como transferência.

@@ -5,14 +5,15 @@ import { z, ZodError } from "zod";
 import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
+import { GRUPOS } from "./grupos.js";
 import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, deveCobrar } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
 import { salvarConexao, sincronizar } from "./sync.js";
 import {
-  BASE_RESUMO, diasComDado, ENTRADA, fimDoMes, GASTO, gastosPorCategoria, historicoPF, listarRecorrentes, naoApareceuPF, normalPorCategoria,
-  periodo, previstasPF, reguaDoMes, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
+  BASE_RESUMO, diasComDado, ENTRADA, ESTORNO, fimDoMes, GASTO, gastosPorCategoria, historicoPF, LANCAMENTOS, listarRecorrentes, naoApareceuPF,
+  normalPorCategoria, periodo, previstasPF, reguaDoMes, SOMA, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 
@@ -137,15 +138,16 @@ const SELECT_LANC = `
          l.categoria_id, l.categoria_manual, l.categoria_pluggy, l.comerciante, l.parcela, l.total_parcelas,
          l.notas, l.tags, l.ignorado,
          COALESCE(ct.apelido, ct.nome) AS conta, ct.tipo AS conta_tipo, ct.pessoa,
-         cat.nome AS categoria, cat.cor AS categoria_cor, cat.grupo AS categoria_grupo
-  FROM lancamentos l
-  JOIN contas ct ON ct.id = l.conta_id
-  LEFT JOIN categorias cat ON cat.id = l.categoria_id`;
+         cat.nome AS categoria, cat.cor AS categoria_cor, cat.grupo AS categoria_grupo,
+         ${SOMA} AS soma, ${ESTORNO} AS estorno
+  ${LANCAMENTOS}`;
 
 const formatarLanc = (r: Record<string, unknown>) => ({
   ...r,
   tags: JSON.parse(String(r.tags ?? "[]")),
   ignorado: !!r.ignorado,
+  soma: !!r.soma,
+  estorno: !!r.estorno,
   categoria_manual: !!r.categoria_manual,
 });
 
@@ -169,12 +171,8 @@ app.get("/api/lancamentos", async (req) => {
   else if (q.conta) (onde.push("l.conta_id = ?"), vals.push(q.conta));
   if (q.categoria) (onde.push("l.categoria_id = ?"), vals.push(q.categoria));
   if (q.pessoa) (onde.push("ct.pessoa = ?"), vals.push(q.pessoa));
-  if (q.pendentes === "1") onde.push("l.categoria_id IS NULL AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'");
-  if (q.estornos === "1")
-    onde.push(
-      `ct.tipo = 'CREDIT' AND l.valor_centavos > 0 AND l.ignorado = 0 AND l.status IS NOT 'REMOVIDO'
-       AND COALESCE(l.categoria_id, 0) NOT IN (SELECT id FROM categorias WHERE grupo = 'transferencia')`,
-    );
+  if (q.pendentes === "1") onde.push(`l.categoria_id IS NULL AND ${SOMA}`);
+  if (q.estornos === "1") onde.push(ESTORNO);
   if (q.busca) {
     // instr e não LIKE: "%" e "_" digitados são texto, não coringa
     onde.push(`(${["descricao", "descricao_original", "notas"].map((c) => `instr(simplificar(l.${c}), ?) > 0`).join(" OR ")})`);
@@ -183,7 +181,7 @@ app.get("/api/lancamentos", async (req) => {
   }
   const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde.join(" AND ")} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
   // total de verdade: a lista para em 2000 e a tela precisa saber que foi cortada
-  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id WHERE ${onde.join(" AND ")}`).get(...vals) as { total: number };
+  const { total } = db.prepare(`SELECT COUNT(*) AS total ${LANCAMENTOS} WHERE ${onde.join(" AND ")}`).get(...vals) as { total: number };
   return { itens, total };
 });
 
@@ -259,7 +257,7 @@ app.get("/api/resumo", async (req) => {
 app.get("/api/orcamento", async (req) => {
   const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
   const gastos = gastosPorCategoria(mes, "PF");
-  const { cats, anteriores, esperada, origem } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
+  const { cats, anteriores, orcado, esperada, origem } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
   const linhas = cats
     .map((c) => ({ ...c, planejado: c.grupo === "renda" ? null : c.planejado, realizado: gastos.find((g) => g.categoria_id === c.categoria_id)?.total ?? 0 }))
     .filter((c) => c.grupo !== "renda" || c.realizado); // renda só aparece se teve saída (para o total bater com o Resumo)
@@ -276,7 +274,7 @@ app.get("/api/orcamento", async (req) => {
     sugerido: mediana(anteriores.map((t) => antes.find((e) => e.categoria_id === c.categoria_id && e.mes === t.mes)?.total ?? 0)),
   }));
   return {
-    mes, linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0,
+    mes, planejado: orcado, gasto: somar(gastos.map((g) => g.total)), linhas, sem_categoria: gastos.find((g) => g.categoria_id === null)?.total ?? 0,
     renda, renda_esperada: esperada, renda_origem: origem, entradas_sem_categoria: doMes.find((e) => e.categoria_id === null)?.total ?? 0,
   };
 });
@@ -496,6 +494,9 @@ app.delete("/api/bens/:id", async (req) => {
 
 // ---------------- categorias e regras ----------------
 
+/** Gasto, renda ou transferência: é o que decide como a categoria entra no resumo (os três grupos de gasto contam igual). */
+const tipoDoGrupo = (grupo: string) => (grupo === "renda" || grupo === "transferencia" ? grupo : "gasto");
+
 /** Com a contagem de tudo que aponta para a categoria, inclusive lançamento ignorado ou REMOVIDO. */
 const listarCategorias = () =>
   (db.prepare(
@@ -504,7 +505,7 @@ const listarCategorias = () =>
        (SELECT COUNT(*) FROM orcamentos WHERE categoria_id = c.id) AS orcamentos
      FROM categorias c ORDER BY grupo, nome`,
   ).all() as { id: number; nome: string; grupo: string; cor: string | null; lancamentos: number; regras: number; orcamentos: number }[])
-    .map((c) => ({ ...c, usos: c.lancamentos + c.regras + c.orcamentos, fixa: NOMES_FIXOS.has(c.nome) }));
+    .map((c) => ({ ...c, tipo: tipoDoGrupo(c.grupo), usos: c.lancamentos + c.regras + c.orcamentos, fixa: NOMES_FIXOS.has(c.nome) }));
 const categoriaOu404 = (id: number) => ouNaoEncontrado(listarCategorias().find((c) => c.id === id), "categoria");
 const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
 const recusarNomeFixo = (nome: string) => {
@@ -513,7 +514,7 @@ const recusarNomeFixo = (nome: string) => {
 
 app.get("/api/categorias", async () => listarCategorias());
 
-const grupos = z.enum(["essencial", "estilo_de_vida", "financeiro", "renda", "transferencia"]);
+const grupos = z.enum(GRUPOS);
 app.post("/api/categorias", async (req) => {
   const d = z.object({ nome: z.string().trim().min(1).max(40), grupo: grupos, cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }).parse(req.body);
   const r = db.prepare("INSERT INTO categorias (nome, grupo, cor) VALUES (?,?,?) RETURNING *").get(d.nome, d.grupo, d.cor ?? "#95a5a6");
@@ -542,8 +543,6 @@ app.delete("/api/categorias/:id", async (req) => {
     return { ok: true };
   });
 });
-/** Gasto, renda ou transferência: é o que decide como a categoria entra no resumo (os três grupos de gasto contam igual). */
-const tipoDoGrupo = (grupo: string) => (grupo === "renda" || grupo === "transferencia" ? grupo : "gasto");
 /**
  * Leva lançamentos (a edição manual continua manual) e regras para o destino e apaga a origem. Só entre categorias do mesmo
  * tipo, para o total do mês não mudar. O orçamento da origem é perdido (cascade): fica o do destino.
@@ -555,7 +554,7 @@ app.post("/api/categorias/:id/mesclar", async (req) => {
     const de = categoriaOu404(id), para = categoriaOu404(destino);
     if (de.id === para.id) throw conflito("escolha duas categorias diferentes");
     recusarNomeFixo(de.nome);
-    if (tipoDoGrupo(de.grupo) !== tipoDoGrupo(para.grupo)) throw conflito("só dá para mesclar categorias do mesmo tipo: gasto, renda ou transferência");
+    if (de.tipo !== para.tipo) throw conflito("só dá para mesclar categorias do mesmo tipo: gasto, renda ou transferência");
     db.prepare("UPDATE lancamentos SET categoria_id = ?, atualizado_em = datetime('now','localtime') WHERE categoria_id = ?").run(para.id, de.id);
     db.prepare("UPDATE regras SET categoria_id = ? WHERE categoria_id = ?").run(para.id, de.id);
     db.prepare("DELETE FROM categorias WHERE id = ?").run(de.id);

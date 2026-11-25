@@ -3,12 +3,12 @@
 export interface Categoria {
   id: number;
   nome: string;
-  grupo: "essencial" | "estilo_de_vida" | "financeiro" | "renda" | "transferencia";
+  grupo: keyof typeof GRUPOS;
   cor: string | null;
 }
 
-/** usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar, renomear nem mudar de grupo. */
-export type CategoriaComUsos = Categoria & { lancamentos: number; regras: number; orcamentos: number; usos: number; fixa: boolean };
+/** tipo = como entra no resumo; usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar, renomear nem mudar de grupo. */
+export type CategoriaComUsos = Categoria & { tipo: "gasto" | "renda" | "transferencia"; lancamentos: number; regras: number; orcamentos: number; usos: number; fixa: boolean };
 
 export interface Lancamento {
   id: string;
@@ -30,6 +30,8 @@ export interface Lancamento {
   notas: string | null;
   tags: string[];
   ignorado: boolean;
+  soma: boolean; // falso = ignorado ou removido pelo banco: fora de todos os totais
+  estorno: boolean; // crédito em cartão que não é pagamento de fatura nem transferência
   conta: string;
   conta_tipo: "BANK" | "CREDIT";
   pessoa: "PF" | "PJ";
@@ -159,6 +161,8 @@ export interface LinhaRenda {
 }
 export interface Orcamento {
   mes: string;
+  planejado: number; // total, sem a renda
+  gasto: number; // total, igual às saídas do Resumo
   linhas: LinhaOrcamento[]; // em categoria de renda (só aparece se teve saída), planejado é sempre nulo
   sem_categoria: number;
   renda: LinhaRenda[];
@@ -366,7 +370,7 @@ const PLUGGY_PT: Record<string, string> = {
   "Entrepreneurial activities": "Atividades empreendedoras",
 };
 export const nomePluggy = (categoria: string) => PLUGGY_PT[categoria] ?? categoria;
-export const GRUPOS: Record<Categoria["grupo"], string> = {
+export const GRUPOS = {
   essencial: "Essencial",
   estilo_de_vida: "Estilo de vida",
   financeiro: "Financeiro",

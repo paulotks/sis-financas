@@ -6,6 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { GRUPOS } from "./grupos.js";
 import { chaveDe } from "./recorrentes.js"; // função pura, sem base
 
 /** Vai em `instructions` e também na ferramenta `estado`, porque nem todo cliente mostra `instructions` ao modelo. */
@@ -60,7 +61,6 @@ const texto = (dados: unknown): CallToolResult => ({ content: [{ type: "text", t
 const falha = (mensagem: string): CallToolResult => ({ isError: true, content: [{ type: "text", text: mensagem }] });
 
 const reais = (centavos: number | null | undefined) => (centavos == null ? null : centavos / 100);
-const LIMITE_API = 2000; // GET /api/lancamentos corta aqui
 
 const pessoa = z.enum(["PF", "PJ"]).default("PF").describe("PJ (empresa) só se o Paulo pedir");
 const mes = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).describe("AAAA-MM");
@@ -256,12 +256,11 @@ export function criarServidor(base: string) {
     (a) =>
       tentar(async () => {
         const o = await ler("/api/orcamento", { mes: a.mes });
-        const planejado = o.linhas.reduce((s: number, l: any) => s + (l.planejado ?? 0), 0);
         return {
           mes: o.mes,
           renda_esperada: reais(o.renda_esperada), renda_esperada_vem_de: o.renda_esperada === null ? null : o.renda_origem,
-          planejado_total: reais(planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - planejado),
-          gasto_total: reais(o.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + o.sem_categoria),
+          planejado_total: reais(o.planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - o.planejado),
+          gasto_total: reais(o.gasto),
           gasto_sem_categoria: reais(o.sem_categoria),
           renda: o.renda.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, esperada: reais(l.planejado), sugerida: reais(l.sugerido), entrou: reais(l.recebido) })),
           entrou_sem_categoria: reais(o.entradas_sem_categoria),
@@ -297,7 +296,7 @@ export function criarServidor(base: string) {
         return {
           total,
           pular: a.pular,
-          ...(total > LIMITE_API && { aviso: `só os ${LIMITE_API} mais novos podem ser lidos; refine o filtro` }),
+          ...(total > itens.length && { aviso: `só os ${itens.length} mais novos podem ser lidos; refine o filtro` }),
           itens: itens.slice(a.pular, a.pular + a.limite).map(enxugar),
         };
       }),
@@ -332,7 +331,7 @@ export function criarServidor(base: string) {
         const grupos = agrupar(itens).sort((x, y) => (a.ordem === "valor" ? Math.abs(y.total) - Math.abs(x.total) : y.qtd - x.qtd));
         return {
           lancamentos_pendentes: total,
-          ...(total > LIMITE_API && { aviso: `agrupei só os ${LIMITE_API} mais novos; filtre por mês` }),
+          ...(total > itens.length && { aviso: `agrupei só os ${itens.length} mais novos; filtre por mês` }),
           grupos_no_total: grupos.length,
           grupos: grupos.slice(a.pular, a.pular + a.limite),
         };
@@ -490,7 +489,7 @@ export function criarServidor(base: string) {
     "criar_categoria",
     {
       description: "Cria uma categoria. Veja categorias antes: só crie se nenhuma servir.",
-      inputSchema: { nome: z.string().trim().min(1).max(40), grupo: z.enum(["essencial", "estilo_de_vida", "financeiro", "renda", "transferencia"]) },
+      inputSchema: { nome: z.string().trim().min(1).max(40), grupo: z.enum(GRUPOS) },
       annotations: ESCRITA,
     },
     (a) => tentar(() => chamar("POST", "/api/categorias", a)),

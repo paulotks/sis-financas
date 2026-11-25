@@ -70,7 +70,7 @@ export default function Lancamentos() {
 
   const itens = lista.data?.itens ?? [];
   const totais = useMemo(() => {
-    const vis = itens.filter((l) => !l.ignorado && l.status !== "REMOVIDO");
+    const vis = itens.filter((l) => l.soma);
     return {
       entradas: vis.filter((l) => l.valor_centavos > 0).reduce((s, l) => s + l.valor_centavos, 0),
       saidas: vis.filter((l) => l.valor_centavos < 0).reduce((s, l) => s - l.valor_centavos, 0),
@@ -203,9 +203,6 @@ export default function Lancamentos() {
   );
 }
 
-const ehEstorno = (l: Lancamento) =>
-  l.conta_tipo === "CREDIT" && l.valor_centavos > 0 && l.categoria_grupo !== "transferencia" && !l.ignorado && l.status !== "REMOVIDO";
-
 function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
   l: Lancamento;
   aberto: boolean;
@@ -222,7 +219,7 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
   };
 
   return (
-    <tr className={l.ignorado || l.status === "REMOVIDO" ? "ignorado" : l.categoria_id === null ? "pendente" : ""}>
+    <tr className={!l.soma ? "ignorado" : l.categoria_id === null ? "pendente" : ""}>
       <td className="mudo">{dataCurta(l.data)}</td>
       <td>
         <input
@@ -240,7 +237,7 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
           {l.total_parcelas && l.total_parcelas > 1 && <span className="selo">{l.parcela}/{l.total_parcelas}</span>}
           {l.status === "PENDING" && <span className="selo">pendente no banco</span>}
           {l.status === "REMOVIDO" && <span className="selo" title="O banco não devolve mais este lançamento; não entra no resumo">removido pelo banco</span>}
-          {ehEstorno(l) && <button className="link" aria-expanded={aberto} onClick={onEstorno}>De qual compra?</button>}
+          {l.estorno && <button className="link" aria-expanded={aberto} onClick={onEstorno}>De qual compra?</button>}
         </div>
       </td>
       <td className="mudo">{l.conta}</td>

@@ -553,6 +553,7 @@ test("orçamento e Resumo contam o mesmo: sem removido, ignorado, transferência
   assert.equal(o.linhas.find((l: any) => l.categoria_id === MERCADO).realizado, 10500);
   assert.equal(o.sem_categoria, 700);
   assert.equal(o.linhas.reduce((s: number, l: any) => s + l.realizado, 0) + o.sem_categoria, r.saidas);
+  assert.equal(o.gasto, r.saidas);
   assert.ok(!o.linhas.some((l: any) => ["transferencia", "renda"].includes(l.grupo)));
 });
 
@@ -635,6 +636,11 @@ test("mesclar categoria: leva lançamentos e regras, mantém a edição manual, 
   assert.ok(!(await chamar("GET", "/api/categorias")).d.some((c: any) => c.id === de));
   const linha = (await chamar("GET", "/api/orcamento?mes=2018-02")).d.linhas.find((l: any) => l.categoria_id === para);
   assert.deepEqual([linha.planejado, linha.realizado], [222, 1150]);
+  assert.equal((await chamar("GET", "/api/orcamento?mes=2018-02")).d.planejado, 222);
+  assert.deepEqual(
+    Object.fromEntries((await chamar("GET", "/api/categorias")).d.map((c: any) => [c.grupo, c.tipo])),
+    { essencial: "gasto", estilo_de_vida: "gasto", financeiro: "gasto", renda: "renda", transferencia: "transferencia" },
+  );
   await chamar("DELETE", `/api/regras/${regra}`);
 });
 
@@ -1071,6 +1077,9 @@ test("estorno: o filtro acha só os créditos de cartão e as compras candidatas
   por("pix", banco, "2015-06-30", 5000, 11, "Pix recebido");
   const filtrados = async (q: string) => { const { itens, total } = (await chamar("GET", `/api/lancamentos?estornos=1${q}`)).d; assert.equal(total, itens.length); return itens.map((l: any) => l.id); };
   assert.deepEqual(await filtrados("&mes=2015-06"), ["est", "est-sem"]);
+  const marcas = (await chamar("GET", "/api/lancamentos?mes=2015-06")).d.itens as { id: string; soma: boolean; estorno: boolean }[];
+  assert.deepEqual(marcas.filter((l) => l.estorno).map((l) => l.id), ["est", "est-sem"]); // a tela e o filtro usam a mesma regra
+  assert.deepEqual(marcas.filter((l) => !l.soma).map((l) => l.id).sort(), ["est-ign", "est-rem"]);
   assert.ok((await filtrados("")).includes("est")); // sem mês = todos
 
   por("parcial-velha", cartao, "2015-03-10", -9000, 10, "Loja Azul");
