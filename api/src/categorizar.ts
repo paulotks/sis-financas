@@ -1,3 +1,4 @@
+import { ADAPTADORES, type Linha, type Movimento } from "./adaptadores.js";
 import { db } from "./db.js";
 
 /** Onde a regra vale. Sentido nulo = entrada e saída; conta nula = todas. */
@@ -10,13 +11,6 @@ interface Regra extends Alcance {
   id: number;
   categoria_id: number;
   descricao: string | null;
-}
-/** O que decide a categoria de um lançamento. */
-interface Movimento {
-  descricao_original: string | null;
-  categoria_pluggy?: string | null;
-  valor_centavos: number;
-  conta_id: string;
 }
 
 /** Categoria da Pluggy (em inglês) -> nossa categoria. Primeiro termo que aparecer vence. */
@@ -98,15 +92,7 @@ const MAPA_PLUGGY: [string, string][] = [
   ["investment", "Investimentos"],
 ];
 
-/**
- * Movimento interno que vem em par (+X e -X). A Pluggy dá categorias diferentes às duas pernas (Internal, Investments,
- * Salary, Clothing…), então aqui vale a descrição: ou as duas saem do resumo, ou nenhuma.
- * "Valor adicionado" (Pix no crédito do Nubank) tem três pernas e depende das outras duas: ver pixNoCredito.
- */
-const INTERNOS: [RegExp, string][] = [
-  [/^dinheiro (reservado|retirado)\b/, "Transferência entre contas"], // cofrinhos do Mercado Pago
-  [/^débito automático (fatura|total)\b/, "Pagamento de fatura"], // fatura do Mercado Pago: perna da conta e perna do cartão
-];
+const INTERNOS = Object.values(ADAPTADORES).flatMap((a) => a.internos ?? []);
 
 /** Categorias que o código acha pelo nome: apagar ou renomear uma faria o mapa devolver "sem categoria"; mudar o grupo, os totais. */
 export const NOMES_FIXOS = new Set([...MAPA_PLUGGY, ...INTERNOS].map(([, nome]) => nome));
@@ -181,59 +167,6 @@ export function contarParecidos(alcance: Alcance) {
   };
 }
 
-interface Linha extends Movimento {
-  id: string;
-  categoria_id: number | null;
-  regra_id: number | null;
-  categoria_manual: number;
-  ignorado: number;
-  status: string | null;
-  parcela: number | null;
-  total_parcelas: number | null;
-  conta_tipo: string | null;
-  item_id: string;
-  pessoa: string;
-  oculta: number;
-  momento: string; // com hora; nas parcelas é a data da compra, igual em todas
-}
-
-/**
- * Pix no crédito do Nubank: (1) +X entra na conta, (2) o Pix de −X sai dela e (3) o cartão cobra X mais a tarifa. O gasto é a (3), então
- * (1) e (2) saem do resumo, sempre juntas, e a (3) sem categoria própria herda a que a (2) teria. Vale acima das regras.
- * Devolve só o que muda. Não mexe se falta a (3) ou se alguma perna já está fora do resumo: assim nunca muda o resultado do mês.
- * ponytail: as pernas são casadas pelo horário (1 s entre elas nos dados reais); se o banco parar de mandar a hora, vale a 1ª do mesmo dia.
- */
-function pixNoCredito(linhas: Linha[], categoriaDe: (l: Linha) => number | null) {
-  const trocas = new Map<string, number | null>();
-  const transferencias = new Set((db.prepare("SELECT id FROM categorias WHERE grupo = 'transferencia'").all() as { id: number }[]).map((c) => c.id));
-  const fora = (l: Linha) => l.ignorado === 1 || transferencias.has(categoriaDe(l) ?? 0);
-  const vivas = linhas.filter((l) => l.status !== "REMOVIDO");
-  const usadas = new Set<string>();
-  const maisPerto = (a: Linha, minutos: number, serve: (l: Linha) => boolean) => {
-    const distancia = (l: Linha) => Math.abs(Date.parse(l.momento) - Date.parse(a.momento));
-    const achada = vivas
-      .filter((l) => !usadas.has(l.id) && serve(l) && distancia(l) <= minutos * 60_000)
-      .sort((x, y) => distancia(x) - distancia(y))[0];
-    if (achada) usadas.add(achada.id);
-    return achada;
-  };
-  const entradas = vivas.filter((l) => l.conta_tipo === "BANK" && l.valor_centavos > 0 && /^valor adicionado na conta por cartão de crédito/i.test(l.descricao_original ?? ""));
-  for (const entrou of entradas.sort((a, b) => (a.momento < b.momento ? -1 : 1))) {
-    const saiu = maisPerto(entrou, 1, (l) => l.conta_id === entrou.conta_id && l.valor_centavos === -entrou.valor_centavos);
-    const cobranca = maisPerto(entrou, 15, (l) => {
-      const tarifa = (-l.valor_centavos * (l.total_parcelas || 1)) / entrou.valor_centavos; // 1 = sem tarifa
-      return l.conta_tipo === "CREDIT" && l.item_id === entrou.item_id && l.pessoa === entrou.pessoa && !l.oculta && (l.parcela ?? 1) === 1 && tarifa >= 1 && tarifa <= 1.5;
-    });
-    if (!saiu || !cobranca || entrou.categoria_manual || saiu.categoria_manual || entrou.ignorado || fora(saiu) || fora(cobranca)) continue;
-    const transferencia = categoriaPorNome("Transferência entre contas");
-    trocas.set(entrou.id, transferencia).set(saiu.id, transferencia);
-    const parcelas = vivas.filter((l) =>
-      l === cobranca || (cobranca.total_parcelas! > 1 && l.conta_id === cobranca.conta_id && l.momento === cobranca.momento && l.total_parcelas === cobranca.total_parcelas));
-    for (const l of parcelas) if (!l.categoria_manual && categoriaDe(l) === null) trocas.set(l.id, categoriaDe(saiu));
-  }
-  return trocas;
-}
-
 /** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
 export function reaplicarRegras(): number {
   const regras = carregarRegras();
@@ -248,7 +181,12 @@ export function reaplicarRegras(): number {
   const alvo = linhas.filter((l) => !l.categoria_manual);
   const sugestoes = new Map(alvo.map((l) => [l.id, sugerirCategoria(l, regras)]));
   // antes de comparar com o gravado, e não num passo depois: senão as pernas iriam e voltariam a cada vez, inflando a contagem
-  const trocas = pixNoCredito(linhas, (l) => (l.categoria_manual ? l.categoria_id : sugestoes.get(l.id)!.categoria_id));
+  const contexto = {
+    categoriaDe: (l: Linha) => (l.categoria_manual ? l.categoria_id : sugestoes.get(l.id)!.categoria_id),
+    foraDoResumo: new Set((db.prepare("SELECT id FROM categorias WHERE grupo = 'transferencia'").all() as { id: number }[]).map((c) => c.id)),
+    categoriaPorNome,
+  };
+  const trocas = new Map(Object.values(ADAPTADORES).flatMap((a) => [...(a.trocas?.(linhas, contexto) ?? [])]));
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
   let n = 0;
   for (const l of alvo) {
