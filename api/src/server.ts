@@ -4,7 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
 import { copiaDoDia, db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
-import { previstas } from "./faltas.js";
+import { faltasDosCartoes, previstas } from "./faltas.js";
 import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
@@ -93,16 +93,19 @@ app.get("/api/sync/historico", async () =>
 
 // ---------------- contas ----------------
 
-app.get("/api/contas", async () => ({
-  contas: db.prepare(
-    `SELECT ct.*, cx.conector, cx.imagem_url, cx.ultimo_sync
-     FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id
-     ORDER BY ct.pessoa, ct.tipo, COALESCE(ct.apelido, ct.nome)`,
-  ).all(),
-  investimentos: db.prepare(
-    `SELECT i.*, cx.conector FROM (${INVESTIMENTOS}) i JOIN conexoes cx ON cx.item_id = i.item_id ORDER BY i.nome`,
-  ).all(),
-}));
+app.get("/api/contas", async () => {
+  const faltas = faltasDosCartoes(diaDeHoje());
+  return {
+    contas: (db.prepare(
+      `SELECT ct.*, cx.conector, cx.imagem_url, cx.ultimo_sync
+       FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id
+       ORDER BY ct.pessoa, ct.tipo, COALESCE(ct.apelido, ct.nome)`,
+    ).all() as { id: string }[]).map((c) => ({ ...c, faltas: faltas.get(c.id) ?? null })),
+    investimentos: db.prepare(
+      `SELECT i.*, cx.conector FROM (${INVESTIMENTOS}) i JOIN conexoes cx ON cx.item_id = i.item_id ORDER BY i.nome`,
+    ).all(),
+  };
+});
 
 app.patch("/api/contas/:id", async (req) => {
   const { id } = z.object({ id: uuid }).parse(req.params);

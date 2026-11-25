@@ -26,6 +26,9 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
   veio); recorrentes são prováveis (podem ter falso positivo). Diga o que é previsto: só o lançado é certo.
+- Dado que o banco não mandou (em contas, por cartão): faturas_que_nao_fecham (falta = total da fatura menos os lançamentos dela; negativa =
+  lançamentos a mais) e faturas_que_nao_vieram (há o pagamento, mas não a fatura nem as compras). O gasto daqueles meses está menor que o
+  real: diga isso antes de concluir algo deles. É aviso: não some em nada nem peça para lançar.
 - Recorrentes: uma linha por cobrança (o mesmo lugar pode ter várias). Sugestão e confirmada contam no alarme; ignorada ("não é recorrente"),
   cancelada ("cancelei") e parada, não. "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
   na tela Recorrentes, então diga isso a ele. Só proponha cancelada se ele disser que cancelou. "cobrou_depois" = cobraram depois de
@@ -395,7 +398,7 @@ export function criarServidor(base: string) {
 
   servidor.registerTool(
     "contas",
-    { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado.", inputSchema: { pessoa }, annotations: LEITURA },
+    { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado, e vêm também as faturas com lançamento faltando.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
         const { contas, investimentos } = await ler<{ contas: any[]; investimentos: any[] }>("/api/contas");
@@ -406,6 +409,10 @@ export function criarServidor(base: string) {
             limite: reais(c.limite_centavos), limite_disponivel: reais(c.limite_disponivel_centavos),
             fechamento: c.fechamento, vencimento: c.vencimento, oculta: !!c.oculta, saldo_lido_em: c.atualizado_em, ultimo_sync: c.ultimo_sync,
             usa_cofrinho: c.usa_reservas === null ? null : !!c.usa_reservas,
+            ...(c.faltas && {
+              faturas_que_nao_fecham: c.faltas.faturas.map((f: any) => ({ vencimento_de: f.de, vencimento_ate: f.ate, faturas: f.qtd, falta_em_cada: reais(f.diferenca) })),
+              faturas_que_nao_vieram: c.faltas.sem_fatura.map((p: any) => ({ pagamento_em: p.data, valor_pago: reais(p.valor) })),
+            }),
           })),
           investimentos: investimentos.filter((i) => i.pessoa === a.pessoa && !(i.tipo === "RESERVA" && !i.saldo_centavos)).map((i) => ({
             nome: i.nome, tipo: i.tipo, subtipo: i.subtipo, saldo: reais(i.saldo_centavos), conta: i.conta,

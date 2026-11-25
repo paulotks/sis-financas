@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, porTipo, type Conta } from "../lib/api";
+import { api, dataCurta, dinheiro, mesCurto, porTipo, type Conta, type Faltas } from "../lib/api";
 import Patrimonio from "../components/Patrimonio";
 
 export default function Contas() {
@@ -91,6 +91,34 @@ export default function Contas() {
   );
 }
 
+/** Fechado: são meses passados, e o que o banco não mandou não volta. */
+function FaturasComFalta({ f }: { f: Faltas }) {
+  const n = f.faturas.reduce((s, l) => s + l.qtd, f.sem_fatura.length);
+  if (!n) return null;
+  const falta = f.sem_fatura.length > 0 || f.faturas.some((l) => l.diferenca > 0);
+  const mes = (dia: string) => mesCurto(dia.slice(0, 7));
+  return (
+    <details className="faltas">
+      <summary className="alerta">⚠ {n === 1 ? "1 fatura não bate" : `${n} faturas não batem`} com os lançamentos</summary>
+      <ul>
+        {f.faturas.map((l) => (
+          <li key={l.de}>
+            {l.qtd === 1 ? `Fatura de ${mes(l.de)}` : `Faturas de ${mes(l.de)} a ${mes(l.ate)}`}:{" "}
+            {l.diferenca > 0 ? <>faltam <b>{dinheiro(l.diferenca)}</b></> : <>os lançamentos passam <b>{dinheiro(-l.diferenca)}</b> do total</>}
+            {l.qtd > 1 && " em cada (costuma ser uma parcela que o banco não mandou)"}.
+          </li>
+        ))}
+        {f.sem_fatura.map((p) => (
+          <li key={p.data}>Pagamento de <b>{dinheiro(p.valor)}</b> em {dataCurta(p.data)}: a fatura e as compras dela não vieram.</li>
+        ))}
+      </ul>
+      <p className="mudo">
+        Faturas pelo mês do vencimento.{falta && " O que falta não foi mandado pelo banco: o gasto daqueles meses é maior que o mostrado."}
+      </p>
+    </details>
+  );
+}
+
 function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; onEditar: (d: Parameters<typeof api.editarConta>[1]) => void }) {
   const atual = c.apelido ?? c.nome ?? "";
   const [apelido, setApelido] = useState(atual);
@@ -133,6 +161,7 @@ function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; 
             Limite {dinheiro(c.limite_centavos)} · disponível {dinheiro(c.limite_disponivel_centavos)}
             {c.vencimento && ` · vence ${dataCurta(c.vencimento)}`}
           </small>
+          {c.faltas && <FaturasComFalta f={c.faltas} />}
         </>
       )}
       {(reservado !== 0 || c.usa_reservas !== null) && (

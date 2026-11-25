@@ -28,13 +28,14 @@ pagamento dele). Peça nova: **não vale para banco nulo**.
 
 > diferença = total traduzido (67) − soma de (−valor) dos lançamentos da fatura, sem `REMOVIDO` e sem a categoria Pagamento de fatura
 
-Ignorado entra: continua na fatura. Tolerância de R$ 1. Só por cartão, em Contas e no MCP.
+Ignorado entra: continua na fatura. Até R$ 1 é arredondamento; "mesmo valor", abaixo, é com folga de 5 centavos. Só por cartão, em Contas e no MCP.
 
 Não é falta:
 - fatura que ainda não venceu (os lançamentos podem estar chegando) ou vencida há mais de um ano;
-- fatura que abriu antes do primeiro lançamento do cartão: as compras são de antes do que temos. Abertura = fechamento da anterior; a primeira nunca é conferida.
+- fatura que abriu antes do primeiro lançamento ligado a uma fatura: as compras são de antes do que temos, ou o banco nunca faz a ligação. Abertura = fechamento da anterior; a primeira nunca é conferida.
   Sem a data de fechamento, 10 dias antes do vencimento;
-- diferença igual a um crédito do cartão: positiva, com o crédito dentro da fatura (o banco o usou no pagamento da anterior); negativa, com o crédito fora dela;
+- diferença igual a um crédito do cartão: positiva, com o crédito dentro da fatura (o banco o usou no pagamento da anterior); negativa, com o crédito fora dela,
+  mas do mesmo período;
 - total nulo.
 
 Faturas seguidas com a mesma diferença viram um aviso só: costuma ser uma parcela que o banco não manda.

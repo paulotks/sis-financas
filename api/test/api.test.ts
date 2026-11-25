@@ -70,7 +70,7 @@ const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.j
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
 const { totalDaFatura } = await import("../src/adaptadores.js");
-const { parcelasPrevistas } = await import("../src/faltas.js");
+const { faturasQueNaoFecham, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
 const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
@@ -1660,6 +1660,92 @@ test("parcelas previstas: em série à parte, sem mexer em total nenhum, e só d
     assert.deepEqual((await ver()).previstas, nada, JSON.stringify(extra));
     tirar();
   }
+});
+
+// faturas mensais (fecham dia 3, vencem dia 12), uma compra de R$ 100 em cada; a primeira é a do começo do histórico
+const faturaDe = (m: number, extra: object = {}) => ({ id: `f${m}`, vencimento: `2031-0${m}-12`, fechamento: `2031-0${m}-03`, total: 10000 as number | null, ...extra });
+const compraDe = (m: number, extra: object = {}) => ({ data: `2031-0${m - 1}-15`, valor: -10000, fatura_id: `f${m}` as string | null, pagamento: 0, ...extra });
+const MESES_FATURA = [2, 3, 4, 5, 6, 7];
+
+test("fatura que não fecha: acusa o que falta e o que sobra, junta as seguidas, e cada falso positivo conhecido fica de fora", () => {
+  const faturas = MESES_FATURA.map((m) => faturaDe(m)), compras = MESES_FATURA.map((m) => compraDe(m));
+  type F = typeof faturas; type L = typeof compras;
+  const ver = (fs: F, ls: L, banco: string | null = "999", hoje = "2031-07-20") =>
+    faturasQueNaoFecham(banco, fs, ls, hoje).map((l) => [l.de.slice(5, 7), l.ate.slice(5, 7), l.qtd, l.diferenca]);
+  const com = (m: number, extra: object) => faturas.map((f) => (f.id === `f${m}` ? { ...f, ...extra } : f));
+  assert.deepEqual(ver(faturas, compras), []);
+
+  assert.deepEqual(ver(com(5, { total: 13000 }), compras), [["05", "05", 1, 3000]]);
+  assert.deepEqual(ver(com(5, { total: 9000 }), compras), [["05", "05", 1, -1000]]);
+  assert.deepEqual(ver(faturas, compras.filter((l) => l.fatura_id !== "f5")), [["05", "05", 1, 10000]]); // nenhuma compra dela veio
+  // parcela que falta em faturas seguidas é um aviso (um centavo não separa); depois de uma que fecha, ou com outra diferença, é outro
+  const varias = faturas.map((f) => ({ ...f, total: ({ f3: 12000, f4: 12001, f6: 12000, f7: 15000 } as Record<string, number>)[f.id] ?? 10000 }));
+  assert.deepEqual(ver(varias, compras), [["03", "04", 2, 2000], ["06", "06", 1, 2000], ["07", "07", 1, 5000]]);
+
+  // falsos positivos
+  assert.deepEqual(ver(com(5, { total: 10100 }), compras), []); // arredondamento
+  assert.deepEqual(ver(com(5, { total: null }), compras), []);
+  assert.deepEqual(ver(com(2, { total: 99999 }), compras), []); // a primeira: tem compras de antes do histórico
+  const semF2 = compras.filter((l) => l.fatura_id !== "f2").map((l) => (l.fatura_id === "f3" ? { ...l, data: "2031-02-20" } : l));
+  assert.deepEqual(ver(com(3, { total: 99999 }), semF2), []); // abriu antes do 1º lançamento
+  assert.deepEqual(ver(com(7, { total: 99999 }), compras, "999", "2031-07-12"), []); // não venceu: ainda pode chegar
+  assert.equal(ver(com(7, { total: 99999 }), compras, "999", "2031-07-13").length, 1);
+  assert.deepEqual(ver(com(3, { total: 99999 }), compras, "999", "2032-03-20"), []); // velha demais
+  assert.deepEqual(ver(com(5, { total: 99999 }), compras.map((l) => ({ ...l, fatura_id: null }))), []); // banco que não liga lançamento à fatura
+  assert.deepEqual(ver(faturas, [...compras, { data: "2031-05-12", valor: 10000, fatura_id: "f5", pagamento: 1 }]), []); // pagamento não é compra
+  const credito = (extra: object = {}) => [...compras, { data: "2031-04-20", valor: 3001, fatura_id: "f5", pagamento: 0, ...extra }] as L;
+  assert.deepEqual(ver(faturas, credito()), []); // está na soma, mas o banco o abateu da anterior
+  assert.equal(ver(com(5, { total: 13500 }), credito()).length, 1); // crédito de outro valor não explica
+  assert.deepEqual(ver(com(5, { total: 7000 }), credito({ fatura_id: null })), []); // está no total, mas fora da fatura
+  assert.equal(ver(com(5, { total: 7000 }), credito({ fatura_id: null, data: "2031-02-20" })).length, 1); // de outro período
+
+  // total que carrega a anterior: não paga (o total dobra) e paga em parte, só no banco que faz isso
+  const anterior = (pagou: number) => [
+    ...compras, { data: "2031-04-03", valor: -10000, fatura_id: "f5", pagamento: 1 }, { data: "2031-04-12", valor: pagou, fatura_id: "f5", pagamento: 1 },
+  ] as L;
+  assert.deepEqual(ver(com(5, { total: 20000 }), anterior(0), "104"), []);
+  assert.deepEqual(ver(com(5, { total: 14000 }), anterior(6000), "104"), []);
+  assert.deepEqual(ver(com(5, { total: 23000 }), anterior(0), "104"), [["05", "05", 1, 3000]]);
+  for (const banco of ["999", null]) assert.equal(ver(com(5, { total: 20000 }), anterior(0), banco).length, 1);
+});
+
+test("fatura que não veio: só o pagamento sem vencimento por perto nem fatura com aquele total", () => {
+  const faturas = MESES_FATURA.filter((m) => m !== 5).map((m) => faturaDe(m)); // a de maio não veio
+  const ver = (data: string, extra: object = {}, fs = faturas, hoje = "2031-07-20") =>
+    pagamentosSemFatura(fs, [{ data, valor: 8000, fatura_id: null, pagamento: 1, ...extra }], hoje);
+  assert.deepEqual(ver("2031-05-12"), [{ data: "2031-05-12", valor: 8000 }]);
+  assert.deepEqual(ver("2031-05-03", { valor: 10000 }), []); // paga com atraso
+  const completa = MESES_FATURA.map((m) => faturaDe(m));
+  for (const m of MESES_FATURA) for (const d of ["01", "08", "15", "23", "28"]) assert.deepEqual(ver(`2031-0${m}-${d}`, {}, completa), []); // em qualquer dia
+  for (const extra of [{ pagamento: 0 }, { valor: -8000 }]) assert.deepEqual(ver("2031-05-12", extra), []); // estorno; total da anterior
+  assert.deepEqual(ver("2031-05-12", {}, []), []); // cartão sem faturas
+  assert.deepEqual(ver("2031-01-12"), []); // antes da primeira
+  assert.deepEqual(ver("2031-08-12", {}, faturas, "2031-08-16"), []); // recente: a fatura ainda pode chegar
+  assert.equal(ver("2031-08-12", {}, faturas, "2031-08-23").length, 1);
+  assert.deepEqual(ver("2031-05-12", {}, faturas, "2032-05-24"), []); // velho demais
+});
+
+test("avisos de fatura: em contas e no MCP, só em cartão; removido não conta e ignorado conta", async () => {
+  const cartao = novaConta("CREDIT"), PAGAMENTO = 20;
+  const fatura = (id: string, d: number, total: number, bruto: object = {}) =>
+    db.prepare("INSERT INTO faturas (id, conta_id, vencimento, total_centavos, bruto) VALUES (?,?,?,?,?)").run(id, cartao, dia(d), total, JSON.stringify(bruto));
+  fatura("a1", -110, 5000, { billClosingDate: `${dia(-117)}T00:00:00.000Z` });
+  fatura("a2", -20, 10000); // sem a data de fechamento
+  novoLanc(cartao, dia(-120), -5000, MERCADO, { fatura_id: "a1" });
+  novoLanc(cartao, dia(-40), -4000, MERCADO, { fatura_id: "a2", ignorado: 1 });
+  novoLanc(cartao, dia(-40), -3000, MERCADO, { fatura_id: "a2", status: "REMOVIDO" });
+  novoLanc(cartao, dia(-65), 7500, PAGAMENTO, { fatura_id: "a2" }); // entre as duas: a do meio não veio
+  const { contas } = (await chamar("GET", "/api/contas")).d;
+  const { faturas, sem_fatura } = contas.find((c: any) => c.id === cartao).faltas;
+  assert.deepEqual([faturas, sem_fatura], [[{ de: dia(-20), ate: dia(-20), qtd: 1, diferenca: 6000 }], [{ data: dia(-65), valor: 7500 }]]);
+  assert.ok(contas.every((c: any) => (c.tipo === "CREDIT") === (c.faltas !== null)));
+  const { cliente, usar } = await ligarMcp();
+  const pelo = (await usar("contas")).contas.find((c: any) => c.id === cartao);
+  assert.deepEqual([pelo.faturas_que_nao_fecham, pelo.faturas_que_nao_vieram],
+    [[{ vencimento_de: dia(-20), vencimento_ate: dia(-20), faturas: 1, falta_em_cada: 60 }], [{ pagamento_em: dia(-65), valor_pago: 75 }]]);
+  await cliente.close();
+  db.prepare("DELETE FROM faturas WHERE conta_id = ?").run(cartao);
+  db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(cartao);
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

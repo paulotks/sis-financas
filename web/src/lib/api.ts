@@ -53,6 +53,13 @@ export interface Conta {
   conector: string | null;
   imagem_url: string | null;
   ultimo_sync: string | null;
+  faltas: Faltas | null; // só cartão
+}
+
+/** O que o banco não mandou de um cartão. É aviso: não soma em nada. */
+export interface Faltas {
+  faturas: { de: string; ate: string; qtd: number; diferenca: number }[]; // vencimentos seguidos com a mesma diferença; positiva = falta lançamento
+  sem_fatura: { data: string; valor: number }[]; // pagamento cuja fatura não veio
 }
 
 /** Contas e cartões separados, sem grupo vazio. */

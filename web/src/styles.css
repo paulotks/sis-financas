@@ -195,6 +195,10 @@ code { font-size: 12px; color: #b9b9c6; }
 .evolucao .dica { position: absolute; bottom: 100%; padding: 4px 8px; border-radius: 6px; background: var(--painel-2); color: var(--mudo); font-size: 12px; white-space: nowrap; pointer-events: none; }
 .evolucao .dica strong { color: var(--texto); }
 .evolucao figcaption { display: flex; justify-content: space-between; font-size: 11px; }
+.faltas { font-size: 12px; }
+.faltas summary { cursor: pointer; }
+.faltas ul { margin: 8px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.faltas p { margin: 0; }
 .patrimonio details { margin-block: 14px; }
 .patrimonio details .tabela { min-width: 0; }
 .bens { list-style: none; margin: 10px 0; padding: 0; }

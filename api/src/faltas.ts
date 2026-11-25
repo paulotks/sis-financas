@@ -1,6 +1,7 @@
 /**
  * O que o banco não mandou (regras em docs/specs/avisos.md). É aviso: nada daqui soma em gasto, projeção, nível, orçamento ou patrimônio.
  */
+import { totalDaFatura } from "./adaptadores.js";
 import { db } from "./db.js";
 import { somarMes } from "./ritmo.js";
 
@@ -65,3 +66,88 @@ export const previstas = (hoje: string) =>
     ).all(hoje) as unknown as Parcela[],
     hoje,
   );
+
+// ---------------- faturas (só comparam; quem lê a base é faltasDosCartoes) ----------------
+
+const RUIDO = 100; // diferença de até R$ 1 é arredondamento
+const IGUAL = 5; // mesmo valor, a menos dos centavos que se somam numa fatura cheia de parcelas
+const DIAS_DE_HISTORICO = 365;
+const DIAS_DO_PAGAMENTO = 16; // numa série mensal completa, todo dia está a até 16 de um vencimento
+const DIAS_ATE_A_FATURA = 10; // o pagamento pode chegar antes da linha da fatura
+
+const menosDias = (data: string, n: number) => new Date(Date.parse(data) - n * 86_400_000).toISOString().slice(0, 10);
+const soma = (ns: number[]) => ns.reduce((s, n) => s + n, 0);
+const iguais = (a: number, b: number) => Math.abs(a - b) <= IGUAL;
+
+export interface Fatura {
+  id: string;
+  vencimento: string;
+  fechamento: string;
+  total: number | null;
+}
+/** Lançamento de cartão; pagamento = tem a categoria Pagamento de fatura. */
+export interface Lancado {
+  data: string;
+  valor: number; // com sinal
+  fatura_id: string | null;
+  pagamento: number;
+}
+
+/**
+ * Total da fatura contra a soma dos lançamentos dela; as seguidas com a mesma diferença viram uma linha (costuma ser uma parcela que o banco
+ * não manda). Positiva = falta lançamento. Só entra fatura vencida e que abriu depois do primeiro lançamento ligado a uma fatura.
+ * O que não é falta: crédito que o banco abateu do pagamento da fatura anterior (está na soma, não no total) ou que ficou fora da fatura.
+ */
+export function faturasQueNaoFecham(banco: string | null, faturas: Fatura[], lancados: Lancado[], hoje: string) {
+  const primeiro = lancados.reduce((m, l) => (l.fatura_id && l.data < m ? l.data : m), "9999"); // banco que nunca liga à fatura: nada a conferir
+  const linhas: { de: string; ate: string; qtd: number; diferenca: number; i: number }[] = [];
+  faturas.forEach((f, i) => {
+    const abertura = faturas[i - 1]?.fechamento;
+    if (!abertura || abertura < primeiro || f.total === null || f.vencimento >= hoje || f.vencimento < menosDias(hoje, DIAS_DE_HISTORICO)) return;
+    const dela = lancados.filter((l) => l.fatura_id === f.id);
+    const pagamentos = soma(dela.filter((l) => l.pagamento).map((l) => l.valor));
+    const diferenca = totalDaFatura(banco, f.total, pagamentos) + soma(dela.filter((l) => !l.pagamento).map((l) => l.valor));
+    if (Math.abs(diferenca) <= RUIDO) return;
+    const explicada = lancados.some((l) =>
+      l.valor > 0 && !l.pagamento && iguais(l.valor, Math.abs(diferenca)) &&
+      (diferenca > 0 ? l.fatura_id === f.id : l.fatura_id !== f.id && l.data > abertura && l.data <= f.vencimento));
+    if (explicada) return;
+    const antes = linhas.at(-1);
+    if (antes && antes.i === i - 1 && iguais(antes.diferenca, diferenca)) Object.assign(antes, { ate: f.vencimento, qtd: antes.qtd + 1, i });
+    else linhas.push({ de: f.vencimento, ate: f.vencimento, qtd: 1, diferenca, i });
+  });
+  return linhas.map(({ i, ...l }) => l);
+}
+
+/** Pagamento recebido no cartão sem fatura que o explique: ela e as compras dela não vieram. */
+export const pagamentosSemFatura = (faturas: Fatura[], lancados: Lancado[], hoje: string) =>
+  lancados
+    .filter((l) =>
+      l.pagamento && l.valor > 0 && faturas.length > 0 && l.data > faturas[0].vencimento &&
+      l.data >= menosDias(hoje, DIAS_DE_HISTORICO) && l.data <= menosDias(hoje, DIAS_ATE_A_FATURA) &&
+      !faturas.some((f) => {
+        const distancia = Math.abs(dias(f.vencimento, l.data));
+        return distancia <= DIAS_DO_PAGAMENTO || (f.total !== null && iguais(f.total, l.valor) && distancia <= 45); // paga com atraso
+      }))
+    .map(({ data, valor }) => ({ data, valor }));
+
+/** Por cartão. Lançamento ignorado conta: continua na fatura e no limite. */
+export function faltasDosCartoes(hoje: string) {
+  type DaConta<T> = T & { conta_id: string };
+  const cartoes = db.prepare("SELECT ct.id, cx.banco FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id WHERE ct.tipo = 'CREDIT'").all() as {
+    id: string; banco: string | null;
+  }[];
+  const faturas = db.prepare(
+    `SELECT id, conta_id, vencimento, total_centavos AS total, COALESCE(substr(json_extract(bruto, '$.billClosingDate'), 1, 10), date(vencimento, '-10 days')) AS fechamento
+     FROM faturas WHERE vencimento IS NOT NULL ORDER BY vencimento`,
+  ).all() as unknown as DaConta<Fatura>[];
+  const lancados = db.prepare(
+    `SELECT l.conta_id, l.data, l.valor_centavos AS valor, l.fatura_id, cat.nome IS 'Pagamento de fatura' AS pagamento
+     FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
+     WHERE ct.tipo = 'CREDIT' AND l.status IS NOT 'REMOVIDO'`,
+  ).all() as unknown as DaConta<Lancado>[];
+  return new Map(cartoes.map((c) => {
+    const minhas = faturas.filter((f) => f.conta_id === c.id), meus = lancados.filter((l) => l.conta_id === c.id);
+    return [c.id, { faturas: faturasQueNaoFecham(c.banco, minhas, meus, hoje), sem_fatura: pagamentosSemFatura(minhas, meus, hoje) }];
+  }));
+}
