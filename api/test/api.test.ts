@@ -661,6 +661,13 @@ test("ao subir, as regras são reaplicadas por inteiro ou nada", () => {
   m.close();
 });
 
+test("contar usos de categoria e de regra não varre todos os lançamentos", () => {
+  for (const coluna of ["categoria_id", "regra_id"]) {
+    const plano = db.prepare(`EXPLAIN QUERY PLAN SELECT COUNT(*) FROM lancamentos WHERE ${coluna} = 1`).all() as { detail: string }[];
+    assert.match(plano[0].detail, new RegExp(`^SEARCH lancamentos USING COVERING INDEX .*${coluna}=`));
+  }
+});
+
 test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da conta saem juntas e o resultado do mês não muda", async () => {
   const conta = novaConta("BANK"), cartao = novaConta("CREDIT"), oculto = novaConta("CREDIT", { oculta: 1 }), outroBanco = novaConta("CREDIT", { item: ITEM2 });
   let n = 0;

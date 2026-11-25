@@ -214,6 +214,11 @@ export const MIGRACOES: string[] = [
   DROP TABLE recorrencias;
   ALTER TABLE recorrencias_nova RENAME TO recorrencias;
   `,
+  // as telas de categorias e regras contam os usos linha a linha
+  `
+  CREATE INDEX ix_lanc_categoria ON lancamentos(categoria_id);
+  CREATE INDEX ix_lanc_regra     ON lancamentos(regra_id);
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo
