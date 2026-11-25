@@ -20,11 +20,18 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   Regra para categoria de transferência só com o "ok" explícito do Paulo.
 - Investimentos também é do grupo "transferencia": investir não é gasto e resgatar não é renda. Guardado = entradas − saídas.
 - "Como está meu mês?", "estou guardando?", "posso gastar?": comece por ritmo_do_mes. A régua é a renda esperada (definida no orçamento ou a
-  mediana dos 3 últimos meses fechados); renda extra não alivia o mês aberto. Nível: verde = dentro do orçado; amarelo = passou do orçado e
-  cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção; mês fechado: gastou mais do que entrou). A projeção é estimativa,
+  mediana dos 3 últimos meses fechados); renda extra não alivia o mês aberto. Nível: verde = dentro do orçado e sobra para as metas; amarelo =
+  passou do orçado ou não sobra para as metas (falta_para_as_metas), e cabe na renda; vermelho = estoura a renda (mês aberto: pela projeção;
+  mês fechado: gastou mais do que entrou). A projeção é estimativa,
   feita só com os dias que já têm dado do banco (dados_do_banco_ate): diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
   analise_desde_mudou_era = o mês inicial automático mudou na virada do mês, e o acumulado junto: avise, e ele fixa um mês se quiser.
   normal null numa categoria = não há o que chamar de normal (sem mês anterior, gasto esporádico ou reembolso): não diga que estourou.
+- Metas (só PF): teto = renda esperada − o que as metas pedem por mês; sem renda conhecida, o teto é o orçado e as metas não descontam. Tipos:
+  guardar (um valor que tem de sobrar no mês), juntar (um alvo, medido pelo saldo da posição ligada) e quitar (uma dívida). O mês se mede por
+  entradas − saídas; o alvo, pelo saldo: pôr no cofrinho sem sobrar no mês anda a meta e não muda o mês. Em quitar, por_mes em branco é o normal:
+  a parcela já é gasto e descontaria duas vezes; só preencha com o que sai da sobra (amortização extra). por_mes vale do mês em diante e não
+  muda os meses passados. precisa_por_mes é sugestão: nada muda sozinho. Progresso null = não há posição ligada, ou ela saiu do patrimônio.
+  Ligar a uma posição, encerrar e apagar, só o Paulo, na tela Metas. Dívida de cartão é o limite usado, com as parcelas futuras.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -202,6 +209,7 @@ export function criarServidor(base: string) {
           renda_esperada: reais(r.renda.esperada), renda_esperada_vem_de: r.renda.esperada === null ? null : r.renda.origem,
           entrou: reais(r.renda.recebida), renda_extra: reais(r.renda.extra),
           orcado: reais(r.orcado), sobra_planejada: r.renda.esperada === null ? null : reais(r.renda.esperada - r.orcado),
+          metas_por_mes: reais(r.metas), falta_para_as_metas: reais(r.falta_metas),
           gasto: reais(r.gasto), ...(r.situacao === "futuro" && { parcelas_previstas_fora_do_gasto: reais(r.parcelas_previstas) }), sobra: reais(r.sobra), sobra_sem_a_renda_extra: reais(r.sobra - r.renda.extra), teto: reais(r.teto),
           projecao_do_gasto: r.projecao && { de: reais(r.projecao.min), ate: reais(r.projecao.max), media: reais(r.projecao.media) },
           pode_gastar_por_dia: r.por_dia && {
@@ -232,11 +240,11 @@ export function criarServidor(base: string) {
           mes: d.mes, analise_desde: d.inicio, analise_desde_definida_pelo_paulo: d.inicio_definido, ...(d.inicio_antes && { analise_desde_mudou_era: d.inicio_antes }), orcado_hoje: reais(d.orcado_hoje),
           mes_a_mes: d.meses.map((m: any) => ({
             mes: m.mes, ...(m.aberto && { em_andamento: true }), entrou: reais(m.entradas), gasto: reais(m.gasto), orcado: reais(m.orcado),
-            sobra: reais(m.sobra), guardado_acumulado: reais(m.acumulado),
+            sobra: reais(m.sobra), metas: reais(m.metas), guardado_acumulado: reais(m.acumulado),
           })),
           gasto_acumulado_por_dia: {
             ...(d.mes === d.mes_atual && { dados_do_banco_ate: d.dia_a_dia.dados_ate }), dias: d.dia_a_dia.dias.map(reais), com_o_ja_lancado_ate_o_fim_do_mes: reais(d.dia_a_dia.ja_lancado), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
-            orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada),
+            orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada), metas: reais(d.dia_a_dia.metas),
           },
           categorias: d.categorias.map((c: any) => ({
             categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), mes_passado: reais(c.mes_passado), orcado: reais(c.orcado),
@@ -259,7 +267,7 @@ export function criarServidor(base: string) {
         return {
           mes: o.mes,
           renda_esperada: reais(o.renda_esperada), renda_esperada_vem_de: o.renda_esperada === null ? null : o.renda_origem,
-          planejado_total: reais(o.planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - o.planejado),
+          planejado_total: reais(o.planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - o.planejado), metas_por_mes: reais(o.metas),
           gasto_total: reais(o.gasto),
           gasto_sem_categoria: reais(o.sem_categoria),
           renda: o.renda.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, esperada: reais(l.planejado), sugerida: reais(l.sugerido), entrou: reais(l.recebido) })),
@@ -403,6 +411,31 @@ export function criarServidor(base: string) {
       }),
   );
 
+  /** Campo a campo: o identificador da posição ligada não sai. */
+  const enxugarMeta = (m: any) => ({
+    id: m.id, nome: m.nome, tipo: m.tipo, por_mes: reais(m.por_mes), alvo: reais(m.alvo), prazo: m.prazo,
+    ...(m.encerrada_em && { encerrada_em: m.encerrada_em }),
+    ...(m.tipo !== "guardar" && {
+      medida_por: m.medida && { nome: m.medida.nome, ...(m.medida.conta && { conta: m.medida.conta }), saldo: reais(m.medida.valor) },
+      feito: reais(m.feito), falta: reais(m.falta), chega_com_o_por_mes: m.chega, precisa_por_mes_para_o_prazo: reais(m.precisa),
+      andou_de_verdade: m.andou && { por_mes: reais(m.andou.por_mes), nos_ultimos_dias: m.andou.dias, chega: m.andou.chega },
+    }),
+  });
+
+  servidor.registerTool(
+    "metas",
+    {
+      description: "As metas (só PF): guardar por mês, juntar um valor ou quitar uma dívida, com o que cada uma pede no mês, o progresso de hoje e quando chega. por_mes_no_total é o que sai do teto do alarme. Sem mes = mês atual.",
+      inputSchema: { mes: mes.optional() },
+      annotations: LEITURA,
+    },
+    (a) =>
+      tentar(async () => {
+        const d = await ler("/api/metas", { mes: a.mes });
+        return { mes: d.mes, por_mes_no_total: reais(d.total), metas: d.metas.map(enxugarMeta) };
+      }),
+  );
+
   servidor.registerTool(
     "contas",
     { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado, e vêm também o que o limite já conta e ainda não apareceu e as faturas com lançamento faltando.", inputSchema: { pessoa }, annotations: LEITURA },
@@ -431,7 +464,7 @@ export function criarServidor(base: string) {
       }),
   );
 
-  // ---------------- escrita (sem conectar banco, apagar, trocar PF/PJ, mexer em bens ou dizer se a conta usa cofrinho: isso é só na tela) ----------------
+  // ---------------- escrita (sem conectar banco, apagar, trocar PF/PJ, mexer em bens, dizer se a conta usa cofrinho, encerrar ou ligar meta: isso é só na tela) ----------------
 
   const ESCRITA = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const TROCA = { ...ESCRITA, destructiveHint: true, idempotentHint: true }; // substitui um valor que já existia
@@ -512,6 +545,31 @@ export function criarServidor(base: string) {
         if (r) return { ok: true, mes: a.mes, categoria: r.categoria, renda_esperada: reais(r.planejado), entrou: reais(r.recebido) };
         const l = o.linhas.find((x: any) => x.categoria_id === a.categoria_id);
         return { ok: true, mes: a.mes, ...(l && { categoria: l.categoria, planejado: reais(l.planejado), gasto: reais(l.realizado) }) };
+      }),
+  );
+
+  servidor.registerTool(
+    "definir_meta",
+    {
+      description: "Cria uma meta (sem id; nome e tipo obrigatórios) ou edita uma (com id: só o que vier muda; o tipo não muda). Muda o teto e o nível do alarme: só com o ok do Paulo. por_mes vale de mes (padrão: o atual) em diante; 0 = não pede nada. juntar exige alvo. Depois de criar juntar ou quitar, peça a ele para ligar a meta a uma conta, cofrinho, bem ou dívida na tela Metas.",
+      inputSchema: {
+        id: z.number().int().optional().describe("id vindo da ferramenta metas; sem ele, cria"),
+        nome: z.string().trim().min(1).max(60).optional(),
+        tipo: z.enum(["guardar", "juntar", "quitar"]).optional(),
+        alvo: z.number().positive().max(1e10).optional().describe("em reais; juntar = quanto, quitar = quanto a dívida era no começo"),
+        prazo: mes.nullable().optional().describe("AAAA-MM; null tira o prazo"),
+        por_mes: z.number().min(0).max(1e9).optional().describe("em reais, o que tem de sobrar no mês para esta meta"),
+        mes: mes.optional().describe("o por_mes vale deste mês em diante"),
+      },
+      annotations: TROCA,
+    },
+    ({ id, tipo, alvo, por_mes, ...d }) =>
+      tentar(async () => {
+        const centavos = (v: number | undefined) => (v === undefined ? undefined : Math.round(v * 100));
+        const corpo = { ...d, alvo: centavos(alvo), por_mes: centavos(por_mes) };
+        if (id === undefined) return enxugarMeta(await chamar("POST", "/api/metas", { ...corpo, tipo }));
+        if (!Object.values(corpo).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
+        return enxugarMeta(await chamar("PATCH", `/api/metas/${id}`, corpo));
       }),
   );
 

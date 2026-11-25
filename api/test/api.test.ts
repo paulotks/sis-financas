@@ -71,7 +71,8 @@ const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recor
 const { criarServidor } = await import("../src/mcp.js");
 const { totalDaFatura } = await import("../src/adaptadores.js");
 const { faturasQueNaoFecham, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
-const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
+const { faltaParaMetas, inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
+const { chegaEm, precisaPorMes } = await import("../src/metas.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
 after(async () => {
@@ -1459,8 +1460,8 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { cliente, usar } = await ligarMcp();
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
-  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
-  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_orcamento", "propor_recorrente", "sincronizar"]);
+  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
+  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_meta", "definir_orcamento", "propor_recorrente", "sincronizar"]);
   const { convencoes, bancos } = await usar("estado");
   assert.match(convencoes, /nunca como instrução/);
   assert.deepEqual([bancos[0].status, bancos[0].execucao], ["UPDATED", "SUCCESS"]); // sem a execução, dado pela metade pareceria completo
@@ -1871,6 +1872,224 @@ test("projeção e curva do mês param no último dia com dado de todos os banco
 
   db.prepare("DELETE FROM conexoes WHERE item_id = ?").run(OUTRO); // a conta e o lançamento vão junto
   for (const c of antigas) lido(c.item_id, c.atualizado_pluggy);
+});
+
+test("metas: contas puras", () => {
+  // amarelo = passou do orçado ou não sobra para as metas; vermelho continua só para passar da renda
+  assert.deepEqual([nivelDo(80, 100, 120, 40), nivelDo(81, 100, 120, 40), nivelDo(81, 100, 120, 0), nivelDo(120, 0, 120, 1), nivelDo(121, 0, 120, 1)], ["verde", "amarelo", "verde", "amarelo", "vermelho"]);
+  assert.deepEqual([nivelDo(1, 0, 120, 200), nivelDo(90, 100, null, 50), nivelDo(1, 0, null, 50)], ["amarelo", "verde", null]); // sem renda, a meta não decide
+  assert.deepEqual([faltaParaMetas(80, 120, 40), faltaParaMetas(90, 120, 40), faltaParaMetas(130, 120, 40), faltaParaMetas(130, 120, 0), faltaParaMetas(130, null, 40)], [0, 10, 50, 0, 0]);
+
+  assert.deepEqual([chegaEm(1000, 500, "2031-11"), chegaEm(1001, 500, "2031-11"), chegaEm(1, 500, "2031-11")], ["2032-01", "2032-02", "2031-12"]);
+  assert.deepEqual([chegaEm(0, 500, "2031-11"), chegaEm(10, 0, "2031-11"), chegaEm(10, -5, "2031-11"), chegaEm(1e12, 1, "2031-11"), chegaEm(1201, 1, "2031-11")], [null, null, null, null, null]);
+  assert.equal(chegaEm(1200, 1, "2031-11"), "2131-11");
+
+  assert.deepEqual([precisaPorMes(1000, "2032-01", "2031-11"), precisaPorMes(1000, "2032-02", "2031-11"), precisaPorMes(1000, "2031-12", "2031-11")], [500, 334, 1000]);
+  assert.deepEqual([precisaPorMes(1000, "2031-11", "2031-11"), precisaPorMes(1000, "2031-10", "2031-11"), precisaPorMes(0, "2032-01", "2031-11")], [1000, null, null]);
+});
+
+const criarMeta = async (corpo: object) => {
+  const r = await chamar("POST", "/api/metas", corpo);
+  assert.equal(r.status, 200, JSON.stringify(r.d));
+  return r.d;
+};
+
+test("metas: saem do teto e do nível do mês em diante, sem mexer no passado; encerrar e apagar", async () => {
+  // meses e renda do teste do ritmo: renda de 1.200.000 em m2 e de 900.000 em m3
+  const { mes } = (await chamar("GET", "/api/ritmo")).d, m = (k: number) => somarMes(mes, k), ritmo = async (qual = mes) => (await chamar("GET", `/api/ritmo?mes=${qual}`)).d;
+  const tudo = async () => ({
+    ritmos: await Promise.all([-3, -2, -1, 0, 1, 2].map((k) => ritmo(m(k)))),
+    orcamento: (await chamar("GET", `/api/orcamento?mes=${mes}`)).d, analises: (await chamar("GET", "/api/analises")).d,
+  });
+  const base = await tudo(), [b3, b2, b1, b0] = base.ritmos;
+  assert.deepEqual([b0.metas, b0.falta_metas, b0.teto, base.orcamento.metas, base.analises.dia_a_dia.metas], [0, 0, b0.renda.esperada, 0, 0]);
+  assert.ok(base.analises.meses.every((x: any) => x.metas === null));
+  assert.deepEqual([b2.nivel, b2.sobra], ["verde", 1200000 - b2.gasto]);
+
+  const meta = await criarMeta({ nome: "Sobrar", tipo: "guardar", por_mes: 300000, mes: m(-2) });
+  const pedir = (por_mes: number, qual: string) => chamar("PATCH", `/api/metas/${meta.id}`, { por_mes, mes: qual });
+  const com = await tudo(), [c3, c2, , c0] = com.ritmos;
+  assert.deepEqual(c3, b3); // antes dela nada muda
+  assert.deepEqual([c0.metas, c0.teto, c0.por_dia.livre], [300000, b0.teto - 300000, b0.por_dia.livre - 300000]);
+  assert.deepEqual([c0.gasto, c0.sobra, c0.orcado, c0.projecao, c0.renda, c0.acumulado], [b0.gasto, b0.sobra, b0.orcado, b0.projecao, b0.renda, b0.acumulado]);
+  assert.deepEqual([c2.metas, c2.falta_metas, c2.nivel], [300000, 0, "verde"]); // sobrou mais do que ela pedia
+  assert.deepEqual(com.orcamento, { ...base.orcamento, metas: 300000 });
+  assert.deepEqual(com.analises.meses.map((x: any) => x.metas), [null, 300000, 300000, 300000]);
+  assert.deepEqual(com.analises.dia_a_dia, { ...base.analises.dia_a_dia, metas: 300000 });
+  assert.equal(com.ritmos[4].teto, b0.teto - 300000); // mês futuro também
+
+  // mês fechado: contra o que entrou; por um centavo já não dá
+  await pedir(b2.sobra, m(-2));
+  assert.deepEqual([(await ritmo(m(-2))).falta_metas, (await ritmo(m(-2))).nivel], [0, "verde"]);
+  await pedir(b2.sobra + 1, m(-2));
+  assert.deepEqual([(await ritmo(m(-2))).falta_metas, (await ritmo(m(-2))).nivel], [1, "amarelo"]);
+  assert.equal((await ritmo(m(-1))).nivel, "vermelho"); // gastar mais do que entrou continua vermelho
+
+  // mês aberto: pela projeção, e amarelo mesmo cabendo no orçado e na renda
+  await pedir(300000, m(-2));
+  await pedir(b0.renda.esperada, mes);
+  const cheio = await ritmo(), previsto = b0.projecao?.media ?? b0.gasto;
+  assert.ok(previsto < b0.renda.esperada);
+  assert.deepEqual([cheio.metas, cheio.teto, cheio.falta_metas, cheio.nivel], [b0.renda.esperada, 0, previsto, "amarelo"]);
+  assert.deepEqual([(await ritmo(m(-1))).metas, (await ritmo(m(1))).metas], [300000, b0.renda.esperada]); // vale dali em diante
+
+  // sem renda esperada (não há mês antes dele) a meta não sai do teto; o mês fechado ainda compara com o que entrou
+  await pedir(100, m(-3));
+  const semRegua = await ritmo(m(-3));
+  assert.deepEqual([semRegua.renda.esperada, semRegua.teto, semRegua.metas, semRegua.nivel], [null, b3.teto, 100, b3.nivel]);
+
+  // duas somam; a do futuro só vale lá
+  const outra = await criarMeta({ nome: "Depois", tipo: "guardar", por_mes: 7, mes: m(2) });
+  assert.deepEqual([(await ritmo(m(1))).metas, (await ritmo(m(2))).metas], [b0.renda.esperada, b0.renda.esperada + 7]);
+  const lista = (await chamar("GET", `/api/metas?mes=${m(2)}`)).d;
+  assert.deepEqual([lista.total, lista.metas.map((x: any) => x.por_mes)], [b0.renda.esperada + 7, [b0.renda.esperada, 7]]);
+  assert.deepEqual((await chamar("GET", "/api/metas")).d.metas.map((x: any) => x.por_mes), [b0.renda.esperada, null]);
+
+  // encerrar: do mês atual em diante não pede nada, nem o que estava marcado para depois; o passado fica
+  const encerrar = async (id: number, encerrada: boolean) => (await chamar("PATCH", `/api/metas/${id}`, { encerrada })).d;
+  assert.equal((await encerrar(meta.id, true)).encerrada_em, mes);
+  await encerrar(outra.id, true);
+  assert.deepEqual(await Promise.all([-1, 0, 2].map(async (k) => (await ritmo(m(k))).metas)), [300000, 0, 0]);
+  assert.deepEqual([(await pedir(5, mes)).status, (await ritmo()).metas], [409, 0]); // encerrada não volta a pedir sem reabrir
+  assert.equal((await chamar("PATCH", `/api/metas/${meta.id}`, { encerrada: true, por_mes: 5 })).status, 409);
+  const reaberta = await encerrar(meta.id, false);
+  assert.deepEqual([reaberta.encerrada_em, reaberta.por_mes, (await pedir(5, mes)).status, (await ritmo()).metas], [null, 0, 200, 5]);
+
+  // apagar leva o que ela pedia, inclusive no passado
+  for (const id of [meta.id, outra.id]) assert.equal((await chamar("DELETE", `/api/metas/${id}`)).status, 200);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM metas_mensais").get() as { n: number }).n, 0);
+  assert.deepEqual(await tudo(), base);
+
+  for (const [corpo, status] of [
+    [{ nome: " ", tipo: "guardar" }, 400], [{ nome: "x", tipo: "outra" }, 400], [{ nome: "x" }, 400], [{ tipo: "guardar" }, 400],
+    [{ nome: "x", tipo: "guardar", alvo: 10 }, 400], [{ nome: "x", tipo: "guardar", prazo: "2031-01" }, 400], [{ nome: "x", tipo: "juntar" }, 400],
+    [{ nome: "x", tipo: "juntar", alvo: 0 }, 400], [{ nome: "x", tipo: "juntar", alvo: 10, prazo: "2031-13" }, 400],
+    [{ nome: "x", tipo: "guardar", por_mes: -1 }, 400], [{ nome: "x", tipo: "guardar", por_mes: 1.5 }, 400], [{ nome: "x", tipo: "guardar", por_mes: 1, mes: "2031-00" }, 400],
+  ] as const) assert.equal((await chamar("POST", "/api/metas", corpo)).status, status, JSON.stringify(corpo));
+  assert.deepEqual([(await chamar("PATCH", "/api/metas/9999", { nome: "x" })).status, (await chamar("DELETE", "/api/metas/9999")).status], [404, 404]);
+  assert.equal((await chamar("GET", "/api/metas?mes=2031-13")).status, 400);
+  assert.deepEqual((await chamar("GET", "/api/metas")).d.metas, []); // nada inválido ficou pela metade
+});
+
+test("metas: o progresso é o saldo da posição ligada, uma meta por posição, e o ritmo de verdade vem das fotos", async () => {
+  const { mes, hoje } = (await chamar("GET", "/api/ritmo")).d, m = (k: number) => somarMes(mes, k);
+  const corrente = novaConta("BANK", { saldo: 100000 }), vermelha = novaConta("BANK", { saldo: -4000 }), cartao = novaConta("CREDIT", { saldo: 30000 }), semDivida = novaConta("CREDIT");
+  const oculta = novaConta("BANK", { saldo: 5, oculta: 1 }), empresa = novaConta("BANK", { saldo: 5, pessoa: "PJ" });
+  const bem = async (nome: string, valor_centavos: number) => (await chamar("POST", "/api/bens", { nome, valor_centavos, pessoa: "PF" })).d.id as number;
+  const casa = await bem("Casa", 900000), divida = await bem("Empréstimo", -200000), vendido = await bem("Moto", 0);
+  const em = (origem: string, ref_id: string | number) => ({ origem, ref_id: String(ref_id) });
+  const tela = async (qual = mes) => (await chamar("GET", `/api/metas?mes=${qual}`)).d;
+  const ver = async (id: number, qual = mes) => (await tela(qual)).metas.find((x: any) => x.id === id);
+  const editar = (id: number, d: object) => chamar("PATCH", `/api/metas/${id}`, d);
+
+  const serve = (await tela()).posicoes;
+  const de = (ref: string | number) => serve.find((p: any) => p.ref_id === String(ref))?.serve ?? null;
+  assert.deepEqual([corrente, vermelha, cartao, casa, divida].map(de), ["juntar", "quitar", "quitar", "juntar", "quitar"]);
+  assert.deepEqual([semDivida, oculta, empresa, vendido].map(de), [null, null, null, null]);
+  assert.equal(serve.find((p: any) => p.ref_id === cartao).valor, -30000);
+
+  // juntar
+  const reserva = await criarMeta({ nome: "Reserva", tipo: "juntar", alvo: 250000, por_mes: 50000, prazo: m(5), medida: em("conta", corrente) });
+  assert.deepEqual([reserva.feito, reserva.falta, reserva.chega, reserva.precisa, reserva.andou], [100000, 150000, m(3), 30000, null]);
+  assert.equal((await ver(reserva.id, m(2))).chega, m(4)); // no mês futuro, o primeiro aporte é o dele
+  assert.equal((await ver(reserva.id, m(-1))).por_mes, null);
+  await editar(reserva.id, { por_mes: 50000, mes: m(-2) });
+  assert.deepEqual((({ por_mes, chega, feito }) => [por_mes, chega, feito])(await ver(reserva.id, m(-1))), [50000, null, 100000]); // mês passado não prevê
+  await editar(reserva.id, { prazo: m(-1) });
+  assert.equal((await ver(reserva.id)).precisa, null); // prazo que passou
+  await editar(reserva.id, { prazo: null, alvo: 90000 });
+  assert.deepEqual((({ feito, falta, chega, precisa, prazo }) => [feito, falta, chega, precisa, prazo])(await ver(reserva.id)), [100000, 0, null, null, null]); // passou do alvo
+  await editar(reserva.id, { alvo: 250000 });
+  assert.equal((await editar(reserva.id, { alvo: null })).status, 400);
+
+  // ritmo de verdade: a foto mais antiga dos últimos 90 dias, com 28 de histórico
+  const menos = (n: number) => new Date(Date.parse(hoje) - n * 86_400_000).toISOString().slice(0, 10);
+  const foto = (dias: number, ref: string, saldo: number, origem = "conta") => db.prepare("INSERT INTO saldos_diarios (data, origem, ref_id, saldo_centavos) VALUES (?,?,?,?)").run(menos(dias), origem, ref, saldo);
+  foto(27, corrente, 90000);
+  assert.equal((await ver(reserva.id)).andou, null);
+  foto(91, corrente, 1);
+  assert.equal((await ver(reserva.id)).andou, null); // a de fora da janela não conta
+  foto(60, corrente, 40000);
+  assert.deepEqual((await ver(reserva.id)).andou, { dias: 60, por_mes: 30000, chega: m(5) });
+  foto(90, corrente, 190000);
+  assert.deepEqual((await ver(reserva.id)).andou, { dias: 90, por_mes: -30000, chega: null }); // recuou
+
+  // posição de outro tipo, escondida, da empresa ou inexistente
+  for (const [tipo, ...onde] of [
+    ["juntar", "conta", cartao], ["juntar", "bem", divida], ["juntar", "bem", vendido], ["juntar", "conta", oculta], ["juntar", "conta", empresa], ["juntar", "conta", "nao-existe"],
+    ["juntar", "investimento", casa], ["quitar", "bem", casa], ["quitar", "conta", semDivida],
+  ] as const) assert.equal((await chamar("POST", "/api/metas", { nome: "x", tipo, alvo: 10, medida: em(...onde) })).status, 400, `${tipo} ${onde}`);
+  assert.equal((await chamar("POST", "/api/metas", { nome: "x", tipo: "guardar", medida: em("bem", casa) })).status, 400);
+
+  // uma posição mede uma meta em andamento
+  const outra = await criarMeta({ nome: "Viagem", tipo: "juntar", alvo: 10 });
+  assert.deepEqual([outra.medida, outra.feito, outra.falta, outra.chega], [null, null, null, null]); // sem medida não é zero
+  assert.equal((await editar(outra.id, { medida: em("conta", corrente) })).status, 409);
+  await editar(reserva.id, { encerrada: true });
+  assert.equal((await editar(outra.id, { medida: em("conta", corrente) })).status, 200);
+  assert.equal((await editar(reserva.id, { encerrada: false })).status, 409);
+  assert.equal((await editar(outra.id, { medida: null })).d.origem, null);
+  assert.equal((await editar(reserva.id, { encerrada: false })).status, 200);
+
+  // conta que sai do patrimônio: sem medida, e volta com ela
+  db.prepare("UPDATE contas SET oculta = 1 WHERE id = ?").run(corrente);
+  assert.deepEqual((({ medida, feito, falta, andou, ref_id }) => [medida, feito, falta, andou, ref_id])(await ver(reserva.id)), [null, null, null, null, corrente]);
+  db.prepare("UPDATE contas SET oculta = 0 WHERE id = ?").run(corrente);
+  assert.equal((await ver(reserva.id)).feito, 100000);
+
+  // quitar: o tamanho no começo é o de hoje; cair, crescer e zerar
+  const quitar = await criarMeta({ nome: "Empréstimo", tipo: "quitar", medida: em("bem", divida) });
+  assert.deepEqual([quitar.alvo, quitar.feito, quitar.falta, quitar.por_mes, quitar.chega], [200000, 0, 200000, null, null]);
+  const andamento = async (valor_centavos: number) => {
+    await chamar("PATCH", `/api/bens/${divida}`, { valor_centavos });
+    return (({ feito, falta }) => [feito, falta])(await ver(quitar.id));
+  };
+  assert.deepEqual([await andamento(-150000), await andamento(-260000), await andamento(0)], [[50000, 150000], [-60000, 260000], [200000, 0]]);
+  assert.equal((await editar(quitar.id, { nome: "Empréstimo pago" })).status, 200); // ligada e já zerada continua editável
+  await andamento(-150000);
+  assert.equal((await editar(quitar.id, { alvo: 300000 })).d.feito, 150000); // já devia mais antes de criar a meta
+  assert.equal((await editar(quitar.id, { medida: em("conta", vermelha) })).d.alvo, 4000); // outra dívida, outro tamanho
+  const digitada = await criarMeta({ nome: "Antiga", tipo: "quitar", alvo: 9000 }); // como o MCP cria: o tamanho digitado vale ao ligar
+  assert.deepEqual((({ alvo, feito }) => [alvo, feito])((await editar(quitar.id, { medida: null })).d), [4000, null]);
+  assert.deepEqual((({ alvo, feito }) => [alvo, feito])((await editar(digitada.id, { medida: em("conta", vermelha) })).d), [9000, 5000]);
+  await chamar("DELETE", `/api/metas/${digitada.id}`);
+  foto(60, cartao, 90000);
+  const doCartao = await criarMeta({ nome: "Cartão", tipo: "quitar", medida: em("conta", cartao) });
+  assert.deepEqual([doCartao.alvo, doCartao.falta, doCartao.andou], [30000, 30000, { dias: 60, por_mes: 30000, chega: m(1) }]); // cair é andar
+
+  // apagar a linha de bens desliga a meta: o id pode voltar em outra linha
+  await editar(quitar.id, { medida: em("bem", divida) });
+  await chamar("DELETE", `/api/bens/${divida}`);
+  assert.deepEqual((({ origem, ref_id, falta, alvo }) => [origem, ref_id, falta, alvo])(await ver(quitar.id)), [null, null, null, 4000]);
+
+  // cofrinho: só com o sim do usuário, e sai com o nome da conta
+  db.prepare("INSERT INTO investimentos (id, item_id, nome, tipo, saldo_centavos) VALUES (?,?,?,?,?)").run(`${corrente}:c1`, ITEM, "Férias", "RESERVA", 700);
+  const cofrinho = async () => (await tela()).posicoes.find((p: any) => p.ref_id === `${corrente}:c1`);
+  assert.equal(await cofrinho(), undefined);
+  db.prepare("UPDATE contas SET usa_reservas = 1 WHERE id = ?").run(corrente);
+  assert.deepEqual((({ nome, valor, serve: s }) => [nome, valor, s])(await cofrinho()), ["Férias", 700, "juntar"]);
+  assert.match((await cofrinho()).conta, /^conta /);
+
+  // no MCP: reais, sem o identificador da posição; cria e edita, mas não liga, encerra nem apaga
+  const { cliente, usar } = await ligarMcp();
+  const pelo = await usar("metas"), r = pelo.metas.find((x: any) => x.id === reserva.id);
+  assert.deepEqual([r.alvo, r.feito, r.falta, r.medida_por.saldo, r.andou_de_verdade.por_mes], [2500, 1000, 1500, 1000, -300]);
+  assert.ok(![corrente, cartao, "ref_id"].some((x) => JSON.stringify(pelo).includes(x)));
+  const nova = await usar("definir_meta", { nome: "Pelo Claude", tipo: "guardar", por_mes: 12.34 });
+  assert.deepEqual([nova.por_mes, (await chamar("GET", "/api/ritmo")).d.metas], [12.34, 1234]);
+  assert.deepEqual([(await usar("ritmo_do_mes")).metas_por_mes, (await usar("orcamento", { mes })).metas_por_mes, (await usar("metas")).por_mes_no_total, (await usar("analises")).mes_a_mes.at(-1).metas], [12.34, 12.34, 12.34, 12.34]);
+  assert.deepEqual((({ nome, por_mes }) => [nome, por_mes])(await usar("definir_meta", { id: nova.id, nome: "Outro nome" })), ["Outro nome", 12.34]);
+  assert.equal((await usar("definir_meta", { id: nova.id, por_mes: 5, mes: m(1) })).por_mes, 5);
+  assert.deepEqual([(await usar("metas")).por_mes_no_total, (await usar("metas", { mes: m(1) })).por_mes_no_total], [12.34, 5]);
+  assert.match((await usar("definir_meta", { id: nova.id, encerrada: true, medida: em("bem", casa) })).erro, /Nada para mudar/);
+  assert.match((await usar("definir_meta", { nome: "x", tipo: "juntar" })).erro, /falta o alvo/);
+  assert.match((await usar("definir_meta", { id: 9999, nome: "x" })).erro, /404/);
+  await cliente.close();
+
+  for (const { id } of (await tela()).metas) await chamar("DELETE", `/api/metas/${id}`);
+  for (const id of [casa, vendido]) await chamar("DELETE", `/api/bens/${id}`);
+  db.prepare("DELETE FROM investimentos WHERE id = ?").run(`${corrente}:c1`);
+  for (const id of [corrente, vermelha, cartao, semDivida, oculta, empresa]) db.prepare("DELETE FROM contas WHERE id = ?").run(id);
 });
 
 test("parcelas previstas: só de compra que o banco não manda adiante, do mês seguinte em diante, e cada compra uma vez só", () => {
