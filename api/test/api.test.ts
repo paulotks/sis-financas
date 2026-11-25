@@ -1,5 +1,6 @@
 // Verificação com uma Pluggy falsa e base temporária: nunca usa as credenciais nem a base reais.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -52,7 +53,7 @@ Object.assign(process.env, {
   SYNC_DIAS_INICIAIS: "365",
 });
 const { app } = await import("../src/server.js");
-const { copiaDoDia, db, migrar, MIGRACOES } = await import("../src/db.js");
+const { copiaDoDia, db, migrar, MIGRACOES, transacao } = await import("../src/db.js");
 const { env } = await import("../src/env.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
@@ -596,6 +597,68 @@ test("cópia do dia: feita ao subir, uma por dia, 14 de cada tipo, sem tocar nos
   assert.equal(contar(c), contar(db));
   c.close();
   assert.deepEqual(fs.readdirSync(daqui).filter((n) => n.endsWith(".tmp")), ["t-diaria-2020-01-01.db.123.tmp"]);
+});
+
+test("transação que lê e depois grava não é derrubada por outro processo na mesma base", () => {
+  const outro = new DatabaseSync(env.dbPath);
+  const gravar = (b: DatabaseSync, valor: string) => b.exec(`INSERT INTO config VALUES ('trava', '${valor}') ON CONFLICT DO UPDATE SET valor = excluded.valor`);
+  try {
+    transacao(() => {
+      db.prepare("SELECT COUNT(*) FROM config").get();
+      assert.throws(() => gravar(outro, "outro"), /locked/); // quem chega depois é que espera
+      gravar(db, "nosso");
+    });
+    assert.equal((outro.prepare("SELECT valor FROM config WHERE chave = 'trava'").get() as { valor: string }).valor, "nosso");
+    outro.exec("BEGIN IMMEDIATE");
+    db.exec("PRAGMA busy_timeout = 0");
+    let entrou = false;
+    assert.throws(() => transacao(() => (entrou = true)), /locked/); // com o outro gravando, nem começa
+    assert.equal(entrou, false);
+    outro.exec("ROLLBACK");
+  } finally {
+    db.exec("PRAGMA busy_timeout = 5000; DELETE FROM config WHERE chave = 'trava'");
+    outro.close();
+  }
+});
+
+test("base mais nova que o código é recusada, sem mexer nela", () => {
+  const m = baseComDados();
+  const antes = conteudo(m);
+  m.exec(`PRAGMA user_version = ${MIGRACOES.length + 1}`);
+  assert.throws(() => migrar(m), /mais nova/);
+  assert.equal(conteudo(m), antes);
+  assert.deepEqual([pragma(m, "user_version"), pragma(m, "foreign_keys")], [MIGRACOES.length + 1, 1]);
+  m.close();
+});
+
+test("dois processos subindo juntos: a migração que o outro já fez não roda de novo", () => {
+  const arquivo = path.join(dir, "dois.db");
+  const m = baseComDados(arquivo), outro = new DatabaseSync(arquivo);
+  const lista = [...MIGRACOES, "CREATE TABLE nova (x)", "INSERT INTO nova VALUES (1)"];
+  const exec = m.exec.bind(m);
+  let passou = false;
+  m.exec = (sql: string) => {
+    if (sql.startsWith("BEGIN") && !passou) (passou = true, migrar(outro, lista)); // entre ler a versão e começar
+    exec(sql);
+  };
+  migrar(m, lista);
+  assert.deepEqual([pragma(m, "user_version"), (m.prepare("SELECT COUNT(*) AS n FROM nova").get() as { n: number }).n], [lista.length, 1]);
+  outro.close();
+  m.close();
+});
+
+test("ao subir, as regras são reaplicadas por inteiro ou nada", () => {
+  const arquivo = path.join(dir, "subir.db");
+  const m = baseComDados(arquivo);
+  // os dois perderiam a categoria (nenhuma regra nem categoria da Pluggy); o segundo falha no meio
+  m.exec(`INSERT INTO lancamentos (id, conta_id, data, valor_centavos, categoria_id) VALUES ('z', 'c', '2026-01-02', -1, 3);
+    CREATE TRIGGER falha BEFORE UPDATE ON lancamentos WHEN OLD.id = 'z' BEGIN SELECT RAISE(ABORT, 'falha no meio'); END`);
+  const r = spawnSync(process.execPath, ["--import", "tsx", "src/server.ts"], {
+    encoding: "utf8", timeout: 30_000, env: { ...process.env, DB_PATH: arquivo, PORT: String(PORTA + 1) },
+  });
+  assert.match(r.stderr, /falha no meio/);
+  assert.deepEqual((m.prepare("SELECT categoria_id AS c FROM lancamentos ORDER BY id").all() as { c: number }[]).map((l) => l.c), [3, 3]);
+  m.close();
 });
 
 test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da conta saem juntas e o resultado do mês não muda", async () => {

@@ -86,6 +86,8 @@ Conecte sempre por esta tela. O guia da Pluggy usa a página **Demo** do Dashboa
 | Só veio um dos bancos | É assim mesmo: repita **Conectar banco** para cada um. |
 | `EADDRINUSE` na porta 3333 | Outro programa usa a porta: ponha `PORT=3334` no `.env` e abra nessa porta. |
 | `Port 5173 is already in use` no `npm run dev` | Feche o outro programa: essa porta é fixa. |
+| `a base (versão …) é mais nova que este código` | O código (ou o `dist`) é mais antigo que a base: `git pull`, `npm install`, `npm run build`. |
+| `sem a cópia em … a base não foi migrada` | A pasta das cópias (`COPIAS_DIR` no `.env`) não pôde ser criada ou está sem espaço. Nada foi mudado: corrija e inicie de novo. |
 | `Caminho com espaco nao funciona` no `app:instalar` | Node ou projeto em pasta com espaço: ver passos 1 e 2, ou use `npm start`. |
 
 ### Manutenção

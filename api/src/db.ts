@@ -259,7 +259,10 @@ export function copiaDoDia() {
  * Desligar só vale fora da transação (dentro o SQLite ignora); em troca, nenhuma migração termina com registro órfão.
  */
 export function migrar(banco = db, migracoes = MIGRACOES) {
-  const versao = Number((banco.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  const lerVersao = () => (banco.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+  const versao = lerVersao();
+  if (versao > migracoes.length)
+    throw new Error(`a base (versão ${versao}) é mais nova que este código (versão ${migracoes.length}): atualize o código e compile de novo`);
   if (versao > 0 && versao < migracoes.length) {
     try {
       copiar(banco, "migracao", `${agoraLocal("%Y-%m-%d-%H%M%S")}-v${versao}`);
@@ -270,8 +273,12 @@ export function migrar(banco = db, migracoes = MIGRACOES) {
   banco.exec("PRAGMA foreign_keys = OFF");
   try {
     for (let i = versao; i < migracoes.length; i++) {
-      banco.exec("BEGIN");
+      banco.exec("BEGIN IMMEDIATE");
       try {
+        if (lerVersao() > i) {
+          banco.exec("ROLLBACK"); // outro processo subiu junto e já fez esta
+          continue;
+        }
         banco.exec(migracoes[i]);
         const orfaos = banco.prepare("PRAGMA foreign_key_check").all() as { table: string; parent: string }[];
         if (orfaos.length) {
@@ -290,8 +297,9 @@ export function migrar(banco = db, migracoes = MIGRACOES) {
   }
 }
 
+/** IMMEDIATE: espera a vez (busy_timeout) antes de ler. No BEGIN comum, ler e depois gravar falha na hora se outro processo gravou no meio. */
 export function transacao<T>(fn: () => T): T {
-  db.exec("BEGIN");
+  db.exec("BEGIN IMMEDIATE");
   try {
     const r = fn();
     db.exec("COMMIT");

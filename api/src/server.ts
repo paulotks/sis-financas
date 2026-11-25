@@ -14,7 +14,7 @@ import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } 
 migrar();
 copiaDoDia();
 setInterval(copiaDoDia, 3_600_000).unref();
-reaplicarRegras(); // mudança no mapa de categorias passa a valer também para o que já está na base
+transacao(reaplicarRegras); // mudança no mapa de categorias passa a valer também para o que já está na base
 
 export const app = Fastify({ logger: { level: "info", transport: undefined } });
 
