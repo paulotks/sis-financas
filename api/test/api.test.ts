@@ -225,6 +225,24 @@ test("falha ao ler faturas ou investimentos aparece como erro, sem custar os lan
   db.exec("DELETE FROM faturas; DELETE FROM investimentos");
 });
 
+test("tipo ou valor desconhecido não vira entrada nem apaga o que já estava: é recusado, avisa e o resto entra", async () => {
+  const base = [tx("a2", -2, { description: "compra a" })];
+  paginas = [[...base, tx("certo", -1)]];
+  await sync();
+  for (const estranho of [{ type: "ADJUSTMENT" }, { type: undefined }, { type: "credit" }, { amount: null }, { amount: "x" }]) {
+    paginas = [[...base, tx("certo", -1, { ...estranho, description: "mudou" }), tx("nunca-visto", -1, estranho), tx("normal", -1)]];
+    const [r] = await sincronizar(ITEM);
+    assert.match(r.erro ?? "", /^2 lançamentos recusados/, JSON.stringify(estranho));
+    assert.deepEqual([lanc("certo").valor_centavos, lanc("certo").descricao_original, lanc("nunca-visto"), lanc("normal").valor_centavos], [-1000, "compra certo", undefined, -1000]);
+  }
+  paginas = [[...base, tx("credito", -1, { type: "CREDIT", amount: -10 })]]; // o sinal vem do tipo, não do valor
+  await sync();
+  assert.equal(lanc("credito").valor_centavos, 1000);
+  paginas = [base];
+  await sync();
+  paginas = [[]];
+});
+
 test("sincronizações simultâneas devolvem cada uma o seu resultado", async () => {
   const [r1, r2] = await Promise.all([sincronizar(ITEM), sincronizar(ITEM2)]);
   assert.equal(r1[0].item_id, ITEM);

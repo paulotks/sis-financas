@@ -75,15 +75,20 @@ function salvarConta(itemId: string, conector: string | null, c: PConta) {
   );
 }
 
-/** Valor com sinal a partir do tipo (DEBIT = saída), independente da convenção do banco. */
+/**
+ * Valor com sinal a partir do tipo (DEBIT = saída), independente da convenção do banco.
+ * null = tipo ou valor que não dá para ler: adivinhar o sinal transformaria gasto em renda.
+ */
 const valorComSinal = (t: PTransacao) => {
-  const v = Math.abs(centavos(t.amountInAccountCurrency ?? t.amount) ?? 0);
-  return t.type === "DEBIT" ? -v : v;
+  const v = Math.abs(centavos(t.amountInAccountCurrency ?? t.amount) ?? NaN);
+  if (!Number.isFinite(v)) return null;
+  return t.type === "DEBIT" ? -v : t.type === "CREDIT" ? v : null;
 };
 
 function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carregarRegras>) {
   const novos: string[] = [];
   let atualizados = 0;
+  let recusados = 0;
   const existe = db.prepare("SELECT bruto FROM lancamentos WHERE id = ?");
   const inserir = db.prepare(
     `INSERT INTO lancamentos (id, conta_id, data, descricao_original, descricao, valor_centavos, tipo, status,
@@ -98,12 +103,17 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
      WHERE id=?`,
   );
   for (const t of lista) {
+    const valor = valorComSinal(t);
+    if (valor === null) {
+      recusados++; // continua na lista: se já estava na base, fica como estava e não é tido como sumido
+      continue;
+    }
     const original = (t.descriptionRaw || t.description || "").trim();
     const comerciante = t.merchant?.businessName || t.merchant?.name || null;
     const cc = t.creditCardMetadata ?? {};
     const comum = {
       data: t.date.slice(0, 10),
-      valor: valorComSinal(t),
+      valor,
       parcela: cc.installmentNumber ?? null,
       total: cc.totalInstallments ?? null,
       fatura: cc.billId ?? null,
@@ -122,7 +132,7 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
       novos.push(t.id);
     }
   }
-  return { novos, atualizados };
+  return { novos, atualizados, recusados };
 }
 
 /**
@@ -179,6 +189,7 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
   const reg = db.prepare("INSERT INTO sincronizacoes (item_id, inicio) VALUES (?, ?)").run(itemId, inicio);
   const res: ResultadoSync = { item_id: itemId, conector: null, contas: 0, novos: 0, atualizados: 0, investimentos: 0 };
   const avisos: string[] = []; // o que não deu para ler, sem impedir o resto
+  let recusados = 0;
   /** Faturas e investimentos: a falha não pode custar os lançamentos das outras contas, mas também não pode sumir. */
   const lerSePuder = async (oQue: string, ler: () => Promise<void>) => {
     try {
@@ -211,6 +222,7 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       });
       res.novos += r.novos.length;
       res.atualizados += r.atualizados;
+      recusados += r.recusados;
       if (c.type === "CREDIT") {
         await lerSePuder("Faturas não lidas", async () => {
           const faturas = await pluggy.faturas(c.id);
@@ -242,10 +254,11 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       res.investimentos = invs.length;
     });
 
+    if (recusados) avisos.unshift(`${recusados} ${recusados > 1 ? "lançamentos recusados" : "lançamento recusado"}: a Pluggy mandou tipo ou valor desconhecido`);
     if (avisos.length) res.erro = avisos.join(" · ");
     db.prepare("UPDATE conexoes SET ultimo_sync = ?, erro = ? WHERE item_id = ?").run(agora(), res.erro ?? null, itemId);
   } catch (e) {
-    res.erro = mensagem(e);
+    res.erro = [...avisos, mensagem(e)].join(" · ");
     db.prepare("UPDATE conexoes SET erro = ? WHERE item_id = ?").run(res.erro, itemId);
   }
   db.prepare("UPDATE sincronizacoes SET fim=?, contas=?, novos=?, atualizados=?, erro=? WHERE id=?").run(

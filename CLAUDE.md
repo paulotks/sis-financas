@@ -68,7 +68,7 @@ web/src/
 
 ## Convenções de dados
 
-- Dinheiro em **centavos** (INTEGER). Saída é **negativa**. O sinal vem do `type` da Pluggy (`DEBIT` = saída), não do sinal de `amount`, que varia por banco/cartão.
+- Dinheiro em **centavos** (INTEGER). Saída é **negativa**. O sinal vem do `type` da Pluggy (`DEBIT` = saída), não do sinal de `amount`, que varia por banco/cartão. Outro `type` ou valor ilegível: o lançamento é recusado (o que já estava na base fica) e vai para `conexoes.erro`.
 - Datas em `AAAA-MM-DD` (texto). Mês = `AAAA-MM`.
 - Nomes de tabelas, colunas, rotas e variáveis em português (`lancamentos`, `valor_centavos`, `/api/contas`).
 - **Migrações:** só acrescente um novo item ao fim de `MIGRACOES` em `db.ts`. Nunca edite uma migração que já existe — a base do Paulo já rodou. `migrar()` desliga `foreign_keys` antes do `BEGIN` (senão o `DROP TABLE` de quem recria tabela apaga em cascata) e confere com `foreign_key_check`: migração que deixa órfão é desfeita e o app não sobe. Por isso, **dentro de migração não há cascata**: apague os filhos à mão. Base mais nova que o código é recusada: depois de migrar, o `dist` antigo não sobe (para voltar, restaure a cópia, ver README).

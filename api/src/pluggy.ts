@@ -74,9 +74,9 @@ export interface PTransacao {
   date: string;
   description: string;
   descriptionRaw?: string | null;
-  amount: number;
+  amount?: number | null;
   amountInAccountCurrency?: number | null;
-  type: "DEBIT" | "CREDIT";
+  type: string; // DEBIT | CREDIT; a resposta não é validada, então outro valor pode chegar
   status?: string;
   category?: string | null;
   merchant?: { name?: string | null; businessName?: string | null } | null;
