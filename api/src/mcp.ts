@@ -278,7 +278,7 @@ export function criarServidor(base: string) {
         conta_id: z.string().uuid().optional(),
         tipo_conta: z.enum(["contas", "cartoes"]).optional().describe("só contas ou só cartões; com conta_id, vale o conta_id"),
         estornos: z.boolean().optional().describe("só créditos em cartão (estornos); veja a compra com compras_do_estorno"),
-        busca: z.string().max(100).optional().describe("texto na descrição ou nas notas"),
+        busca: z.string().max(100).optional().describe("texto na descrição ou nas notas; maiúsculas e acentos não contam"),
         pendentes: z.boolean().optional().describe("só os sem categoria"),
         pessoa,
         limite: z.number().int().min(1).max(300).default(100),

@@ -7,8 +7,10 @@ fs.mkdirSync(path.dirname(env.dbPath), { recursive: true });
 
 export const db = new DatabaseSync(env.dbPath);
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-// o LIKE e o NOCASE do SQLite só ignoram a caixa de letra sem acento. Só em consulta: em índice, CHECK ou gatilho, outro programa não abriria a base
-db.function("minusculas", { deterministic: true, directOnly: true }, (t) => (typeof t === "string" ? t.toLowerCase() : t));
+/** Para comparar textos na busca: sem maiúsculas nem acentos. As regras não usam (mudaria o que cada uma pega). */
+export const simplificar = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+// só em consulta: em índice, CHECK ou gatilho, outro programa não abriria a base
+db.function("simplificar", { deterministic: true, directOnly: true }, (t) => (typeof t === "string" ? simplificar(t) : t));
 
 /** Migrações em ordem; cada uma roda uma única vez (controle por PRAGMA user_version). */
 export const MIGRACOES: string[] = [

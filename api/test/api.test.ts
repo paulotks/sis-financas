@@ -1036,7 +1036,7 @@ test("filtro de conta: uma, só contas ou só cartões", async () => {
   assert.equal((await chamar("GET", "/api/lancamentos?conta=xyz")).status, 400);
 });
 
-test("busca: acha texto com acento em outra caixa, nos três campos, e trata % e _ como texto", async () => {
+test("busca: maiúsculas e acentos não contam, nos três campos, e % e _ são texto", async () => {
   const conta = novaConta("BANK");
   for (const [i, descricao_original, extra] of [[1, "LOJINHA ÉBANO", {}], [2, "loja 100% nova", {}], [3, "loja 1000 nova", {}], [4, "a_b cd", {}], [5, "axb cd", { descricao: "Ômega Zyx" }], [6, "outra", { notas: "Reforço da ÁREA" }]] as const)
     novoLanc(conta, "2031-03-01", -i, null, { descricao_original, ...extra });
@@ -1047,6 +1047,10 @@ test("busca: acha texto com acento em outra caixa, nos três campos, e trata % e
   };
   assert.deepEqual(await achados("lojinha ébano"), [1]);
   assert.deepEqual(await achados("Ébano"), [1]);
+  assert.deepEqual(await achados("ebano"), [1]); // digitado sem acento acha o acentuado
+  assert.deepEqual(await achados("lójinha"), [1]); // e o contrário
+  assert.deepEqual(await achados("e\u0301bano"), [1]); // acento como caractere à parte
+  assert.deepEqual(await achados("reforco da area"), [6]);
   assert.deepEqual(await achados("ÔMEGA"), [5]);
   assert.deepEqual(await achados("reforço da área"), [6]);
   assert.deepEqual(await achados("100%"), [2]);

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
-import { copiaDoDia, db, migrar, transacao } from "./db.js";
+import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes, previstas } from "./faltas.js";
 import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
@@ -174,8 +174,8 @@ app.get("/api/lancamentos", async (req) => {
     );
   if (q.busca) {
     // instr e não LIKE: "%" e "_" digitados são texto, não coringa
-    onde.push(`(${["descricao", "descricao_original", "notas"].map((c) => `instr(minusculas(l.${c}), ?) > 0`).join(" OR ")})`);
-    const b = q.busca.toLowerCase();
+    onde.push(`(${["descricao", "descricao_original", "notas"].map((c) => `instr(simplificar(l.${c}), ?) > 0`).join(" OR ")})`);
+    const b = simplificar(q.busca);
     vals.push(b, b, b);
   }
   const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde.join(" AND ")} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
