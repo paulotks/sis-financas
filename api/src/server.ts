@@ -560,7 +560,7 @@ const listarCategorias = () =>
 const categoriaOu404 = (id: number) => ouNaoEncontrado(listarCategorias().find((c) => c.id === id), "categoria");
 const conflito = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 409 });
 const recusarNomeFixo = (nome: string) => {
-  if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar nem renomear`);
+  if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar, renomear nem mudar de grupo`);
 };
 
 app.get("/api/categorias", async () => listarCategorias());
@@ -576,7 +576,7 @@ app.patch("/api/categorias/:id", async (req) => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const d = z.object({ nome: z.string().trim().min(1).max(40).optional(), grupo: grupos.optional(), cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }).parse(req.body);
   const atual = categoriaOu404(id);
-  if (d.nome !== undefined && d.nome !== atual.nome) recusarNomeFixo(atual.nome);
+  if ((d.nome ?? atual.nome) !== atual.nome || (d.grupo ?? atual.grupo) !== atual.grupo) recusarNomeFixo(atual.nome);
   db.prepare("UPDATE categorias SET nome = COALESCE(?, nome), grupo = COALESCE(?, grupo), cor = COALESCE(?, cor) WHERE id = ?")
     .run(d.nome ?? null, d.grupo ?? null, d.cor ?? null, id);
   limparCacheCategorias();

@@ -7,7 +7,7 @@ export interface Categoria {
   cor: string | null;
 }
 
-/** usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar nem renomear. */
+/** usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar, renomear nem mudar de grupo. */
 export type CategoriaComUsos = Categoria & { lancamentos: number; regras: number; orcamentos: number; usos: number; fixa: boolean };
 
 export interface Lancamento {

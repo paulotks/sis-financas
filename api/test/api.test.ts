@@ -378,6 +378,14 @@ test("categoria: apaga só se estiver vazia; em uso ou com nome do mapa dá 409 
   }
   const { nome } = await uma(MERCADO);
   assert.equal((await chamar("PATCH", `/api/categorias/${MERCADO}`, { nome, cor: "#4fd1a5" })).status, 200); // mesmo nome: só a cor muda
+  // nem de grupo: Transferência como gasto entraria nos totais de todos os meses
+  for (const [id, grupo] of [[MERCADO, "estilo_de_vida"], [RENDA, "transferencia"], [TRANSFERENCIA, "essencial"]] as const) {
+    const antes = await uma(id);
+    assert.equal((await chamar("PATCH", `/api/categorias/${id}`, { grupo, cor: "#000000" })).status, 409);
+    assert.deepEqual(await uma(id), antes); // recusa inteira: a cor também não muda
+    assert.equal((await chamar("PATCH", `/api/categorias/${id}`, { grupo: antes.grupo })).status, 200); // mesmo grupo: nada a recusar
+  }
+  assert.equal((await chamar("PATCH", `/api/categorias/${comRegra}`, { grupo: "essencial" })).d.grupo, "essencial");
   assert.equal((await chamar("PATCH", `/api/categorias/${comRegra}`, { nome: "Renomeada" })).d.nome, "Renomeada");
 
   db.prepare("DELETE FROM lancamentos WHERE categoria_id = ?").run(comLanc);
