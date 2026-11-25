@@ -69,6 +69,7 @@ const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
+const { parcelasPrevistas } = await import("../src/faltas.js");
 const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
@@ -1596,6 +1597,63 @@ test("análises: batem com o Resumo, o mês aberto fica fora do acumulado e o in
   const pelo = await usar("analises", { mes: m1 });
   assert.deepEqual([pelo.mes_a_mes.length, pelo.mes_a_mes[2].gasto, pelo.gasto_acumulado_por_dia.dias.at(-1)], [4, r1.saidas / 100, r1.saidas / 100]);
   await cliente.close();
+});
+
+test("parcelas previstas: só de compra que o banco não manda adiante, do mês seguinte em diante, e cada compra uma vez só", () => {
+  const p = (parcela: number, data: string, extra: object = {}) => ({ id: `p${parcela}`, conta_id: "c", data, compra: "2031-05-14", valor: 2000, parcela, total: 10, ...extra });
+  const ver = (...l: ReturnType<typeof p>[]) => parcelasPrevistas(l, "2031-11-20").map((x) => [x.ultima, x.mes, x.valor]);
+  const fim = [["p6", "2031-12", 2000], ["p6", "2032-01", 2000], ["p6", "2032-02", 2000], ["p6", "2032-03", 2000]];
+  assert.deepEqual(ver(p(1, "2031-05-14", { valor: 2009 }), p(2, "2031-05-14"), p(5, "2031-10-03"), p(6, "2031-11-07")), fim); // a 4ª não veio: não volta
+  // o dia da compra pode mudar em um entre a 1ª parcela e as outras, e a 1ª leva os centavos: ainda é uma compra só
+  assert.deepEqual(
+    ver(p(1, "2031-10-12", { total: 3, compra: "2031-10-12", valor: 2002 }), p(2, "2031-11-07", { total: 3, compra: "2031-10-11" })), [["p2", "2031-12", 2000]]);
+  // banco que manda as futuras; compra completa; compra sem parcela há meses (antecipada, cancelada, banco parou)
+  assert.deepEqual(ver(p(6, "2031-11-07"), p(7, "2031-12-07")), []);
+  assert.deepEqual(ver(p(9, "2031-10-07"), p(10, "2031-11-07")), []);
+  assert.deepEqual(ver(p(2, "2031-07-26", { total: 12, compra: "2031-06-02" })), []);
+  // a que deveria vir neste mês não é prevista (se sumiu, é o limite do cartão que acusa)
+  assert.deepEqual(ver(p(1, "2031-10-11", { total: 3, compra: "2031-10-11" })), [["p1", "2031-12", 2000]]);
+  // 2ª parcela com a data da compra: a 3ª é dois meses depois da compra, não um
+  assert.deepEqual(ver(p(1, "2031-10-11", { total: 3, compra: "2031-10-11" }), p(2, "2031-10-11", { total: 3, compra: "2031-10-11" })), [["p2", "2031-12", 2000]]);
+  // compras diferentes não se misturam: outro cartão, outro número de parcelas, outro valor
+  const duas = [p(6, "2031-11-07"), p(7, "2031-12-07", { conta_id: "d" }), p(7, "2031-12-07", { total: 12 }), p(7, "2031-12-07", { valor: 2050 })];
+  assert.deepEqual(ver(...duas), fim);
+});
+
+test("parcelas previstas: em série à parte, sem mexer em total nenhum, e só da compra que conta no Resumo", async () => {
+  const { mes, hoje } = (await chamar("GET", "/api/ritmo")).d, m = (n: number) => somarMes(mes, n);
+  const ver = async () => {
+    const { comprometido } = (await chamar("GET", "/api/analises")).d;
+    const futuro = (await chamar("GET", `/api/ritmo?mes=${m(2)}`)).d;
+    assert.equal(futuro.parcelas_previstas, comprometido[1].previstas);
+    return { previstas: comprometido.map((c: any) => c.previstas), resto: JSON.stringify([comprometido.map((c: any) => ({ ...c, previstas: 0 })), futuro.gasto]) };
+  };
+  const antes = await ver();
+  const nada = Array(12).fill(0);
+  assert.deepEqual(antes.previstas, nada); // nenhuma parcela dos testes acima tem o dia da compra
+  const parcela = (conta: string, extra: Record<string, string | number> = {}) =>
+    novoLanc(conta, `${m(-1)}-05`, -7000, MERCADO, { id: "prev", parcela: 2, total_parcelas: 4, bruto: JSON.stringify({ creditCardMetadata: { purchaseDate: `${m(-2)}-05T12:00:00.000Z` } }), ...extra });
+  const tirar = () => db.exec("DELETE FROM lancamentos WHERE id = 'prev'");
+  const cartao = novaConta("CREDIT");
+  parcela(cartao);
+  assert.ok(hoje > `${m(-1)}-05`);
+  const com = await ver();
+  assert.deepEqual(com.previstas, [7000, ...nada.slice(1)]); // a 3ª é deste mês; a 4ª, do próximo
+  assert.deepEqual(JSON.parse(com.resto), JSON.parse(antes.resto));
+  const { cliente, usar } = await ligarMcp();
+  assert.equal((await usar("analises")).comprometido[0].parcelas_previstas, 70);
+  assert.equal((await usar("ritmo_do_mes", { mes: m(1) })).parcelas_previstas_fora_do_gasto, 70);
+  assert.ok(!("parcelas_previstas_fora_do_gasto" in (await usar("ritmo_do_mes"))));
+  await cliente.close();
+  tirar();
+  for (const [conta, extra] of [
+    [cartao, { ignorado: 1 }], [cartao, { status: "REMOVIDO" }], [cartao, { categoria_id: TRANSFERENCIA }], [cartao, { bruto: "{}" }],
+    [novaConta("CREDIT", { pessoa: "PJ" }), {}], [novaConta("CREDIT", { oculta: 1 }), {}],
+  ] as const) {
+    parcela(conta, extra);
+    assert.deepEqual((await ver()).previstas, nada, JSON.stringify(extra));
+    tirar();
+  }
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

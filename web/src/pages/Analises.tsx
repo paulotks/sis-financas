@@ -288,40 +288,43 @@ function QuemEstourou({ d }: { d: Dados }) {
   );
 }
 
-/** G: o que os próximos meses já devem. Parcela é certa; recorrente é provável. */
+/** G: o que os próximos meses já devem. Parcela lançada é certa; prevista é a que o cartão ainda não mandou; recorrente é provável. */
 function Comprometido({ d }: { d: Dados }) {
   const prox = d.comprometido[0];
-  const total = prox.parcelas + prox.recorrentes;
+  const totalDe = (m: typeof prox) => m.parcelas + m.previstas + m.recorrentes;
+  const total = totalDe(prox);
   const provaveis = prox.recorrentes > 0;
-  const parcelas = soma(d.comprometido.map((m) => m.parcelas));
+  const parcelas = soma(d.comprometido.map((m) => m.parcelas + m.previstas));
+  const temPrevistas = d.comprometido.some((m) => m.previstas > 0);
   const temRenda = d.comprometido.some((m) => m.esperada !== null);
-  const CLARO = "color-mix(in srgb, #d95926 45%, #131316)";
+  const CLARO = "color-mix(in srgb, #d95926 45%, #131316)", PREVISTA = "color-mix(in srgb, #d95926 45%, #fff)";
   return (
     <Grafico
       titulo="Já comprometido nos próximos 12 meses"
       frase={
         <>
-          {nomeDoMes(prox.mes)} já tem <b>{dinheiro(prox.parcelas)}</b> certos em parcelas{provaveis && <> e uns <b>{dinheiroCurto(prox.recorrentes)}</b> prováveis em recorrentes</>}
+          {nomeDoMes(prox.mes)} já tem <b>{dinheiro(prox.parcelas)}</b> em parcelas lançadas{prox.previstas > 0 && <>, <b>{dinheiro(prox.previstas)}</b> em parcelas previstas, que o cartão ainda não mandou,</>}{provaveis && <> e uns <b>{dinheiroCurto(prox.recorrentes)}</b> prováveis em recorrentes</>}
           {prox.esperada ? <>: <b className={total > prox.esperada / 2 ? "neg" : ""}>{Math.round((total / prox.esperada) * 100)}%</b> da renda esperada</> : ""}.
           {" "}Em parcelas, faltam {dinheiro(parcelas)} até {mesCurto(d.comprometido.at(-1)!.mes)}.{" "}
           <Link to="/recorrentes">Revisar recorrentes →</Link>
         </>
       }
       chaves={[
-        { nome: "Parcelas (certas)", cor: COR.gasto }, { nome: "Recorrentes (prováveis)", cor: CLARO },
+        { nome: "Parcelas lançadas", cor: COR.gasto }, ...(temPrevistas ? [{ nome: "Parcelas previstas", cor: PREVISTA }] : []), { nome: "Recorrentes (prováveis)", cor: CLARO },
         ...(temRenda ? [{ nome: "Renda esperada", cor: COR.renda, forma: "linha" as const }] : []),
       ]}
       tabela={{
-        colunas: ["Mês", "Parcelas", "Recorrentes", "Total", "Renda esperada"],
-        linhas: d.comprometido.map((m) => [mesCurto(m.mes), dinheiro(m.parcelas), dinheiro(m.recorrentes), dinheiro(m.parcelas + m.recorrentes), dinheiro(m.esperada)]),
+        colunas: ["Mês", "Parcelas lançadas", "Parcelas previstas", "Recorrentes", "Total", "Renda esperada"],
+        linhas: d.comprometido.map((m) => [mesCurto(m.mes), dinheiro(m.parcelas), dinheiro(m.previstas), dinheiro(m.recorrentes), dinheiro(totalDe(m)), dinheiro(m.esperada)]),
       }}
     >
       <ComposedChart data={d.comprometido} responsive style={ALTURA} margin={margem}>
         <CartesianGrid vertical={false} stroke={COR.grade} />
         <XAxis dataKey="mes" tickFormatter={mesCurto} interval="preserveStartEnd" minTickGap={8} {...eixo} />
         <YAxis {...eixoDinheiro} />
-        <Tooltip cursor={{ fill: "#ffffff0a" }} content={(p) => <Dica p={p} titulo={nomeMes} extra={(m) => <span><b>{dinheiro(m.parcelas + m.recorrentes)}</b> no total</span>} />} />
-        <Bar dataKey="parcelas" name="parcelas" stackId="c" fill={COR.gasto} maxBarSize={24} stroke="var(--painel)" strokeWidth={1} />
+        <Tooltip cursor={{ fill: "#ffffff0a" }} content={(p) => <Dica p={p} titulo={nomeMes} extra={(m) => <span><b>{dinheiro(totalDe(m))}</b> no total</span>} />} />
+        <Bar dataKey="parcelas" name="parcelas lançadas" stackId="c" fill={COR.gasto} maxBarSize={24} stroke="var(--painel)" strokeWidth={1} />
+        {temPrevistas && <Bar dataKey="previstas" name="parcelas previstas" stackId="c" fill={PREVISTA} maxBarSize={24} stroke="var(--painel)" strokeWidth={1} />}
         <Bar dataKey="recorrentes" name="recorrentes" stackId="c" fill={CLARO} maxBarSize={24} radius={[4, 4, 0, 0]} stroke="var(--painel)" strokeWidth={1} />
         {temRenda && <Line dataKey="esperada" name="renda esperada" stroke={COR.renda} strokeWidth={2} dot={false} />}
       </ComposedChart>

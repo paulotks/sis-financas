@@ -167,6 +167,7 @@ export interface Ritmo {
   renda: { esperada: number | null; origem: "definida" | "mediana"; recebida: number; extra: number };
   orcado: number;
   gasto: number;
+  parcelas_previstas: number; // só em mês futuro; fora de gasto
   sobra: number;
   teto: number | null;
   projecao: { min: number; max: number; media: number } | null;
@@ -212,7 +213,7 @@ export interface Analises {
   meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; sobra: number; acumulado: number | null }[];
   dia_a_dia: { dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null };
   categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
-  comprometido: { mes: string; parcelas: number; recorrentes: number; esperada: number | null }[];
+  comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
 }
 
 async function req<T>(metodo: string, url: string, corpo?: unknown): Promise<T> {

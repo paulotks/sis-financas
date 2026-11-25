@@ -24,14 +24,15 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   diga a faixa, não um número só. Mês com analisado = false tem renda incompleta: não conclua prejuízo dele.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
-  "comprometido", parcelas são certas e recorrentes são prováveis (podem ter falso positivo).
+  "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
+  veio); recorrentes são prováveis (podem ter falso positivo). Diga o que é previsto: só o lançado é certo.
 - Recorrentes: uma linha por cobrança (o mesmo lugar pode ter várias). Sugestão e confirmada contam no alarme; ignorada ("não é recorrente"),
   cancelada ("cancelei") e parada, não. "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
   na tela Recorrentes, então diga isso a ele. Só proponha cancelada se ele disser que cancelou. "cobrou_depois" = cobraram depois de
   cancelada: avise.
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
-- Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
+- Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem as parcelas lançadas.
 - Banco com erro, ou fora de status UPDATED com execucao SUCCESS (em estado): o dado dele pode estar velho, faltando ou repetido. Diga isso
   antes de concluir algo do mês. execucao PARTIAL_SUCCESS = o banco mandou só parte; não é caso de reautorizar.
 - saldo_lido_em de um dia anterior ao de ultimo_sync: o banco não mandou o saldo e vale o último conhecido. Diga a data ao usar o número.
@@ -194,7 +195,7 @@ export function criarServidor(base: string) {
           renda_esperada: reais(r.renda.esperada), renda_esperada_vem_de: r.renda.esperada === null ? null : r.renda.origem,
           entrou: reais(r.renda.recebida), renda_extra: reais(r.renda.extra),
           orcado: reais(r.orcado), sobra_planejada: r.renda.esperada === null ? null : reais(r.renda.esperada - r.orcado),
-          gasto: reais(r.gasto), sobra: reais(r.sobra), sobra_sem_a_renda_extra: reais(r.sobra - r.renda.extra), teto: reais(r.teto),
+          gasto: reais(r.gasto), ...(r.situacao === "futuro" && { parcelas_previstas_fora_do_gasto: reais(r.parcelas_previstas) }), sobra: reais(r.sobra), sobra_sem_a_renda_extra: reais(r.sobra - r.renda.extra), teto: reais(r.teto),
           projecao_do_gasto: r.projecao && { de: reais(r.projecao.min), ate: reais(r.projecao.max), media: reais(r.projecao.media) },
           pode_gastar_por_dia: r.por_dia && {
             valor: reais(r.por_dia.valor), no_ritmo_atual: reais(r.por_dia.no_ritmo), dias_que_faltam: r.por_dia.dias, livre_ate_o_fim: reais(r.por_dia.livre), recorrentes_previstas: reais(r.por_dia.recorrentes),
@@ -232,7 +233,7 @@ export function criarServidor(base: string) {
           categorias: d.categorias.map((c: any) => ({
             categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), mes_passado: reais(c.mes_passado), orcado: reais(c.orcado),
           })),
-          comprometido: d.comprometido.map((m: any) => ({ mes: m.mes, parcelas: reais(m.parcelas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
+          comprometido: d.comprometido.map((m: any) => ({ mes: m.mes, parcelas: reais(m.parcelas), parcelas_previstas: reais(m.previstas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
         };
       }),
   );

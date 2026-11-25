@@ -4,6 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
 import { copiaDoDia, db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
+import { previstas } from "./faltas.js";
 import { INVESTIMENTOS, patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, detectarRecorrentes, type Decisao, type Gasto, type Recorrente } from "./recorrentes.js";
@@ -263,6 +264,14 @@ app.get("/api/resumo", async (req) => {
   return { mes, pessoa, ...totaisDoMes(mes, pessoa), porCategoria: gastosPorCategoria(mes, pessoa) };
 });
 
+/** Parcelas que o banco ainda não mandou, das compras PF que contam no resumo, por mês. É estimativa: não entra em nenhum total. */
+function previstasPF(hoje: string) {
+  const contam = new Set((db.prepare(`SELECT l.id ${BASE_RESUMO} AND l.total_parcelas > 1`).all("0000-01-01", hoje, "PF") as { id: string }[]).map((l) => l.id));
+  const porMes = new Map<string, number>();
+  for (const p of previstas(hoje)) if (contam.has(p.ultima)) porMes.set(p.mes, (porMes.get(p.mes) ?? 0) + p.valor);
+  return porMes;
+}
+
 // ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
 
 /** Em categoria de renda, o planejado é a renda esperada: não é gasto. */
@@ -386,6 +395,7 @@ app.get("/api/ritmo", async (req) => {
     mes, situacao, hoje, inicio, analisado,
     renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
     orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
+    parcelas_previstas: situacao === "futuro" ? (previstasPF(hoje).get(mes) ?? 0) : 0, // fora do gasto
     // contra a renda, não contra o teto: sem renda conhecida, passar do orçado é amarelo, não "estourando a renda"
     nivel: situacao === "aberto" ? nivelDo(projecao?.media ?? saidas, orcado, esperada)
       : situacao === "fechado" && analisado ? nivelDo(saidas, orcado, entradas)
@@ -438,11 +448,12 @@ app.get("/api/analises", async (req) => {
     orcado: planejado || null,
   })).filter((c) => c.gasto || c.normal || c.mes_passado || c.orcado);
 
-  // já comprometido: o que já está lançado nos próximos meses (parcelas) e as recorrentes, se continuarem
+  // já comprometido: o que já está lançado nos próximos meses (parcelas), as parcelas que o banco não mandou e as recorrentes, se continuarem
   const todos = totaisPorMes(somarMes(mesAtual, MESES_GRAFICO));
+  const naoMandadas = previstasPF(hoje);
   const recorrentes = somar(listarRecorrentes("PF", hoje).filter(deveCobrar).map((r) => r.valor));
   const comprometido = Array.from({ length: MESES_GRAFICO }, (_, i) => somarMes(mesAtual, i + 1)).map((m) => ({
-    mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), recorrentes, esperada: reguaDoMes(m, mesAtual, historico).esperada,
+    mes: m, parcelas: Math.max(0, todos.find((t) => t.mes === m)?.gasto ?? 0), previstas: naoMandadas.get(m) ?? 0, recorrentes, esperada: reguaDoMes(m, mesAtual, historico).esperada,
   }));
 
   return {

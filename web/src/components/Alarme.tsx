@@ -43,6 +43,7 @@ function Manchete({ r }: { r: Ritmo }) {
         <strong>{dinheiro(r.gasto)}</strong>
         <p className="mudo">
           Só em parcelas já lançadas{esperada ? `: ${pct(r.gasto, esperada)} da renda esperada (${dinheiro(esperada)}), antes de o mês começar` : ""}.
+          {r.parcelas_previstas > 0 && ` O cartão ainda não mandou outras, previstas em ${dinheiro(r.parcelas_previstas)}.`}
         </p>
       </>
     );
