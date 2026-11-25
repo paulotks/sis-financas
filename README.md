@@ -168,6 +168,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Resumo | Ignora transferências entre contas, pagamento de fatura e investimentos, que não são gasto nem renda. Estorno no cartão e reembolso em conta abatem a categoria. |
 | Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. A renda esperada também; sem digitar, é a mediana dos 3 últimos meses fechados. |
 | Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos, uma linha para cada. Você confirma, ignora ou marca que cancelou (e é avisado se cobrarem de novo). |
+| Dado que falta | O app avisa, sem somar em nada: gasto que o limite do cartão já conta e ainda não apareceu, fatura que não bate com os lançamentos ou que não veio, e parcelas que o cartão ainda não mandou (previstas). |
 | Patrimônio | Contas + investimentos + cofrinhos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
 | Cofrinhos e caixinhas | Quando o banco informa dinheiro guardado, o cartão da conta (em **Contas**) pergunta se você usa cofrinho ou caixinha ali. Só o “Sim” soma no patrimônio. Se o valor já estava numa linha manual, zere a linha no mesmo dia. |
 

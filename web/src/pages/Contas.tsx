@@ -161,6 +161,9 @@ function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; 
             Limite {dinheiro(c.limite_centavos)} · disponível {dinheiro(c.limite_disponivel_centavos)}
             {c.vencimento && ` · vence ${dataCurta(c.vencimento)}`}
           </small>
+          {!!c.faltas?.nao_apareceu && (
+            <small className="alerta">⚠ Até {dinheiro(c.faltas.nao_apareceu)} já contam no limite e ainda não apareceram nos lançamentos. Não soma no gasto.</small>
+          )}
           {c.faltas && <FaturasComFalta f={c.faltas} />}
         </>
       )}

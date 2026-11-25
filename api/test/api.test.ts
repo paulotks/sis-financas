@@ -70,7 +70,7 @@ const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.j
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
 const { totalDaFatura } = await import("../src/adaptadores.js");
-const { faturasQueNaoFecham, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
+const { faturasQueNaoFecham, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
 const { inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
 
@@ -1746,6 +1746,80 @@ test("avisos de fatura: em contas e no MCP, só em cartão; removido não conta 
   await cliente.close();
   db.prepare("DELETE FROM faturas WHERE conta_id = ?").run(cartao);
   db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(cartao);
+});
+
+test("gasto que o limite já conta: desconta o visto, a fatura a pagar e as previstas; nunca negativo nem por centavos", () => {
+  const faturas = MESES_FATURA.map((m) => faturaDe(m)); // a última fechou em 03/07, com R$ 100
+  const pagou = (valor: number, data = "2031-07-12") => ({ data, valor, fatura_id: null, pagamento: 1 });
+  const nova = { data: "2031-07-10", valor: -3000, fatura_id: null, pagamento: 0 };
+  const base = [...MESES_FATURA.map((m) => compraDe(m)), nova];
+  const ver = (limite: number, mais: object[] = [pagou(10000)], previstas = 0, fs = faturas) => naoApareceu(limite, fs, [...base, ...mais] as typeof base, previstas);
+  assert.equal(ver(3000), 0); // tudo visto
+  assert.equal(ver(8000), 5000);
+  assert.equal(ver(8000, [pagou(10000)], 2000), 3000);
+  assert.deepEqual([ver(3100), ver(3101), ver(1000)], [0, 101, 0]); // centavos; limite menor que o visto
+  // fatura fechada ocupa limite até ser paga, inteira ou em parte; pagamento de antes do fechamento é da anterior
+  assert.deepEqual([ver(13000, []), ver(9000, [pagou(4000)]), ver(13000, [pagou(10000, "2031-06-30")]), ver(3000, [pagou(10500)])], [0, 0, 0, 0]);
+  assert.equal(ver(13000), 10000);
+  assert.equal(ver(13000, [], 0, faturas.map((f) => (f.id === "f7" ? { ...f, total: null } : f))), 0); // sem o total, vale o que se viu dela
+  assert.equal(ver(8000, [pagou(10000), { data: "2031-07-04", valor: -5000, fatura_id: null, pagamento: 1 }]), 5000); // "total da anterior" não é compra nem desfaz o pagamento
+  // fatura que ainda não veio: os lançamentos dela contam; os de fatura velha desconhecida, não
+  const compra = (data: string) => ({ data, valor: -2000, fatura_id: "outra", pagamento: 0 });
+  assert.deepEqual([ver(5000, [pagou(10000), compra("2031-07-05")]), ver(5000, [pagou(10000), compra("2031-06-20")])], [0, 2000]);
+  assert.equal(naoApareceu(5000, [], [nova], 0), 2000); // cartão sem faturas
+});
+
+test("gasto que o limite já conta: só com o saldo da última sincronização; aparece em contas, no mês aberto do ritmo (PF visível) e no MCP, sem somar", async () => {
+  const antes = { paginas, contasFalsas };
+  const cartao = (balance: number | null) => [{ id: CARTAO, type: "CREDIT", name: "Cartão", balance }];
+  const ver = async () => {
+    const r = (await chamar("GET", "/api/ritmo")).d;
+    return {
+      conta: (await chamar("GET", "/api/contas")).d.contas.find((c: any) => c.id === CARTAO).faltas.nao_apareceu as number | null,
+      ritmo: r.nao_apareceu.find((c: any) => c.conta_id === CARTAO)?.valor, resto: { ...r, nao_apareceu: 0 }, mes: r.mes as string,
+    };
+  };
+  paginas = [[tx("visto", -1, { amount: 30 })]];
+  contasFalsas = cartao(0);
+  await sync();
+  const zerado = await ver();
+  const sobra = (db.prepare("SELECT -SUM(valor_centavos) AS n FROM lancamentos WHERE conta_id = ? AND status IS NOT 'REMOVIDO' AND categoria_id IS NOT 20").get(CARTAO) as { n: number }).n;
+  assert.deepEqual([zerado.conta, zerado.ritmo], [0, undefined]);
+  contasFalsas = cartao((sobra + 5000) / 100);
+  await sync();
+  const com = await ver();
+  assert.deepEqual([com.conta, com.ritmo], [5000, 5000]);
+  assert.deepEqual(com.resto, zerado.resto); // nenhum número do alarme mudou
+  // parcela ignorada continua no limite (ela e a prevista do mês que vem); a de outro cartão não
+  for (const [conta, falta] of [[novaConta("CREDIT"), 5000], [CARTAO, 3000]] as const) {
+    const purchaseDate = `${somarMes(com.mes, -2)}-05T12:00:00.000Z`;
+    novoLanc(conta, `${somarMes(com.mes, -1)}-05`, -1000, MERCADO, { id: "prev", ignorado: 1, parcela: 2, total_parcelas: 4, bruto: JSON.stringify({ creditCardMetadata: { purchaseDate } }) });
+    assert.equal((await ver()).conta, falta);
+    db.exec("DELETE FROM lancamentos WHERE id = 'prev'");
+  }
+  assert.deepEqual((await chamar("GET", `/api/ritmo?mes=${somarMes(com.mes, -1)}`)).d.nao_apareceu, []); // só no mês aberto
+  const { cliente, usar } = await ligarMcp();
+  assert.equal((await usar("contas")).contas.find((c: any) => c.id === CARTAO).ainda_nao_apareceu_ate, 50);
+  assert.deepEqual((await usar("ritmo_do_mes")).ainda_nao_apareceu_ate.map((c: any) => c.valor), [50]);
+  await cliente.close();
+  db.prepare("UPDATE contas SET oculta = 1 WHERE id = ?").run(CARTAO);
+  assert.equal((await ver()).ritmo, undefined);
+  db.prepare("UPDATE contas SET oculta = 0, pessoa = 'PJ' WHERE id = ?").run(CARTAO);
+  assert.equal((await ver()).ritmo, undefined);
+  db.prepare("UPDATE contas SET pessoa = 'PF' WHERE id = ?").run(CARTAO);
+  contasFalsas = cartao(null); // o banco não mandou o saldo: fica o último, que não serve para comparar
+  await sync();
+  assert.deepEqual([(await ver()).conta, (await ver()).ritmo], [null, undefined]);
+  contasFalsas = cartao((sobra + 5000) / 100);
+  await sync();
+  assert.equal((await ver()).conta, 5000);
+  falhas = { "/accounts": 500 }; // sincronização que falhou antes das contas: o saldo é da anterior
+  await sincronizar(ITEM);
+  falhas = {};
+  assert.equal((await ver()).conta, null);
+  ({ paginas, contasFalsas } = antes);
+  db.exec("DELETE FROM lancamentos WHERE id = 'visto'");
+  await sync();
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

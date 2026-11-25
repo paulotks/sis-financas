@@ -129,6 +129,14 @@ function Frases({ r }: { r: Ritmo }) {
   const aberto = r.situacao === "aberto";
   return (
     <ul className="frases">
+      {r.nao_apareceu.length > 0 && (
+        <li>
+          <Link to="/contas">
+            O gasto pode ser maior: até <b className="alerta">{dinheiro(r.nao_apareceu.reduce((s, c) => s + c.valor, 0))}</b> já contam no limite de{" "}
+            {new Intl.ListFormat("pt-BR").format(r.nao_apareceu.map((c) => c.conta ?? "cartão"))} e ainda não apareceram aqui.
+          </Link>
+        </li>
+      )}
       {aberto && temExtra(r) && (
         <li>Entraram {dinheiro(extra)} além da renda esperada. Sem esse extra, até agora sobrariam {dinheiro(recebida - extra - r.gasto)}.</li>
       )}

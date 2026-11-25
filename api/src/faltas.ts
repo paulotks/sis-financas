@@ -131,12 +131,29 @@ export const pagamentosSemFatura = (faturas: Fatura[], lancados: Lancado[], hoje
       }))
     .map(({ data, valor }) => ({ data, valor }));
 
-/** Por cartão. Lançamento ignorado conta: continua na fatura e no limite. */
+/**
+ * O que o limite usado já conta e os lançamentos ainda não. É teto: a compra parcelada pesa inteira no limite. A última fatura também ocupa
+ * limite até ser paga, com o total do banco (o que faltar nela é assunto de faturasQueNaoFecham).
+ * Não usa `payments` da fatura: a documentação diz que são os da anterior; nos dados são os da própria, às vezes com estorno junto.
+ */
+export function naoApareceu(limiteUsado: number, faturas: Fatura[], lancados: Lancado[], previstas: number) {
+  const ultima = faturas.at(-1), conhecidas = new Set(faturas.map((f) => f.id));
+  const depois = (l: Lancado) => l.data > (ultima?.fechamento ?? "");
+  const compras = lancados.filter((l) => !l.pagamento);
+  const semFatura = compras.filter((l) => l.fatura_id === null || (!conhecidas.has(l.fatura_id) && depois(l))); // ou de fatura que ainda não veio
+  const pago = soma(lancados.filter((l) => l.pagamento && l.valor > 0 && depois(l)).map((l) => l.valor));
+  const total = ultima ? (ultima.total ?? -soma(compras.filter((l) => l.fatura_id === ultima.id).map((l) => l.valor))) : 0;
+  const falta = limiteUsado + soma(semFatura.map((l) => l.valor)) - Math.max(0, total - pago) - previstas;
+  return falta > RUIDO ? falta : 0;
+}
+
+/** Por cartão. Lançamento ignorado conta: continua na fatura e no limite. `nao_apareceu` nulo = o saldo não é da última sincronização. */
 export function faltasDosCartoes(hoje: string) {
   type DaConta<T> = T & { conta_id: string };
-  const cartoes = db.prepare("SELECT ct.id, cx.banco FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id WHERE ct.tipo = 'CREDIT'").all() as {
-    id: string; banco: string | null;
-  }[];
+  const cartoes = db.prepare(
+    `SELECT ct.id, cx.banco, ct.saldo_centavos AS saldo, ct.atualizado_em >= (SELECT MAX(inicio) FROM sincronizacoes WHERE item_id = ct.item_id) AS saldo_novo
+     FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id WHERE ct.tipo = 'CREDIT'`,
+  ).all() as { id: string; banco: string | null; saldo: number | null; saldo_novo: number | null }[];
   const faturas = db.prepare(
     `SELECT id, conta_id, vencimento, total_centavos AS total, COALESCE(substr(json_extract(bruto, '$.billClosingDate'), 1, 10), date(vencimento, '-10 days')) AS fechamento
      FROM faturas WHERE vencimento IS NOT NULL ORDER BY vencimento`,
@@ -146,8 +163,13 @@ export function faltasDosCartoes(hoje: string) {
      FROM lancamentos l JOIN contas ct ON ct.id = l.conta_id LEFT JOIN categorias cat ON cat.id = l.categoria_id
      WHERE ct.tipo = 'CREDIT' AND l.status IS NOT 'REMOVIDO'`,
   ).all() as unknown as DaConta<Lancado>[];
+  const futuras = previstas(hoje);
   return new Map(cartoes.map((c) => {
     const minhas = faturas.filter((f) => f.conta_id === c.id), meus = lancados.filter((l) => l.conta_id === c.id);
-    return [c.id, { faturas: faturasQueNaoFecham(c.banco, minhas, meus, hoje), sem_fatura: pagamentosSemFatura(minhas, meus, hoje) }];
+    return [c.id, {
+      nao_apareceu: c.saldo !== null && c.saldo_novo ? naoApareceu(c.saldo, minhas, meus, soma(futuras.filter((p) => p.conta_id === c.id).map((p) => p.valor))) : null,
+      faturas: faturasQueNaoFecham(c.banco, minhas, meus, hoje),
+      sem_fatura: pagamentosSemFatura(minhas, meus, hoje),
+    }];
   }));
 }

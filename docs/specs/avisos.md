@@ -1,4 +1,4 @@
-# Fatia 6: avisos de dado que falta
+# Fatia 6: avisos de dado que falta (FEITA em 2026-11-25)
 
 Itens 71, 67, 70 e 69 do [backlog](../backlog.md), nesta ordem. Origem: V1, V2 e V5 da [validação](../validacao-dados.md).
 

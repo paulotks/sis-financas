@@ -38,6 +38,7 @@ api/src/
   recorrentes.ts  detecta cobranças mensais e aplica as decisões (função pura)
   ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em server.ts)
   patrimonio.ts   soma das posições e foto diária dos saldos
+  faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
 web/src/
@@ -86,6 +87,7 @@ web/src/
 - **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Contas e decisões em `docs/specs/lote-3.md`. Meta de guardar ainda não existe e **não** entra fixa no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). Cofrinho e caixinha (`salvarReservas` em `sync.ts`) viram investimento de tipo `RESERVA`, que segue a pessoa e o "ocultar" da conta e **só soma com `contas.usa_reservas = 1`** (pergunta no cartão da conta; nulo = não respondeu, e o valor pode estar numa linha de `bens`); o que sai da lista vai a 0, nunca se apaga. A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
 - **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme.
+- **Dado que falta** (`faltas.ts`, regras em `docs/specs/avisos.md`): é aviso, **nunca soma** em gasto, projeção, nível ou patrimônio, e nada é gravado. Parcela prevista só em série à parte. Falta real não se esconde; exceção de banco, só por peça do adaptador (`totalDaFatura`).
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

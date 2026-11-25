@@ -28,7 +28,9 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   veio); recorrentes são prováveis (podem ter falso positivo). Diga o que é previsto: só o lançado é certo.
 - Dado que o banco não mandou (em contas, por cartão): faturas_que_nao_fecham (falta = total da fatura menos os lançamentos dela; negativa =
   lançamentos a mais) e faturas_que_nao_vieram (há o pagamento, mas não a fatura nem as compras). O gasto daqueles meses está menor que o
-  real: diga isso antes de concluir algo deles. É aviso: não some em nada nem peça para lançar.
+  real: diga isso antes de concluir algo deles. ainda_nao_apareceu_ate (em contas e em ritmo_do_mes) é o que o limite do cartão já conta e os
+  lançamentos ainda não: o gasto do mês aberto pode ser até isso maior (é teto: compra parcelada pesa inteira no limite); null = o banco não
+  mandou o saldo, não dá para saber. É tudo aviso: não some em nada nem peça para lançar.
 - Recorrentes: uma linha por cobrança (o mesmo lugar pode ter várias). Sugestão e confirmada contam no alarme; ignorada ("não é recorrente"),
   cancelada ("cancelei") e parada, não. "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
   na tela Recorrentes, então diga isso a ele. Só proponha cancelada se ele disser que cancelou. "cobrou_depois" = cobraram depois de
@@ -208,6 +210,7 @@ export function criarServidor(base: string) {
             entrou: reais(r.acumulado.entradas), gasto: reais(r.acumulado.gasto), sobra: reais(r.acumulado.sobra),
           },
           cobradas_depois_de_canceladas: r.canceladas_cobradas.map((c: any) => ({ descricao: c.descricao, data: c.data, valor: reais(c.valor) })),
+          ...(r.situacao === "aberto" && { ainda_nao_apareceu_ate: r.nao_apareceu.map((c: any) => ({ cartao: c.conta, valor: reais(c.valor) })) }),
           acima_do_normal: r.acima.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
         };
       }),
@@ -398,7 +401,7 @@ export function criarServidor(base: string) {
 
   servidor.registerTool(
     "contas",
-    { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado, e vêm também as faturas com lançamento faltando.", inputSchema: { pessoa }, annotations: LEITURA },
+    { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado, e vêm também o que o limite já conta e ainda não apareceu e as faturas com lançamento faltando.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
         const { contas, investimentos } = await ler<{ contas: any[]; investimentos: any[] }>("/api/contas");
@@ -410,6 +413,7 @@ export function criarServidor(base: string) {
             fechamento: c.fechamento, vencimento: c.vencimento, oculta: !!c.oculta, saldo_lido_em: c.atualizado_em, ultimo_sync: c.ultimo_sync,
             usa_cofrinho: c.usa_reservas === null ? null : !!c.usa_reservas,
             ...(c.faltas && {
+              ainda_nao_apareceu_ate: reais(c.faltas.nao_apareceu),
               faturas_que_nao_fecham: c.faltas.faturas.map((f: any) => ({ vencimento_de: f.de, vencimento_ate: f.ate, faturas: f.qtd, falta_em_cada: reais(f.diferenca) })),
               faturas_que_nao_vieram: c.faltas.sem_fatura.map((p: any) => ({ pagamento_em: p.data, valor_pago: reais(p.valor) })),
             }),

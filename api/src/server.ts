@@ -275,6 +275,13 @@ function previstasPF(hoje: string) {
   return porMes;
 }
 
+/** Gasto que o limite dos cartões PF já conta e ainda não apareceu nos lançamentos. Teto, e só aviso: não entra em nenhum total. */
+function naoApareceuPF(hoje: string) {
+  const faltas = faltasDosCartoes(hoje);
+  const cartoes = db.prepare("SELECT id AS conta_id, COALESCE(apelido, nome) AS conta FROM contas WHERE pessoa = 'PF' AND oculta = 0").all() as { conta_id: string; conta: string | null }[];
+  return cartoes.map((c) => ({ ...c, valor: faltas.get(c.conta_id)?.nao_apareceu ?? 0 })).filter((c) => c.valor > 0);
+}
+
 // ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
 
 /** Em categoria de renda, o planejado é a renda esperada: não é gasto. */
@@ -398,6 +405,7 @@ app.get("/api/ritmo", async (req) => {
     mes, situacao, hoje, inicio, analisado,
     renda: { esperada, origem, recebida: entradas, extra: esperada === null ? 0 : Math.max(0, entradas - esperada) },
     orcado, gasto: saidas, sobra: entradas - saidas, teto, projecao,
+    nao_apareceu: situacao === "aberto" ? naoApareceuPF(hoje) : [],
     parcelas_previstas: situacao === "futuro" ? (previstasPF(hoje).get(mes) ?? 0) : 0, // fora do gasto
     // contra a renda, não contra o teto: sem renda conhecida, passar do orçado é amarelo, não "estourando a renda"
     nivel: situacao === "aberto" ? nivelDo(projecao?.media ?? saidas, orcado, esperada)

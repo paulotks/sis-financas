@@ -58,6 +58,7 @@ export interface Conta {
 
 /** O que o banco não mandou de um cartão. É aviso: não soma em nada. */
 export interface Faltas {
+  nao_apareceu: number | null; // teto do gasto que o limite já conta e os lançamentos não; nulo = saldo velho, não dá para saber
   faturas: { de: string; ate: string; qtd: number; diferenca: number }[]; // vencimentos seguidos com a mesma diferença; positiva = falta lançamento
   sem_fatura: { data: string; valor: number }[]; // pagamento cuja fatura não veio
 }
@@ -174,6 +175,7 @@ export interface Ritmo {
   renda: { esperada: number | null; origem: "definida" | "mediana"; recebida: number; extra: number };
   orcado: number;
   gasto: number;
+  nao_apareceu: { conta_id: string; conta: string | null; valor: number }[]; // só no mês aberto: teto por cartão, fora de gasto
   parcelas_previstas: number; // só em mês futuro; fora de gasto
   sobra: number;
   teto: number | null;
