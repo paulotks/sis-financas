@@ -317,6 +317,8 @@ export const nomeMes = (mes: string) => {
 export const nomeDoMes = (mes: string) => nomeMes(mes).split(" ")[0];
 /** "nov/26" */
 export const mesCurto = (mes: string) => `${nomeMes(mes).slice(0, 3).toLowerCase()}/${mes.slice(2, 4)}`;
+/** Com o que o mês aberto se compara (o `teto`): sem renda conhecida, o orçado. */
+export const limiteTexto = (r: Ritmo) => (r.renda.esperada === null ? "o orçado" : "a renda esperada");
 /** O nível em palavras e símbolo, para não depender só da cor. */
 export const nivelTexto = (r: Ritmo) => {
   if (!r.nivel) return null;

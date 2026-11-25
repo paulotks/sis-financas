@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, dinheiroCurto, mesCurto, nivelTexto, nomeDoMes, type Ritmo } from "../lib/api";
+import { api, dataCurta, dinheiro, dinheiroCurto, limiteTexto, mesCurto, nivelTexto, nomeDoMes, type Ritmo } from "../lib/api";
 
 /** Topo do Resumo (PF): a renda aguenta este mês? Mês aberto mostra a projeção; fechado, o que sobrou de verdade. */
 export default function Alarme({ mes }: { mes: string }) {
@@ -69,7 +69,7 @@ function Manchete({ r }: { r: Ritmo }) {
         </p>
       </>
     );
-  const limite = esperada ? "a renda esperada" : "o orçado";
+  const limite = limiteTexto(r);
   if (!r.projecao)
     return (
       <>
@@ -78,12 +78,12 @@ function Manchete({ r }: { r: Ritmo }) {
         <p className="mudo">De {dinheiro(r.teto)} ({limite}). A projeção do mês aparece a partir do dia 5.</p>
       </>
     );
-  const fecha = r.teto - r.projecao.media;
+  const diferenca = r.teto - r.projecao.media;
   const { min, max } = r.projecao;
   return (
     <>
-      <small>No ritmo atual, {nome} fecha em</small>
-      <strong className={cor(fecha)}>{dinheiroCurto(fecha)}</strong>
+      <small>No ritmo atual, {nome} contra {limite}</small>
+      <strong className={cor(diferenca)}>{dinheiroCurto(diferenca)}</strong>
       <p className="mudo">
         O gasto deve ficar {min === max ? `em ${dinheiroCurto(max)}` : `entre ${dinheiroCurto(min)} e ${dinheiroCurto(max)}`}; {limite} é {dinheiroCurto(r.teto)}.
       </p>

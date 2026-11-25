@@ -16,7 +16,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | Fatia | Itens, na ordem | Por que juntos | Base | Depende de |
 |---|---|---|---|---|
 | **1. Base segura** (feita em 2026-11-25) | 41 → 42 → 51 → 44 | Tudo em `db.ts` e no início do `server.ts`. O 44 é uma migração simples: estreia a cópia automática do 42 | migração: worktree | nada |
-| **2. Rápidas** | 43, 53, 72 | Linhas isoladas; cabem entre quaisquer outras | não | nada |
+| **2. Rápidas** (feita em 2026-11-25) | 43, 53, 72 | Linhas isoladas; cabem entre quaisquer outras | não | nada |
 | **3. Sincronização confiável** | 52 → 48 → 45 | `sync.ts` e `pluggy.ts`. O 52 é pré-requisito do 69 | não | 1 |
 | **4. Cofrinhos e patrimônio** | 50 → 62 → 77, com a conferência do extrato da caixinha (64) | Mesma tela. Zerar a linha manual (62) usa o que o 50 decidir | não | 3, e o identificador conferido |
 | **5. Camada de adaptadores** | 63 passo 1 → 63 passo 2, com 68 | Uma estrutura só. O passo 1 não pode mudar nenhum número | migração: worktree | 1 e 3 |
@@ -28,7 +28,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | **11. Formato único e horários** | 56 → 58 | Tocam API, tela e MCP inteiros: por último, para não conflitar | não | 10 |
 
 - **Por que esta ordem:** primeiro não perder dado (1), depois ler certo (3 a 5), depois avisar o que falta (6). Refinar conta (9) só vale com o dado completo.
-- **Pode adiantar:** a 2 a qualquer momento; a 4 antes da 5, porque o 62 vale para qualquer banco e não precisa dos adaptadores.
+- **Pode adiantar:** a 4 antes da 5, porque o 62 vale para qualquer banco e não precisa dos adaptadores.
 - **Esperam uma decisão do Paulo:** 49 (regra ou rótulo), 50 (avisar ou "quitado").
 - **Esperam um fato:** 62 (identificador depois de a Pluggy atualizar), V3 e V4 (virada da fatura), 45 (ver um status de falha de verdade).
 - **Em toda fatia:** typecheck, testes e build; tela nova também no navegador e no MCP (4 e 6). Se puder mudar totais (5, 6, 8 e 9), repetir as consultas da [validação](validacao-dados.md) numa cópia da base.
@@ -153,7 +153,7 @@ Os cálculos estão certos; o que falha é o dado que os cartões mandam, e ning
 | 69 | (V1) Aviso de gasto que o cartão já conta no limite e o app não viu | M | não | Limite usado − lançamentos sem fatura. Em Contas, por cartão, e no Alarme ("até R$ X"). É teto e **não soma** em `saidas`. Depois do 52: com o saldo nulo preservado, comparar só com saldo lido na última sincronização, senão o aviso usa limite velho | a fazer |
 | 70 | (V2) Aviso de fatura que não fecha e de fatura que não veio | M | não | Total da fatura − soma por `fatura_id`; e pagamento sem fatura correspondente. Uma detecção só, com as exceções vindas dos adaptadores (63). Junto com o 69: mesma tela. Cada falso positivo de lá vira teste com dado sintético | a fazer |
 | 71 | (V5) Já comprometido com as parcelas que o banco não manda | M | não | `server.ts:438-441` só soma o já lançado. Projetar a partir da última parcela vista, só quando a compra não tem parcela futura, e marcar como prevista: "Parcelas (certas)" (`Analises.tsx:311`) promete demais. Alimenta o 69 | a fazer |
-| 72 | (V6) "Fecha em" diz que é contra a renda esperada | P | não | Só texto: `RitmoLateral.tsx:16`, `Alarme.tsx:81`. Rever com Metas (33), que muda o teto | a fazer |
+| 72 | (V6) "Fecha em" diz que é contra a renda esperada | P | não | Só texto: `RitmoLateral.tsx:16`, `Alarme.tsx:81`. Rever com Metas (33), que muda o teto | feito (2026-11-25) |
 | 73 | (V7) Projeção não divide por dia sem dado | P | não | `ritmo.ts:56` e `server.ts:352-357` usam o dia do calendário. Usar o último dia com dado do banco, também no fim da curva (`Analises.tsx:182`) | a fazer |
 | 74 | (V13) Prévia da regra conta o Pix no crédito | P | não | `contarParecidos` (`categorizar.ts:161`) não passa por `pixNoCredito`; o `total_previsto` do MCP compara prévia com prévia e não pega isso. Melhor separar, em `reaplicarRegras`, o cálculo da gravação e usar o cálculo na prévia: aplicar e desfazer faria um GET travar a base | a fazer |
 | 75 | (V14) Fechar a dúvida do fuso dos lançamentos | P | não | Recomendação da validação: **não converter** `date` (parte das linhas não tem hora e iria para o dia anterior). O Paulo aceitou: `CLAUDE.md` e notas acertados | feito (2026-11-25) |
