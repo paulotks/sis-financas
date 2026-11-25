@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, dinheiro, dinheiroCurto, mesCurto, nivelTexto, nomeDoMes, type Ritmo } from "../lib/api";
+import { api, dataCurta, dinheiro, dinheiroCurto, mesCurto, nivelTexto, nomeDoMes, type Ritmo } from "../lib/api";
 
 /** Topo do Resumo (PF): a renda aguenta este mês? Mês aberto mostra a projeção; fechado, o que sobrou de verdade. */
 export default function Alarme({ mes }: { mes: string }) {
@@ -10,16 +10,23 @@ export default function Alarme({ mes }: { mes: string }) {
   if (!r) return <div className="alarme" aria-busy="true" />;
   const nivel = nivelTexto(r);
   return (
-    <div className="alarme">
-      <div className={`card destaque ${r.nivel ?? ""}`}>
-        {nivel && <span className={`nivel ${r.nivel}`}><span aria-hidden="true">{nivel.icone}</span> {nivel.texto}</span>}
-        <Manchete r={r} />
-        <Medidor r={r} />
-        <Frases r={r} />
+    <>
+      {r.canceladas_cobradas.map((c) => (
+        <div className="aviso erro" key={`${c.descricao}|${c.data}`}>
+          <b>{c.descricao}</b> cobrou {dinheiro(c.valor)} em {dataCurta(c.data)}, depois de cancelada. <Link to="/recorrentes">Ver em Recorrentes →</Link>
+        </div>
+      ))}
+      <div className="alarme">
+        <div className={`card destaque ${r.nivel ?? ""}`}>
+          {nivel && <span className={`nivel ${r.nivel}`}><span aria-hidden="true">{nivel.icone}</span> {nivel.texto}</span>}
+          <Manchete r={r} />
+          <Medidor r={r} />
+          <Frases r={r} />
+        </div>
+        <div className="card"><PorDia r={r} /></div>
+        <div className="card"><Acumulado r={r} /></div>
       </div>
-      <div className="card"><PorDia r={r} /></div>
-      <div className="card"><Acumulado r={r} /></div>
-    </div>
+    </>
   );
 }
 

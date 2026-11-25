@@ -97,8 +97,10 @@ export interface Resumo {
 }
 
 export interface Recorrente {
-  chave: string;
+  chave: string; // com valor_chave, diz qual é a cobrança
+  valor_chave: number;
   descricao: string;
+  antes: string | null; // nome anterior, se o lojista trocou
   categoria: string | null;
   cor: string | null;
   conta: string | null;
@@ -107,7 +109,9 @@ export interface Recorrente {
   ultima: string;
   proxima: string;
   situacao: "prevista" | "atrasada" | "parada";
-  status: "confirmada" | "ignorada" | null;
+  status: "confirmada" | "ignorada" | "cancelada" | null;
+  proposta: "confirmada" | "ignorada" | "cancelada" | "sugerida" | null; // do Claude, esperando aceitar
+  cobrou_depois: { data: string; valor: number } | null; // cancelada que voltou a cobrar
 }
 
 export interface Bem {
@@ -166,6 +170,7 @@ export interface Ritmo {
   por_dia: { valor: number; no_ritmo: number | null; livre: number; dias: number; recorrentes: number } | null; // no_ritmo = o que a projeção supõe
   acumulado: { de: string; ate: string; meses: number; entradas: number; gasto: number; sobra: number } | null;
   acima: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number; acima: number }[];
+  canceladas_cobradas: { descricao: string; data: string; valor: number }[]; // só no mês aberto
 }
 
 /** O que uma regra pegaria; nos exemplos, o que já tem categoria vem primeiro (é o que ela trocaria). */
@@ -250,7 +255,7 @@ export const api = {
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
 
   recorrentes: (pessoa: string) => req<Recorrente[]>("GET", `/api/recorrentes${qs({ pessoa })}`),
-  decidirRecorrente: (d: { chave: string; status: Recorrente["status"] }) => req<{ ok: true }>("PUT", "/api/recorrentes", d),
+  decidirRecorrente: (d: { chave: string; valor: number; status: Recorrente["status"] }) => req<{ ok: true }>("PUT", "/api/recorrentes", d),
 
   patrimonio: (pessoa: string) => req<Patrimonio>("GET", `/api/patrimonio${qs({ pessoa })}`),
   criarBem: (d: { nome: string; valor_centavos: number; pessoa: "PF" | "PJ" }) => req<Bem>("POST", "/api/bens", d),
