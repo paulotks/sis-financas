@@ -466,7 +466,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "categorizar_lancamento",
     {
-      description: "Edita um lançamento. Com categoria_id vira edição manual: nenhuma regra muda mais. Prefira criar_regra quando a descrição se repete. categoria_id null desfaz a edição manual e deixa sem categoria até as regras serem reaplicadas (ao criar ou apagar regra, ao sincronizar ou ao reiniciar o app).",
+      description: "Edita um lançamento. Com categoria_id vira edição manual: nenhuma regra muda mais. Prefira criar_regra quando a descrição se repete. categoria_id null desfaz a edição manual: volta na hora a categoria da regra ou do banco (ou fica sem categoria). tambem_mudaram = outros lançamentos que se ajustaram junto (as pernas de um Pix no crédito): conte ao Paulo.",
       inputSchema: {
         id: z.string().min(1).max(100),
         categoria_id: categoriaId.nullable().optional(),
@@ -479,7 +479,8 @@ export function criarServidor(base: string) {
     ({ id, ...mudancas }) =>
       tentar(async () => {
         if (!Object.values(mudancas).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
-        return enxugar(await chamar("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, mudancas));
+        const l = await chamar("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, mudancas);
+        return { ...enxugar(l), ...(l.tambem_mudaram.length > 0 && { tambem_mudaram: l.tambem_mudaram.map(enxugar) }) };
       }),
   );
 

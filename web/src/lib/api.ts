@@ -263,7 +263,7 @@ export const api = {
   editarLancamento: (
     id: string,
     d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean },
-  ) => req<Lancamento>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
+  ) => req<Lancamento & { tambem_mudaram: Lancamento[] }>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
 
   comprasDoEstorno: (id: string) => req<Lancamento[]>("GET", `/api/lancamentos/${encodeURIComponent(id)}/compras`),
 

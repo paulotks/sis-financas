@@ -52,15 +52,15 @@ export default function Lancamentos() {
 
   const editar = useMutation({
     mutationFn: ({ id, d }: { id: string; d: Parameters<typeof api.editarLancamento>[1]; semRegra?: boolean }) => api.editarLancamento(id, d),
-    onSuccess: (lancamento, { d, semRegra }) => {
-      qc.setQueryData<{ itens: Lancamento[]; total: number }>(chave, (old) =>
-        old ? { ...old, itens: old.itens.map((l) => (l.id === lancamento.id ? lancamento : l)) } : old,
-      );
+    onSuccess: ({ tambem_mudaram, ...lancamento }, { d, semRegra }) => {
+      const novos = new Map([lancamento, ...tambem_mudaram].map((l) => [l.id, l]));
+      qc.setQueryData<{ itens: Lancamento[]; total: number }>(chave, (old) => old && { ...old, itens: old.itens.map((l) => novos.get(l.id) ?? l) });
       if (d.categoria_id !== undefined) setOferta(d.categoria_id && !semRegra && lancamento.descricao_original ? lancamento : null);
       if (semRegra) {
         setEstorno(null);
         setAviso(`Estorno em ${lancamento.categoria}.`);
-      }
+      } else if (tambem_mudaram.length) setAviso(`Mais ${tambem_mudaram.length} lançamento(s) se ajustaram junto (Pix no crédito).`);
+      else if (d.categoria_id === null && lancamento.categoria) setAviso(`Sem a edição à mão, vale a categoria automática: ${lancamento.categoria}.`);
       // outros filtros em cache ficam velhos; a lista aberta não recarrega (para a linha não pular da tela)
       qc.invalidateQueries({ queryKey: ["lancamentos"], refetchType: "none" });
       qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "lancamentos" });

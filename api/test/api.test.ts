@@ -955,7 +955,7 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
   assert.deepEqual(depois.map((m) => m[2]), antes.map((m) => m[2])); // resultado igual em todos os meses
   assert.deepEqual([antes[0], depois[0]], [[10000, 20300, -10300], [0, 10300, -10300]]);
   assert.deepEqual([depois[4], depois[5]], [[0, 5500, -5500], [0, 5500, -5500]]); // tarifa e parcela no mês de cada uma
-  assert.equal(reaplicarRegras(), 0); // de novo: nada muda e nada conta
+  assert.deepEqual(reaplicarRegras(), []); // de novo: nada muda e nada conta
   // até aqui sem saber o banco (nulo); no Nubank é igual, em outro o Pix no crédito não se aplica
   const tudo = () => db.prepare("SELECT id, categoria_id, regra_id FROM lancamentos WHERE id LIKE 'pix%' ORDER BY id").all();
   const resolvido = tudo();
@@ -966,6 +966,37 @@ test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da cont
     else assert.deepEqual(pernas(semNome), [null, "Mercado", null], `banco ${banco}`);
   }
   await chamar("DELETE", `/api/regras/${regra}`);
+
+  // editar uma perna ajusta as outras na hora, sem esperar a sincronização, e diz quais mudaram
+  const editar = async (perna: string, d: object) => {
+    const r = await chamar("PATCH", `/api/lancamentos/${perna}`, d);
+    assert.equal(r.status, 200);
+    return [r.d.categoria, r.d.tambem_mudaram.map((l: any) => l.id).sort()];
+  };
+  const op = operacao("2031-04-10T12:00:00Z", 10000, { pix: { categoria_pluggy: "Groceries" } });
+  const resolvida = [FORA, FORA, "Mercado"], solta = [null, "Mercado", null];
+  reaplicarRegras();
+  assert.deepEqual([pernas(op), await mes("2031-04")], [resolvida, [0, 10300, -10300]]);
+  assert.deepEqual(await editar(`${op}c`, { ignorado: true }), [null, [`${op}e`, `${op}s`]]);
+  assert.deepEqual([pernas(op), await mes("2031-04")], [solta, [10000, 10000, 0]]); // sem a cobrança, o Pix e a entrada dele contam; o resultado é só a cobrança a menos
+  assert.deepEqual(await editar(`${op}c`, { ignorado: false }), ["Mercado", [`${op}e`, `${op}s`]]);
+  assert.deepEqual([pernas(op), await mes("2031-04")], [resolvida, [0, 10300, -10300]]);
+  assert.deepEqual(await editar(`${op}s`, { categoria_id: 7 }), ["Educação", [`${op}c`, `${op}e`]]); // Pix editado à mão: a operação fica como o banco mandou
+  assert.deepEqual(await editar(`${op}s`, { categoria_id: null }), [FORA, [`${op}c`, `${op}e`]]); // desfazer volta ao automático
+  assert.deepEqual(pernas(op), resolvida);
+  assert.deepEqual(await editar(`${op}c`, { categoria_id: 13 }), ["Lazer", []]); // categorizar a cobrança é o uso normal: o par continua fora
+  assert.deepEqual(await editar(`${op}c`, { categoria_id: null }), ["Mercado", []]);
+  assert.deepEqual(await editar(`${op}s`, { descricao: "Nome limpo", notas: "x", tags: ["y"] }), [FORA, []]);
+  for (const [campo, sai, volta] of [["oculta", true, false], ["pessoa", "PJ", "PF"]] as const) {
+    await chamar("PATCH", `/api/contas/${cartao}`, { [campo]: sai });
+    assert.deepEqual(pernas(op), solta, campo);
+    await chamar("PATCH", `/api/contas/${cartao}`, { [campo]: volta });
+    assert.deepEqual(pernas(op), resolvida, campo);
+  }
+  // a edição recusada não fica pela metade nem trava a próxima
+  assert.equal((await chamar("PATCH", "/api/lancamentos/nao-existe", { ignorado: true })).status, 404);
+  assert.equal((await chamar("PATCH", `/api/lancamentos/${op}c`, { ignorado: true, categoria_id: 99999 })).status, 400);
+  assert.deepEqual([pernas(op), lanc(`${op}c`).ignorado], [resolvida, 0]);
 
   // a prévia conta o que o Pix no crédito puxa: o texto só está no Pix, mas quem muda são as três parcelas da cobrança, que herdam dele
   const id = operacao("2031-05-10T12:00:00Z", 10000, { pix: { descricao_original: "Transferência enviada|Ciclana QWZ" }, parcelas: 3 });

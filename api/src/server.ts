@@ -119,7 +119,10 @@ app.patch("/api/contas/:id", async (req) => {
   if (d.oculta !== undefined) (sets.push("oculta = ?"), vals.push(d.oculta ? 1 : 0));
   if (d.usa_reservas !== undefined) (sets.push("usa_reservas = ?"), vals.push(d.usa_reservas ? 1 : 0));
   if (!sets.length) return { ok: true };
-  db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+  transacao(() => {
+    db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+    if (d.pessoa || d.oculta !== undefined) reaplicarRegras(); // o Pix no crédito só vale com o cartão visível e da mesma pessoa
+  });
   if (d.usa_reservas !== undefined) registrarSaldos();
   return ouNaoEncontrado(db.prepare("SELECT * FROM contas WHERE id = ?").get(id), "conta");
 });
@@ -181,6 +184,10 @@ app.get("/api/lancamentos", async (req) => {
   return { itens, total };
 });
 
+/**
+ * Categoria e "ignorar" reaplicam as regras na hora: o Pix no crédito depende das três pernas, e desfazer a edição à mão volta ao automático.
+ * `tambem_mudaram` = os outros que isso mudou.
+ */
 app.patch("/api/lancamentos/:id", async (req) => {
   const { id } = z.object({ id: z.string().min(1).max(100) }).parse(req.params);
   const d = z
@@ -203,8 +210,13 @@ app.patch("/api/lancamentos/:id", async (req) => {
   if (d.notas !== undefined) (sets.push("notas = ?"), vals.push(d.notas));
   if (d.tags !== undefined) (sets.push("tags = ?"), vals.push(JSON.stringify(d.tags)));
   if (d.ignorado !== undefined) (sets.push("ignorado = ?"), vals.push(d.ignorado ? 1 : 0));
-  db.prepare(`UPDATE lancamentos SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
-  return formatarLanc(ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as Record<string, unknown>);
+  return transacao(() => {
+    db.prepare(`UPDATE lancamentos SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+    const mudaram = d.categoria_id !== undefined || d.ignorado !== undefined ? reaplicarRegras().filter((x) => x !== id) : [];
+    const outros = db.prepare(`${SELECT_LANC} WHERE l.id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(mudaram)) as Record<string, unknown>[];
+    const editado = ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as Record<string, unknown>;
+    return { ...formatarLanc(editado), tambem_mudaram: outros.map(formatarLanc) };
+  });
 });
 
 /** De qual compra veio um crédito no cartão: até 5 candidatas do mesmo cartão. Só mostra; quem escolhe é o Paulo. */
@@ -666,14 +678,14 @@ app.post("/api/regras", async (req) => {
         .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)
       : db.prepare("INSERT INTO regras (padrao, sentido, conta_id, categoria_id, descricao, prioridade) VALUES (?,?,?,?,?,?) RETURNING *")
         .get(d.padrao, d.sentido, d.conta_id, d.categoria_id, d.descricao ?? null, d.prioridade ?? PRIORIDADE_PADRAO);
-    return { regra: r, recategorizados: reaplicarRegras() };
+    return { regra: r, recategorizados: reaplicarRegras().length };
   });
 });
 app.delete("/api/regras/:id", async (req) => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   return transacao(() => {
     db.prepare("DELETE FROM regras WHERE id = ?").run(id);
-    return { ok: true, recategorizados: reaplicarRegras() }; // também limpa o regra_id de quem usava a regra
+    return { ok: true, recategorizados: reaplicarRegras().length }; // também limpa o regra_id de quem usava a regra
   });
 });
 

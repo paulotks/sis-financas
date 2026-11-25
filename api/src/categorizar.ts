@@ -200,14 +200,14 @@ export function previaDaRegra(alcance: Alcance, categoria_id = -1) {
   };
 }
 
-/** Reaplica as regras aos lançamentos não categorizados à mão. Retorna quantos mudaram. */
-export function reaplicarRegras(): number {
+/** Reaplica as regras aos lançamentos não categorizados à mão. Retorna os ids dos que mudaram de categoria. */
+export function reaplicarRegras(): string[] {
   const upd = db.prepare("UPDATE lancamentos SET categoria_id = ?, regra_id = ?, atualizado_em = datetime('now','localtime') WHERE id = ?");
-  let n = 0;
+  const mudaram: string[] = [];
   for (const { l, categoria_id, regra_id } of calcular(carregarRegras())) {
     if (categoria_id === l.categoria_id && regra_id === l.regra_id) continue;
     upd.run(categoria_id, regra_id, l.id);
-    if (categoria_id !== l.categoria_id) n++;
+    if (categoria_id !== l.categoria_id) mudaram.push(l.id);
   }
-  return n;
+  return mudaram;
 }
