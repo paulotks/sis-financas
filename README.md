@@ -90,8 +90,10 @@ Conecte sempre por esta tela. O guia da Pluggy usa a página **Demo** do Dashboa
 
 ### Manutenção
 
-- **Atualizar o código** (com o app parado): `git pull`, `npm install`, `npm run build`. Antes, copie `data/`: a base é atualizada quando o app inicia.
-- **Backup:** pare o app e copie a pasta `data/` inteira. Ela não vai para o GitHub, então só existe no seu PC.
+- **Atualizar o código** (com o app parado): `git pull`, `npm install`, `npm run build`. A base é atualizada quando o app inicia, depois de uma cópia automática.
+- **Backup:** automático. Uma cópia por dia e uma antes de cada atualização da base, as 14 últimas de cada. Sem configurar, ficam em `data/copias`; ponha no `.env` uma pasta fora do projeto (`COPIAS_DIR=C:/Users/voce/sis-financas-copias`), de preferência em outro disco. Pasta de nuvem leva seus extratos para lá. Se a cópia do dia falhar, o aviso fica em `data/app.log`.
+- **Voltar uma cópia:** pare o app, tire de `data/` os arquivos `financas.db`, `financas.db-wal` e `financas.db-shm` (guarde-os em outro lugar), copie a cópia escolhida para `data/financas.db` e inicie. Não deixe o `-wal` antigo: ele estraga a base restaurada.
+- **O `.env` não entra nas cópias:** guarde o Client Secret num gerenciador de senhas. A Pluggy o mostra uma vez só.
 - **Dados novos:** a Pluggy atualiza 1x por dia; não dá para forçar pelo app.
 - **Uma vez por ano** a autorização do MeuPluggy vence e é preciso conectar de novo. Faça backup e leia [Problemas conhecidos](#problemas-conhecidos) antes.
 
@@ -147,7 +149,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 
 - `PLUGGY_CLIENT_ID` e `PLUGGY_CLIENT_SECRET` ficam só no `.env`, que está no `.gitignore`. O navegador recebe apenas o Connect Token, que vale 30 minutos.
 - A API escuta só em `127.0.0.1` e recusa escrita (POST/PATCH/DELETE) vinda de outra origem e qualquer pedido com `Host` de fora (DNS rebinding).
-- `data/` (a base) e `.env` **nunca** vão para o GitHub.
+- `data/` (a base) e `.env` **nunca** vão para o GitHub. As cópias da base têm os mesmos dados, sem senha: cuide da pasta.
 
 ## Como funciona
 

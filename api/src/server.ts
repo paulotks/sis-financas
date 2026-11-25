@@ -2,7 +2,7 @@ import fs from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
-import { db, migrar, transacao } from "./db.js";
+import { copiaDoDia, db, migrar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { patrimonio, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
@@ -12,6 +12,8 @@ import { salvarConexao, sincronizar } from "./sync.js";
 import { contarParecidos, limparCacheCategorias, NOMES_FIXOS, reaplicarRegras } from "./categorizar.js";
 
 migrar();
+copiaDoDia();
+setInterval(copiaDoDia, 3_600_000).unref();
 reaplicarRegras(); // mudança no mapa de categorias passa a valer também para o que já está na base
 
 export const app = Fastify({ logger: { level: "info", transport: undefined } });

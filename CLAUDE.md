@@ -30,7 +30,7 @@ Node **22.13+** (usa `node:sqlite`, sem dependência nativa).
 ```
 api/src/
   env.ts          carrega ../.env (process.loadEnvFile); porta, DB_PATH, PLUGGY_API_URL
-  db.ts           SQLite + MIGRACOES (controle por PRAGMA user_version) + helpers
+  db.ts           SQLite + MIGRACOES (controle por PRAGMA user_version) + cópias automáticas + helpers
   pluggy.ts       cliente Pluggy: /auth (apiKey em cache ~110 min), /connect_token, items, accounts, bills, investments, /v2/transactions
   sync.ts         item -> contas -> lançamentos -> faturas -> investimentos (relê 365 dias; remove duplicados dos últimos 60)
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
@@ -72,6 +72,7 @@ web/src/
 - Datas em `AAAA-MM-DD` (texto). Mês = `AAAA-MM`.
 - Nomes de tabelas, colunas, rotas e variáveis em português (`lancamentos`, `valor_centavos`, `/api/contas`).
 - **Migrações:** só acrescente um novo item ao fim de `MIGRACOES` em `db.ts`. Nunca edite uma migração que já existe — a base do Paulo já rodou. `migrar()` desliga `foreign_keys` antes do `BEGIN` (senão o `DROP TABLE` de quem recria tabela apaga em cascata) e confere com `foreign_key_check`: migração que deixa órfão é desfeita e o app não sobe. Por isso, **dentro de migração não há cascata**: apague os filhos à mão.
+- **Cópias da base** (`copiar` em `db.ts`): uma por dia e uma antes de migração pendente, 14 de cada, em `COPIAS_DIR` (`.env`; padrão `copias/` ao lado da base). Sem a cópia, não migra. Teste e worktree têm que apontar para outra pasta (sem `.env` já apontam): na mesma pasta, girariam as cópias de verdade.
 - `lancamentos.id` = id da transação na Pluggy (chave do dedupe). A sincronização **atualiza** dados do banco mas **preserva** o que é do usuário: `descricao`, categoria com `categoria_manual = 1`, `notas`, `tags`, `ignorado`.
 - Categoria: regra (texto *contido* na `descricao_original`, sem diferenciar maiúsculas) > movimento interno (`INTERNOS`) > categoria da Pluggy mapeada em `MAPA_PLUGGY` > `NULL` (pendente). Edição manual nunca é sobrescrita. A API reaplica tudo ao subir. Regra é sempre por texto *contido* (nunca igualdade), com `sentido` (saída/entrada) e `conta_id` opcionais (nulo = vale para tudo); repetir texto + sentido + conta troca a categoria da regra. Desempate: prioridade > texto mais longo > com conta > com sentido.
 - `NOMES_FIXOS` (nomes usados em `MAPA_PLUGGY` e `INTERNOS`): o código acha a categoria pelo nome, então a API recusa apagar, renomear ou mesclar (409). Apagar só categoria sem uso: `regras` e `orcamentos` têm `ON DELETE CASCADE`.

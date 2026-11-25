@@ -10,10 +10,14 @@ try {
   // sem .env: segue com as variáveis do ambiente
 }
 
+const DB_PATH = path.resolve(RAIZ, process.env.DB_PATH || "data/financas.db");
+
 export const env = {
   // || e não ??: variável vazia ("PORT=") no .env também cai no padrão
   porta: Number(process.env.PORT) || 3333,
-  dbPath: path.resolve(RAIZ, process.env.DB_PATH || "data/financas.db"),
+  dbPath: DB_PATH,
+  // padrão ao lado da base: um worktree sem .env nunca mexe nas cópias de verdade
+  copiasDir: path.resolve(RAIZ, process.env.COPIAS_DIR || path.join(path.dirname(DB_PATH), "copias")),
   pluggyUrl: process.env.PLUGGY_API_URL || "https://api.pluggy.ai",
   syncDiasIniciais: Number(process.env.SYNC_DIAS_INICIAIS) || 365,
   webDist: path.join(RAIZ, "web", "dist"),

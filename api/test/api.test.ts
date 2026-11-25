@@ -47,11 +47,13 @@ Object.assign(process.env, {
   PLUGGY_CLIENT_ID: "x",
   PLUGGY_CLIENT_SECRET: "x",
   DB_PATH: path.join(dir, "t.db"),
+  COPIAS_DIR: path.join(dir, "copias"), // sem isto, um .env com a pasta real faria o teste girar as cópias de verdade
   PORT: String(PORTA),
   SYNC_DIAS_INICIAIS: "365",
 });
 const { app } = await import("../src/server.js");
-const { db, migrar, MIGRACOES } = await import("../src/db.js");
+const { copiaDoDia, db, migrar, MIGRACOES } = await import("../src/db.js");
+const { env } = await import("../src/env.js");
 const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
@@ -534,6 +536,66 @@ test("migração que deixa registro órfão ou dá erro é desfeita inteira, e a
     assert.equal(pragma(m, "foreign_keys"), 1);
     m.close();
   }
+});
+
+const copias = (tipo: string) => fs.readdirSync(path.join(dir, "copias")).filter((n) => n.startsWith(`t-${tipo}-`)).sort();
+const abrirCopia = (nome: string) => new DatabaseSync(path.join(dir, "copias", nome), { readOnly: true });
+
+test("cópia: feita antes da migração, com o que ainda está só no -wal; sem migração pendente ou em base nova, nenhuma", () => {
+  const arquivo = path.join(dir, "m.db");
+  const m = baseComDados(arquivo);
+  m.exec("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0; UPDATE lancamentos SET notas = 'só no wal'");
+  for (const n of copias("migracao")) fs.rmSync(path.join(dir, "copias", n)); // dos testes acima, talvez no mesmo segundo
+  migrar(m);
+  migrar(new DatabaseSync(":memory:"));
+  assert.deepEqual(copias("migracao"), []);
+  migrar(m, [...MIGRACOES, "UPDATE lancamentos SET notas = 'estragou'", "CREATE TABLE nova (x)"]);
+  const novas = copias("migracao");
+  assert.equal(novas.length, 1); // uma por início, antes da primeira pendente
+  assert.match(novas[0], /^t-migracao-\d{4}-\d{2}-\d{2}-\d{6}-v\d+\.db$/);
+  assert.ok(novas[0].endsWith(`-v${MIGRACOES.length}.db`));
+  const c = abrirCopia(novas[0]);
+  assert.deepEqual([pragma(c, "user_version"), pragma(c, "integrity_check")], [MIGRACOES.length, "ok"]);
+  assert.equal((c.prepare("SELECT notas FROM lancamentos").get() as { notas: string }).notas, "só no wal");
+  c.close();
+  m.close();
+});
+
+test("cópia: se não deu para copiar, não migra; a do dia só avisa e o app segue", () => {
+  const m = baseComDados();
+  const pasta = env.copiasDir;
+  env.copiasDir = path.join(dir, "t.db", "impossivel"); // dentro de um arquivo
+  try {
+    assert.throws(() => migrar(m, [...MIGRACOES, "DELETE FROM lancamentos"]), /cópia.*não foi migrada/);
+    assert.deepEqual([pragma(m, "user_version"), pragma(m, "foreign_keys")], [MIGRACOES.length, 1]);
+    assert.ok(m.prepare("SELECT 1 FROM lancamentos").get());
+    assert.doesNotThrow(copiaDoDia);
+  } finally {
+    env.copiasDir = pasta;
+    m.close();
+  }
+});
+
+test("cópia do dia: feita ao subir, uma por dia, 14 de cada tipo, sem tocar nos outros arquivos nem deixar resto", () => {
+  const { hoje } = db.prepare("SELECT date('now','localtime') AS hoje").get() as { hoje: string };
+  assert.deepEqual(copias("diaria"), [`t-diaria-${hoje}.db`]); // o início do servidor fez
+  const daqui = path.join(dir, "copias");
+  const falso = (nome: string) => fs.writeFileSync(path.join(daqui, nome), "x");
+  for (let d = 10; d < 26; d++) falso(`t-diaria-2020-01-${d}.db`);
+  const outros = ["outra.db", "t-diaria-2020-01-01.db.123.tmp", "financas-diaria-2020-01-01.db", "t-migracao-2020-01-01-000000-v1.db"];
+  outros.forEach(falso);
+  copiaDoDia(); // a de hoje já existe: não refaz nem gira
+  assert.equal(copias("diaria").filter((n) => n.endsWith(".db")).length, 17);
+  fs.rmSync(path.join(daqui, `t-diaria-${hoje}.db`));
+  copiaDoDia();
+  const ficaram = copias("diaria").filter((n) => n.endsWith(".db"));
+  assert.deepEqual([ficaram.length, ficaram[0], ficaram.at(-1)], [14, "t-diaria-2020-01-13.db", `t-diaria-${hoje}.db`]);
+  for (const nome of outros) assert.ok(fs.existsSync(path.join(daqui, nome)), nome);
+  const c = abrirCopia(`t-diaria-${hoje}.db`);
+  const contar = (b: DatabaseSync) => (b.prepare("SELECT COUNT(*) AS n FROM lancamentos").get() as { n: number }).n;
+  assert.equal(contar(c), contar(db));
+  c.close();
+  assert.deepEqual(fs.readdirSync(daqui).filter((n) => n.endsWith(".tmp")), ["t-diaria-2020-01-01.db.123.tmp"]);
 });
 
 test("Pix no crédito: o gasto é a cobrança no cartão; as duas pernas da conta saem juntas e o resultado do mês não muda", async () => {

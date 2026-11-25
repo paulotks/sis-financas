@@ -216,12 +216,57 @@ export const MIGRACOES: string[] = [
   `,
 ];
 
+const COPIAS = 14; // de cada tipo
+const agoraLocal = (formato: string) => (db.prepare("SELECT strftime(?, 'now', 'localtime') AS t").get(formato) as { t: string }).t;
+
+/**
+ * VACUUM INTO e não cópia do arquivo: o mais recente pode estar só no -wal. Nunca troca uma cópia que já existe.
+ * Depois apaga as mais antigas do mesmo tipo.
+ */
+function copiar(banco: DatabaseSync, tipo: "diaria" | "migracao", momento: string) {
+  const prefixo = `${path.parse(env.dbPath).name}-${tipo}-`;
+  const destino = path.join(env.copiasDir, `${prefixo}${momento}.db`);
+  if (fs.existsSync(destino)) return;
+  fs.mkdirSync(env.copiasDir, { recursive: true });
+  const parcial = `${destino}.${crypto.randomUUID()}.tmp`; // só recebe o nome final inteira: meia cópia não pode valer como cópia
+  try {
+    banco.prepare("VACUUM INTO ?").run(parcial);
+    fs.renameSync(parcial, destino);
+  } finally {
+    fs.rmSync(parcial, { force: true });
+  }
+  const todas = fs.readdirSync(env.copiasDir).filter((n) => n.startsWith(prefixo) && n.endsWith(".db")).sort();
+  for (const velha of todas.slice(0, -COPIAS)) {
+    try {
+      fs.rmSync(path.join(env.copiasDir, velha));
+    } catch {
+      // em uso por outro programa: sai na próxima
+    }
+  }
+}
+
+/** Uma por dia; chamada ao subir e de hora em hora, porque o app fica dias no ar. Falhar não derruba o app. */
+export function copiaDoDia() {
+  try {
+    copiar(db, "diaria", agoraLocal("%Y-%m-%d"));
+  } catch (e) {
+    console.error(`Cópia do dia NÃO foi feita em ${env.copiasDir}: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
 /**
  * Com foreign_keys ligado, o DROP TABLE de uma migração que recria `contas` apagaria lançamentos e faturas em cascata, sem erro.
  * Desligar só vale fora da transação (dentro o SQLite ignora); em troca, nenhuma migração termina com registro órfão.
  */
 export function migrar(banco = db, migracoes = MIGRACOES) {
   const versao = Number((banco.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  if (versao > 0 && versao < migracoes.length) {
+    try {
+      copiar(banco, "migracao", `${agoraLocal("%Y-%m-%d-%H%M%S")}-v${versao}`);
+    } catch (e) {
+      throw new Error(`sem a cópia em ${env.copiasDir} a base não foi migrada: ${e instanceof Error ? e.message : e}`, { cause: e });
+    }
+  }
   banco.exec("PRAGMA foreign_keys = OFF");
   try {
     for (let i = versao; i < migracoes.length; i++) {
