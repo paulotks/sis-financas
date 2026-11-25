@@ -21,15 +21,23 @@ const tx = (id: string, d: number, extra: object = {}) => ({
 let paginas: object[][] = [];
 let urls: string[] = [];
 let proximoForcado: string | null = null;
+let contasFalsas: object[] = [{ id: CARTAO, type: "CREDIT", name: "Cartão" }];
+let porPagina: Record<string, object[][]> = {}; // "/bills" e "/investments", uma lista por página
+let falhas: Record<string, number> = {}; // caminho -> HTTP de erro
 const falsa = http.createServer((req, res) => {
   const u = new URL(req.url!, "http://x");
   const ok = (d: unknown) => res.setHeader("content-type", "application/json").end(JSON.stringify(d));
   if (u.pathname === "/auth") return ok({ apiKey: "falsa" });
+  if (falhas[u.pathname]) return res.writeHead(falhas[u.pathname]).end("{}");
   if (u.pathname.startsWith("/items/")) {
     const id = u.pathname.split("/")[2];
     return void setTimeout(() => ok({ id, connector: { id: 1, name: `Banco ${id[0]}` } }), 20);
   }
-  if (u.pathname === "/accounts") return ok({ results: u.searchParams.get("itemId") === ITEM ? [{ id: CARTAO, type: "CREDIT", name: "Cartão" }] : [] });
+  const lista = u.pathname === "/accounts" ? [u.searchParams.get("itemId") === ITEM ? contasFalsas : []] : porPagina[u.pathname];
+  if (lista) {
+    const page = Number(u.searchParams.get("page") ?? 1);
+    return ok({ page, totalPages: lista.length, results: lista[page - 1] ?? [] });
+  }
   if (u.pathname === "/v2/transactions") {
     urls.push(req.url!);
     const n = Number(u.searchParams.get("after") ?? 0);
@@ -156,6 +164,65 @@ test("resposta vazia do banco não apaga nada", async () => {
   paginas = [[]];
   await sync();
   assert.deepEqual(ids(), antes);
+});
+
+test("saldo, limite e total de fatura que vêm nulos mantêm o último conhecido, e dá para saber de quando é o saldo", async () => {
+  const cartao = (balance: number | null, creditLimit: number | null) => [{ id: CARTAO, type: "CREDIT", name: "Cartão", balance, creditData: { creditLimit, availableCreditLimit: creditLimit } }];
+  const ler = () => {
+    const c = db.prepare("SELECT * FROM contas WHERE id = ?").get(CARTAO) as any;
+    const f = db.prepare("SELECT total_centavos AS t FROM faturas WHERE id = 'fx'").get() as any;
+    const i = db.prepare("SELECT saldo_centavos AS s FROM investimentos WHERE id = 'ix'").get() as any;
+    return { valores: [c.saldo_centavos, c.limite_centavos, c.limite_disponivel_centavos, f.t, i.s], lidoEm: c.atualizado_em };
+  };
+  contasFalsas = cartao(150, 1000);
+  porPagina = { "/bills": [[{ id: "fx", totalAmount: 80 }]], "/investments": [[{ id: "ix", balance: 50 }]] };
+  await sync();
+  assert.deepEqual(ler().valores, [15000, 100000, 100000, 8000, 5000]);
+  db.prepare("UPDATE contas SET atualizado_em = '2026-01-01' WHERE id = ?").run(CARTAO);
+  contasFalsas = cartao(null, null);
+  porPagina = { "/bills": [[{ id: "fx", totalAmount: null }]], "/investments": [[{ id: "ix", balance: null, amount: null }]] };
+  await sync();
+  assert.deepEqual(ler(), { valores: [15000, 100000, 100000, 8000, 5000], lidoEm: "2026-01-01" });
+  contasFalsas = cartao(0, 0); // zero é valor, não falta
+  await sync();
+  assert.deepEqual(ler().valores.slice(0, 3), [0, 0, 0]);
+  assert.notEqual(ler().lidoEm, "2026-01-01");
+});
+
+test("contas, faturas e investimentos são lidos até a última página", async () => {
+  porPagina = {
+    "/bills": [[{ id: "f1", totalAmount: 1 }], [{ id: "f2", totalAmount: 2 }], [{ id: "f3", totalAmount: 3 }]],
+    "/investments": [[{ id: "i1", balance: 1 }], [{ id: "i2", balance: 2 }]],
+  };
+  assert.equal((await sync()).investimentos, 2);
+  const n = (tabela: string, ids: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${tabela} WHERE id IN (${ids})`).get() as { n: number }).n;
+  assert.deepEqual([n("faturas", "'f1','f2','f3'"), n("investimentos", "'i1','i2'")], [3, 2]);
+});
+
+test("falha ao ler faturas ou investimentos aparece como erro, sem custar os lançamentos; 404 é banco sem o produto", async () => {
+  const erroSalvo = () => (db.prepare("SELECT erro FROM conexoes WHERE item_id = ?").get(ITEM) as { erro: string | null }).erro;
+  const base = [tx("a2", -2, { description: "compra a" })];
+  for (const [caminho, oQue] of [["/bills", /^Faturas não lidas: .*HTTP 429/], ["/investments", /^Investimentos não lidos: .*HTTP 429/]] as const) {
+    falhas = { [caminho]: 429 };
+    paginas = [[...base, tx("mesmo-assim", -1)]];
+    const [r] = await sincronizar(ITEM);
+    assert.match(r.erro ?? "", oQue);
+    assert.equal(erroSalvo(), r.erro);
+    assert.equal(r.novos, 1);
+    paginas = [base];
+    falhas = {};
+    await sync(); // volta ao normal: o erro sai
+    assert.equal(erroSalvo(), null);
+  }
+  falhas = { "/bills": 500, "/investments": 400 }; // 400 é pedido nosso recusado: também não se esconde
+  assert.match((await sincronizar(ITEM))[0].erro ?? "", /HTTP 500.* · .*HTTP 400/);
+  falhas = { "/bills": 404, "/investments": 404 };
+  await sync();
+  falhas = {};
+  porPagina = {};
+  paginas = [[]];
+  contasFalsas = [{ id: CARTAO, type: "CREDIT", name: "Cartão" }];
+  db.exec("DELETE FROM faturas; DELETE FROM investimentos");
 });
 
 test("sincronizações simultâneas devolvem cada uma o seu resultado", async () => {

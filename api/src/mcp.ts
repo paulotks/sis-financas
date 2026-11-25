@@ -32,6 +32,7 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
   estorno ou reembolso e abate a categoria; sem categoria, conta como entrada.
 - Saldo de cartão é o limite usado (já inclui parcelas futuras): não some com faturas. Mês futuro só tem parcelas.
+- saldo_lido_em de um dia anterior ao de ultimo_sync: o banco não mandou o saldo e vale o último conhecido. Diga a data ao usar o número.
 - Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
   porque a edição manual nunca mais é alterada por regra. Comece por pendentes_agrupados e use previa_regra antes de criar_regra.
@@ -402,7 +403,7 @@ export function criarServidor(base: string) {
           contas: contas.filter((c) => c.pessoa === a.pessoa).map((c) => ({
             id: c.id, nome: c.apelido ?? c.nome, instituicao: c.instituicao, tipo: c.tipo, saldo: reais(c.saldo_centavos),
             limite: reais(c.limite_centavos), limite_disponivel: reais(c.limite_disponivel_centavos),
-            fechamento: c.fechamento, vencimento: c.vencimento, oculta: !!c.oculta, ultimo_sync: c.ultimo_sync,
+            fechamento: c.fechamento, vencimento: c.vencimento, oculta: !!c.oculta, saldo_lido_em: c.atualizado_em, ultimo_sync: c.ultimo_sync,
           })),
           investimentos: investimentos.filter((i) => donoDoItem(i.item_id) === a.pessoa).map((i) => ({
             nome: i.nome, tipo: i.tipo, subtipo: i.subtipo, saldo: reais(i.saldo_centavos),

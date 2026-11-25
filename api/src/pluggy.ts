@@ -57,7 +57,7 @@ export interface PConta {
   name?: string;
   marketingName?: string | null;
   number?: string;
-  balance?: number;
+  balance?: number | null;
   currencyCode?: string;
   owner?: string | null;
   bankData?: { transferNumber?: string | null } | null;
@@ -85,7 +85,7 @@ export interface PTransacao {
 export interface PFatura {
   id: string;
   dueDate: string;
-  totalAmount: number;
+  totalAmount?: number | null;
   minimumPaymentAmount?: number | null;
 }
 export interface PInvestimento {
@@ -93,11 +93,20 @@ export interface PInvestimento {
   name?: string;
   type?: string;
   subtype?: string;
-  balance?: number;
-  amount?: number;
+  balance?: number | null;
+  amount?: number | null;
 }
 
-type Lista<T> = { results: T[] };
+/** Lê todas as páginas de uma lista (contas, faturas, investimentos). Transações usam cursor, abaixo. */
+async function todas<T>(caminho: string): Promise<T[]> {
+  const itens: T[] = [];
+  for (let pagina = 1, total = 1; pagina <= total; pagina++) {
+    const r = await requisitar<{ results: T[]; totalPages?: number }>("GET", `${caminho}&page=${pagina}`);
+    itens.push(...r.results);
+    total = r.totalPages ?? 1;
+  }
+  return itens;
+}
 
 export const pluggy = {
   /** Connect Token para abrir o widget no navegador (vale 30 min). itemId: reconectar/atualizar um item. */
@@ -109,12 +118,9 @@ export const pluggy = {
     return (await requisitar<{ accessToken: string }>("POST", "/connect_token", corpo)).accessToken;
   },
   item: (id: string) => requisitar<PItem>("GET", `/items/${encodeURIComponent(id)}`),
-  contas: async (itemId: string) =>
-    (await requisitar<Lista<PConta>>("GET", `/accounts?itemId=${encodeURIComponent(itemId)}`)).results,
-  faturas: async (contaId: string) =>
-    (await requisitar<Lista<PFatura>>("GET", `/bills?accountId=${encodeURIComponent(contaId)}`)).results,
-  investimentos: async (itemId: string) =>
-    (await requisitar<Lista<PInvestimento>>("GET", `/investments?itemId=${encodeURIComponent(itemId)}`)).results,
+  contas: (itemId: string) => todas<PConta>(`/accounts?itemId=${encodeURIComponent(itemId)}`),
+  faturas: (contaId: string) => todas<PFatura>(`/bills?accountId=${encodeURIComponent(contaId)}`),
+  investimentos: (itemId: string) => todas<PInvestimento>(`/investments?itemId=${encodeURIComponent(itemId)}`),
 
   /** Transações de uma conta via GET /v2/transactions (paginação por cursor, páginas de 500). */
   async *transacoes(contaId: string, desde: string) {

@@ -26,7 +26,7 @@ export default function Conexoes() {
     onSuccess: (r) => {
       if (!r) return;
       setMsg(r.erro
-        ? { tipo: "erro", texto: `Conectado, mas a sincronização falhou: ${r.erro}` }
+        ? { tipo: "erro", texto: `Conectado, mas com erro na sincronização: ${r.erro}` }
         : { tipo: "ok", texto: `${r.conector ?? "Banco"} conectado: ${r.contas} conta(s), ${r.novos} lançamento(s) novos.` });
       qc.invalidateQueries();
     },

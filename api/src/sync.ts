@@ -49,10 +49,12 @@ function salvarConta(itemId: string, conector: string | null, c: PConta) {
        limite_centavos, limite_disponivel_centavos, fechamento, vencimento, pessoa, atualizado_em)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET tipo=excluded.tipo, subtipo=excluded.subtipo, nome=excluded.nome,
-       numero=excluded.numero, instituicao=excluded.instituicao, saldo_centavos=excluded.saldo_centavos,
-       moeda=excluded.moeda, limite_centavos=excluded.limite_centavos,
-       limite_disponivel_centavos=excluded.limite_disponivel_centavos, fechamento=excluded.fechamento,
-       vencimento=excluded.vencimento, atualizado_em=excluded.atualizado_em`,
+       numero=excluded.numero, instituicao=excluded.instituicao, moeda=excluded.moeda,
+       saldo_centavos=COALESCE(excluded.saldo_centavos, saldo_centavos),
+       limite_centavos=COALESCE(excluded.limite_centavos, limite_centavos),
+       limite_disponivel_centavos=COALESCE(excluded.limite_disponivel_centavos, limite_disponivel_centavos),
+       fechamento=excluded.fechamento, vencimento=excluded.vencimento,
+       atualizado_em=COALESCE(excluded.atualizado_em, atualizado_em)`,
   ).run(
     c.id,
     itemId,
@@ -69,7 +71,7 @@ function salvarConta(itemId: string, conector: string | null, c: PConta) {
     cd.balanceDueDate?.slice(0, 10) ?? null,
     // PF/PJ só é deduzido na criação (o UPDATE não mexe em pessoa); depois vale o que for marcado na tela
     parecePJ(conector, c) ? "PJ" : "PF",
-    agora(),
+    c.balance == null ? null : agora(), // de quando é o saldo: sem saldo novo, ficam o último e a data dele
   );
 }
 
@@ -166,11 +168,25 @@ function removerSumidos(contaId: string, de: string, lista: PTransacao[], novos:
   }
 }
 
+/** 404 = conta ou banco sem o produto (o comum é vir lista vazia). Qualquer outro erro é falha. */
+const semProduto = (e: unknown) => e instanceof ErroPluggy && e.status === 404;
+
+const mensagem = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 /** Busca na Pluggy e grava: item, contas, transações, faturas (cartões) e investimentos. */
 export async function sincronizarItem(itemId: string, desde?: string): Promise<ResultadoSync> {
   const inicio = agora();
   const reg = db.prepare("INSERT INTO sincronizacoes (item_id, inicio) VALUES (?, ?)").run(itemId, inicio);
   const res: ResultadoSync = { item_id: itemId, conector: null, contas: 0, novos: 0, atualizados: 0, investimentos: 0 };
+  const avisos: string[] = []; // o que não deu para ler, sem impedir o resto
+  /** Faturas e investimentos: a falha não pode custar os lançamentos das outras contas, mas também não pode sumir. */
+  const lerSePuder = async (oQue: string, ler: () => Promise<void>) => {
+    try {
+      await ler();
+    } catch (e) {
+      if (!semProduto(e)) avisos.push(`${oQue}: ${mensagem(e)}`);
+    }
+  };
   try {
     const item = await pluggy.item(itemId);
     salvarConexao(item);
@@ -196,43 +212,40 @@ export async function sincronizarItem(itemId: string, desde?: string): Promise<R
       res.novos += r.novos.length;
       res.atualizados += r.atualizados;
       if (c.type === "CREDIT") {
-        try {
+        await lerSePuder("Faturas não lidas", async () => {
           const faturas = await pluggy.faturas(c.id);
           transacao(() =>
             faturas.forEach((f) =>
               db.prepare(
                 `INSERT INTO faturas (id, conta_id, vencimento, total_centavos, minimo_centavos, bruto) VALUES (?,?,?,?,?,?)
-                 ON CONFLICT(id) DO UPDATE SET vencimento=excluded.vencimento, total_centavos=excluded.total_centavos,
+                 ON CONFLICT(id) DO UPDATE SET vencimento=excluded.vencimento, total_centavos=COALESCE(excluded.total_centavos, total_centavos),
                    minimo_centavos=excluded.minimo_centavos, bruto=excluded.bruto`,
               ).run(f.id, c.id, f.dueDate?.slice(0, 10) ?? null, centavos(f.totalAmount), centavos(f.minimumPaymentAmount), JSON.stringify(f)),
             ),
           );
-        } catch (e) {
-          if (!(e instanceof ErroPluggy)) throw e; // banco sem faturas pelo Open Finance: segue
-        }
+        });
       }
     }
 
     // investimentos (ex.: cofrinhos do Mercado Pago, se o banco expuser)
-    try {
+    await lerSePuder("Investimentos não lidos", async () => {
       const invs = await pluggy.investimentos(itemId);
       transacao(() =>
         invs.forEach((i) =>
           db.prepare(
             `INSERT INTO investimentos (id, item_id, nome, tipo, subtipo, saldo_centavos, atualizado_em, bruto) VALUES (?,?,?,?,?,?,?,?)
              ON CONFLICT(id) DO UPDATE SET nome=excluded.nome, tipo=excluded.tipo, subtipo=excluded.subtipo,
-               saldo_centavos=excluded.saldo_centavos, atualizado_em=excluded.atualizado_em, bruto=excluded.bruto`,
+               saldo_centavos=COALESCE(excluded.saldo_centavos, saldo_centavos), atualizado_em=excluded.atualizado_em, bruto=excluded.bruto`,
           ).run(i.id, itemId, i.name ?? null, i.type ?? null, i.subtype ?? null, centavos(i.balance ?? i.amount), agora(), JSON.stringify(i)),
         ),
       );
       res.investimentos = invs.length;
-    } catch (e) {
-      if (!(e instanceof ErroPluggy)) throw e;
-    }
+    });
 
-    db.prepare("UPDATE conexoes SET ultimo_sync = ?, erro = NULL WHERE item_id = ?").run(agora(), itemId);
+    if (avisos.length) res.erro = avisos.join(" · ");
+    db.prepare("UPDATE conexoes SET ultimo_sync = ?, erro = ? WHERE item_id = ?").run(agora(), res.erro ?? null, itemId);
   } catch (e) {
-    res.erro = e instanceof Error ? e.message : String(e);
+    res.erro = mensagem(e);
     db.prepare("UPDATE conexoes SET erro = ? WHERE item_id = ?").run(res.erro, itemId);
   }
   db.prepare("UPDATE sincronizacoes SET fim=?, contas=?, novos=?, atualizados=?, erro=? WHERE id=?").run(
