@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, lerDinheiro } from "../lib/api";
+import { api, dataCurta, dinheiro, lerDinheiro, type Bem } from "../lib/api";
 import CampoDinheiro from "./CampoDinheiro";
 import LinhaPatrimonio from "./LinhaPatrimonio";
 
@@ -20,6 +20,54 @@ export default function Patrimonio() {
   const lido = lerDinheiro(valor);
   const erro = q.error ?? criar.error ?? editar.error ?? apagar.error;
   const d = q.data;
+  const bens = d?.lista_bens ?? [];
+  const quitados = bens.filter((b) => b.valor_centavos === 0);
+
+  // valor 0 = quitado ou vendido: sai da lista e o passado fica. Apagar (que muda dias passados) só de lá, e é para engano
+  const linha = (b: Bem) => (
+    <li key={b.id}>
+      <input
+        key={b.nome}
+        className="editavel"
+        name="nome"
+        aria-label={`Nome de ${b.nome}`}
+        maxLength={60}
+        defaultValue={b.nome}
+        onBlur={(e) => {
+          const v = e.target.value.trim();
+          if (v && v !== b.nome) editar.mutate({ id: b.id, nome: v });
+          else e.target.value = b.nome;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") e.currentTarget.value = b.nome;
+          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+        }}
+      />
+      <CampoDinheiro valor={b.valor_centavos} negativo rotulo={`Valor de ${b.nome}`} onSalvar={(valor_centavos) => editar.mutate({ id: b.id, valor_centavos })} />
+      {b.valor_centavos !== 0 ? (
+        <button
+          className="icone-botao"
+          title="Quitado ou vendido: zera o valor e guarda a evolução"
+          aria-label={`${b.nome}: quitado ou vendido`}
+          onClick={() =>
+            confirm(`"${b.nome}" foi quitado ou vendido? O valor vai a 0 de hoje em diante e os dias anteriores não mudam.`) &&
+            editar.mutate({ id: b.id, valor_centavos: 0 })
+          }
+        >
+          ✓
+        </button>
+      ) : (
+        <button
+          className="icone-botao"
+          title="Apagar de vez (muda os dias anteriores da evolução)"
+          aria-label={`Apagar ${b.nome}`}
+          onClick={() => confirm(`Apagar "${b.nome}" de vez? A linha some também da evolução e muda os dias anteriores. Só faça isso se ela foi criada por engano.`) && apagar.mutate(b.id)}
+        >
+          ✕
+        </button>
+      )}
+    </li>
+  );
 
   return (
     <div className="patrimonio">
@@ -58,38 +106,13 @@ export default function Patrimonio() {
 
         <div className="painel">
           <small className="mudo">Bens e dívidas (à mão)</small>
-          <ul className="bens">
-            {d?.lista_bens.map((b) => (
-              <li key={b.id}>
-                <input
-                  key={b.nome}
-                  className="editavel"
-                  name="nome"
-                  aria-label={`Nome de ${b.nome}`}
-                  maxLength={60}
-                  defaultValue={b.nome}
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v && v !== b.nome) editar.mutate({ id: b.id, nome: v });
-                    else e.target.value = b.nome;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") e.currentTarget.value = b.nome;
-                    if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-                  }}
-                />
-                <CampoDinheiro valor={b.valor_centavos} negativo rotulo={`Valor de ${b.nome}`} onSalvar={(valor_centavos) => editar.mutate({ id: b.id, valor_centavos })} />
-                <button
-                  className="icone-botao"
-                  title="Apagar (some também da evolução)"
-                  aria-label={`Apagar ${b.nome}`}
-                  onClick={() => confirm(`Apagar "${b.nome}"? A linha some também da evolução. Se você só vendeu ou quitou, deixe o valor em 0.`) && apagar.mutate(b.id)}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ul className="bens">{bens.filter((b) => b.valor_centavos !== 0).map(linha)}</ul>
+          {quitados.length > 0 && (
+            <details className="pequeno mudo">
+              <summary>Quitados e vendidos ({quitados.length})</summary>
+              <ul className="bens">{quitados.map(linha)}</ul>
+            </details>
+          )}
           <form
             className="linha-form"
             onSubmit={(e) => {

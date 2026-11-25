@@ -1025,7 +1025,14 @@ test("patrimônio: contas + investimentos + bens − cartões e dívidas, sem oc
   const { historico, total } = await ver();
   assert.deepEqual([historico.length, historico[0], historico[1].total], [2, { data: "2020-01-01", total: 95000 }, total]);
 
+  // quitado ou vendido = valor 0: o passado fica; só apagar (engano) muda os dias anteriores
+  const passado = async () => (await ver()).historico[0].total;
+  foto.run("bem", String(carro.id), 500000);
+  assert.equal(await passado(), 595000);
+  await chamar("PATCH", `/api/bens/${carro.id}`, { valor_centavos: 0 });
+  assert.deepEqual([await passado(), (await ver()).bens], [595000, 0]);
   await chamar("DELETE", `/api/bens/${carro.id}`);
+  assert.equal(await passado(), 95000);
   assert.equal((await ver()).lista_bens.length, 1);
   assert.equal(fotos(String(carro.id)).length, 0);
 });
