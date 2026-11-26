@@ -325,6 +325,27 @@ export interface Compromissos {
   livre: number | null; // renda esperada − contas − metas: não é o guardado do Resumo nem a sobra do Orçamento; nulo sem renda esperada
   linhas: Compromisso[]; // pelo dia; as pagas (e as que foram para a fatura seguinte) no fim
 }
+/** A mesma conta nos 12 meses: em cada mês, o que a aba Mês dele tem dela (vazio = não aparece; a fatura pode ter duas no mesmo mês). */
+export interface LinhaDoAno {
+  id: string;
+  tipo: Compromisso["tipo"];
+  nome: string;
+  meses: Compromisso[][];
+}
+/** Aba Ano: as linhas × os 12 meses e o rodapé de cada mês. */
+export interface CompromissosDoAno {
+  ano: string;
+  dados_ate: string;
+  meses: {
+    mes: string;
+    passou: boolean;
+    total: number; // passou: o que saiu (o pago); senão, o esperado. A fatura que foi para a seguinte conta só o pago dela
+    renda: number | null; // passou: a que entrou; senão, a esperada (nulo = sem renda esperada)
+    metas: number;
+    livre: number | null; // renda − total − metas deste rodapé: no mês que passou, não é o livre da aba Mês (que usa a esperada e o total)
+  }[];
+  linhas: LinhaDoAno[]; // pelo dia do mês em que saem
+}
 
 /** O que pode medir uma meta, com dívida negativa. `serve` = que tipo de meta pode medir: bem zerado (quitado) e cartão sem dívida, nenhum. */
 export interface Posicao {

@@ -297,6 +297,17 @@ code { font-size: 12px; color: #b9b9c6; }
 .contas-do-mes .campos-linha .editavel { width: auto; font-size: 11px; padding: 1px 4px; }
 .contas-do-mes .campos-linha .editavel[aria-label^="Texto"] { width: 130px; }
 input.dia { width: 52px; }
+/* contas do ano: a primeira coluna fica parada ao rolar para o lado */
+.contas-do-ano th, .contas-do-ano td { padding-inline: 8px; }
+.contas-do-ano .nome { position: sticky; left: 0; z-index: 1; background: var(--painel); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contas-do-ano .nome .selo { margin-left: 6px; }
+.contas-do-ano thead th:first-child, .contas-do-ano tfoot th { position: sticky; left: 0; z-index: 2; }
+.contas-do-ano th a { color: inherit; text-decoration: none; }
+.contas-do-ano th.atual a { color: var(--texto); font-weight: 600; }
+.contas-do-ano tfoot th { background: var(--painel); border-bottom: 0; }
+.contas-do-ano tfoot tr:first-child > * { border-top: 1px solid var(--borda); }
+.contas-do-ano .previsto { opacity: .6; }
+.contas-do-ano tfoot .neg { color: var(--neg); }
 .nova-conta { margin: 10px 0; padding: 14px 16px; }
 .nova-conta .linha-form { margin-bottom: 4px; }
 .nova-conta .linha-form .campo.dia { flex: 0 0 70px; }

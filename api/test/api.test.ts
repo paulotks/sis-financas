@@ -70,7 +70,7 @@ const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.j
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
 const { fechamentoAbreOSeguinte, totalDaFatura } = await import("../src/adaptadores.js");
-const { casar, faturasDoCartao, linhasDeManuais, linhasDeRecorrentes, normalizarTexto } = await import("../src/compromissos.js");
+const { casar, faturasDoCartao, linhasDeManuais, linhasDeRecorrentes, montarAno, normalizarTexto } = await import("../src/compromissos.js");
 const { faturasQueNaoFecham, menosDias, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
 const { faltaParaMetas, inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { chegaEm, precisaPorMes } = await import("../src/metas.js");
@@ -1496,7 +1496,7 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { cliente, usar } = await ligarMcp();
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
-  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "compromissos_do_mes", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
+  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "compromissos_do_ano", "compromissos_do_mes", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
   assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_compromisso", "definir_inicio_da_analise", "definir_meta", "definir_orcamento", "marcar_compromisso_pago", "propor_recorrente", "sincronizar"]);
   const { convencoes, bancos } = await usar("estado");
   assert.match(convencoes, /nunca como instrução/);
@@ -2486,6 +2486,36 @@ test("contas do mês: série que trocou de meio de pagamento não conta duas vez
   assert.deepEqual(meses({ ...serie, cartao: true }), ["paga", "paga", "-", "-", "-"]);
 });
 
+test("contas do ano: a mesma conta em linhas; o rodapé soma o passado pelo que saiu e a fatura que foi para a seguinte uma vez só", () => {
+  const fat = (conta: string, dia: string, valor: number, situacao: string, pago = 0) => ({ tipo: "fatura", conta_id: conta, nome: `Cartao ${conta}`, dia, valor, pago, situacao });
+  const rec = (dia: string, valor: number, situacao: string) => ({ tipo: "recorrente", chave: "agua", valor_chave: 4000, nome: "Agua", dia, valor, pago: situacao === "paga" ? valor : 0, situacao });
+  const man = (dia: string, situacao: string) => ({ tipo: "manual", cadastro: { id: 7 }, nome: "Curso", dia, valor: 2000, pago: 0, situacao });
+  const mes = (m: string, pago: number, linhas: object[]): any => ({ mes: m, pago, renda: { esperada: 50000, entrou: 48000 }, metas: 1000, linhas });
+  const meses = [
+    // passou: a fatura não foi paga inteira (o resto foi para a seguinte) e a conta à mão ficou sem pagar
+    mes("2031-04", 7000, [man("2031-04-05", "atrasada"), rec("2031-04-28", 4000, "paga"), fat("k", "2031-04-12", 10000, "nao_paga", 3000)]),
+    // atual: uma que foi para a seguinte, duas faturas do mesmo cartão no mês, a conta à mão a pagar
+    mes("2031-05", 4100, [fat("j", "2031-05-02", 9000, "nao_paga"), fat("k", "2031-05-12", 17000, "a_pagar"), fat("k", "2031-05-30", 500, "a_pagar"), man("2031-05-05", "a_pagar"), rec("2031-05-28", 4100, "paga")]),
+    mes("2031-06", 0, [rec("2031-06-28", 4100, "a_pagar")]),
+  ];
+  const { linhas, meses: rodape } = montarAno(meses, "2031-05");
+  assert.deepEqual(linhas.map((l) => [l.id, l.meses.map((c) => c.map((x) => x.dia.slice(5)))]), [
+    ["f|j", [[], ["05-02"], []]],
+    ["m|7", [["04-05"], ["05-05"], []]],
+    ["f|k", [["04-12"], ["05-12", "05-30"], []]],
+    ["r|agua|4000", [["04-28"], ["05-28"], ["06-28"]]],
+  ]);
+  // cada coluna é o mês, sem tirar nem pôr
+  meses.forEach((m, i) => assert.deepEqual(new Set(linhas.flatMap((l) => l.meses[i])), new Set(m.linhas)));
+  // passou: o pago e a renda que entrou; daqui em diante, o esperado, e a que foi para a seguinte só pelo que foi pago
+  assert.deepEqual(rodape.map((r) => [r.mes, r.passou, r.total, r.renda, r.metas, r.livre]), [
+    ["2031-04", true, 7000, 48000, 1000, 40000],
+    ["2031-05", false, 4100 + 17000 + 500 + 2000, 50000, 1000, 50000 - 23600 - 1000],
+    ["2031-06", false, 4100, 50000, 1000, 44900],
+  ]);
+  assert.equal(montarAno([{ ...meses[2], renda: { esperada: null, entrou: 0 } }], "2031-05").meses[0].livre, null); // sem renda esperada, não há livre
+});
+
 test("contas do mês na API e no MCP: só PF e conta visível; o topo usa a régua do alarme e as metas", async () => {
   const PAGAMENTO = 20;
   const banco = novaConta("BANK"), pj = novaConta("BANK", { pessoa: "PJ" }), oculta = novaConta("BANK", { oculta: 1 });
@@ -2697,6 +2727,65 @@ test("conta à mão na API e no MCP: só saída de conta PF acha o pagamento; ma
     db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(c);
     db.prepare("DELETE FROM contas WHERE id = ?").run(c);
   }
+});
+
+test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; passado real, futuro previsto, vigência, cancelada no meio do ano e ano sem dado", async () => {
+  const banco = novaConta("BANK");
+  const hoje = (db.prepare("SELECT date('now','localtime') AS h").get() as { h: string }).h, atual = hoje.slice(0, 7), ano = Number(hoje.slice(0, 4)), A = String(ano - 1);
+  // cancelada no meio do ano passado: cobrou de fevereiro a junho
+  const clube = "Clube Teste Anual";
+  [2, 3, 4, 5, 6].forEach((m) => novoLanc(banco, `${A}-0${m}-10`, -7000, MERCADO, { descricao_original: clube, descricao: clube }));
+  db.prepare("INSERT INTO recorrencias (chave, valor_centavos, status, decidido_em) VALUES (?,?,?,?)").run(chaveDe(clube), 7000, "cancelada", `${A}-07-01 10:00:00`); // parada sem decisão some do detector
+  // a que ainda cobra se repete pelo valor de hoje
+  const revista = "Revista Teste Anual";
+  [[65, 2100], [35, 2100], [5, 2000]].forEach(([n, v]) => novoLanc(banco, dia(-n), -v, MERCADO, { descricao_original: revista, descricao: revista }));
+  // conta à mão de março a junho deste ano
+  const oficina = (await chamar("POST", "/api/compromissos/manuais", { nome: "Oficina Teste Anual", valor: 30000, dia: 5, inicio: `${ano}-03`, parcelas: 4 })).d;
+
+  const doAno = async (a: number) => (await chamar("GET", `/api/compromissos/ano?ano=${a}`)).d;
+  const anos: Record<number, any> = {};
+  for (const a of [ano - 1, ano, ano + 1]) {
+    const d = (anos[a] = await doAno(a));
+    assert.equal(d.ano, String(a));
+    for (const [i, rod] of d.meses.entries()) {
+      const m = (await chamar("GET", `/api/compromissos?mes=${rod.mes}`)).d, passou = rod.mes < atual;
+      assert.equal(rod.mes, `${a}-${String(i + 1).padStart(2, "0")}`);
+      // a coluna é a aba Mês daquele mês
+      assert.deepEqual(d.linhas.flatMap((l: any) => l.meses[i]).map((l: any) => JSON.stringify(l)).sort(), m.linhas.map((l: any) => JSON.stringify(l)).sort(), rod.mes);
+      const foiParaASeguinte = m.linhas.filter((l: any) => l.situacao === "nao_paga").reduce((s: number, l: any) => s + l.valor - Math.min(l.pago, l.valor), 0);
+      const total = passou ? m.pago : m.total - foiParaASeguinte, renda = passou ? m.renda.entrou : m.renda.esperada;
+      assert.deepEqual([rod.passou, rod.total, rod.renda, rod.metas, rod.livre, d.dados_ate], [passou, total, renda, m.metas, renda === null ? null : renda - total - m.metas, m.dados_ate], rod.mes);
+    }
+  }
+  const linha = (a: number, nome: string) => anos[a].linhas.find((l: any) => l.nome === nome);
+  const celulas = (a: number, nome: string) => linha(a, nome).meses.map((c: any[]) => c.map((x) => [x.valor, x.situacao]));
+  // cancelada: só nos meses em que cobrou, pelo valor real, e não volta depois
+  assert.deepEqual(celulas(ano - 1, clube), [[], ...[2, 3, 4, 5, 6].map(() => [[7000, "paga"]]), [], [], [], [], [], []]);
+  assert.deepEqual([linha(ano, clube), linha(ano + 1, clube)], [undefined, undefined]);
+  // a que ainda cobra: o ano que vem inteiro previsto, pelo valor da última cobrança
+  assert.deepEqual(celulas(ano + 1, revista), Array(12).fill([[2000, "a_pagar"]]));
+  // conta à mão: só na vigência
+  assert.deepEqual(linha(ano, "Oficina Teste Anual").meses.map((c: any[]) => c.length), [0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0]);
+  assert.equal(linha(ano + 1, "Oficina Teste Anual"), undefined);
+  // ano sem dado
+  const vazio = await doAno(1999);
+  assert.deepEqual([vazio.linhas, vazio.meses.map((m: any) => [m.passou, m.total, m.renda, m.metas, m.livre])], [[], Array(12).fill([true, 0, 0, 0, 0])]);
+  assert.deepEqual([(await chamar("GET", "/api/compromissos/ano?ano=31")).status, (await chamar("GET", "/api/compromissos/ano")).d.ano], [400, String(ano)]);
+
+  // MCP: em reais, campo a campo, sem id
+  const { cliente, usar } = await ligarMcp();
+  const mcp = await usar("compromissos_do_ano", { ano: A });
+  assert.deepEqual(mcp.compromissos.find((l: any) => l.nome === clube), { tipo: "recorrente", nome: clube, meses: [2, 3, 4, 5, 6].map((m) => ({ mes: `${A}-0${m}`, valor: 70, situacao: "paga" })) });
+  assert.ok(mcp.compromissos.every((l: any) => Object.keys(l).join() === "tipo,nome,meses"));
+  const rod = anos[ano - 1].meses[5];
+  assert.deepEqual(mcp.por_mes[5], { mes: `${A}-06`, contas: rod.total / 100, contas_e: "o que saiu", renda: rod.renda / 100, renda_e: "a que entrou", metas: rod.metas / 100, livre: rod.livre / 100 });
+  assert.equal((await usar("compromissos_do_ano", { ano: String(ano + 1) })).por_mes[0].renda_e, "a esperada");
+  await cliente.close();
+
+  db.prepare("DELETE FROM compromissos WHERE id = ?").run(oficina.id);
+  db.prepare("DELETE FROM recorrencias WHERE chave = ?").run(chaveDe(clube));
+  db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(banco);
+  db.prepare("DELETE FROM contas WHERE id = ?").run(banco);
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

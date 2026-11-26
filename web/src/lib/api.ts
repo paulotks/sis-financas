@@ -1,6 +1,6 @@
 // Chamadas da API local. Valores sempre em centavos (saída negativa).
 // O formato das respostas é o da própria API (api/src/tipos.ts): campo renomeado lá vira erro de tipo aqui.
-import type { Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
+import type { Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, CompromissosDoAno, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
 import type { ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio, Posicao, PreviaRegra, Recorrente, Regra, RegraCriada } from "../../../api/src/tipos";
 import type { ResultadoSync, Resumo, Ritmo, Sentido, Sincronizacao, TotaisLancamentos } from "../../../api/src/tipos";
 export type * from "../../../api/src/tipos";
@@ -90,6 +90,7 @@ export const api = {
 
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
   compromissos: (mes: string) => req<Compromissos>("GET", `/api/compromissos${qs({ mes })}`),
+  compromissosDoAno: (ano: string) => req<CompromissosDoAno>("GET", `/api/compromissos/ano${qs({ ano })}`),
   criarCompromisso: (d: EdicaoCompromisso & Pick<CompromissoCadastrado, "nome" | "valor" | "dia">) => req<CompromissoCadastrado>("POST", "/api/compromissos/manuais", d),
   editarCompromisso: (id: number, d: EdicaoCompromisso) => req<CompromissoCadastrado>("PATCH", `/api/compromissos/manuais/${id}`, d),
   apagarCompromisso: (id: number) => req<Ok>("DELETE", `/api/compromissos/manuais/${id}`),
@@ -124,6 +125,9 @@ export const sugerirPadrao = (original: string) => {
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const dinheiro = (centavos: number | null | undefined) => (centavos == null ? "—" : brl.format(centavos / 100));
 const brlCurto = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
+const reais = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** "1.234,56", sem o "R$": para grade de valores, em que o símbolo em toda célula só ocupa espaço. */
+export const semSimbolo = (centavos: number) => reais.format(centavos / 100);
 /** "R$ 1,2 mil": para estimativa, em que os centavos dariam uma precisão que não existe. */
 export const dinheiroCurto = (centavos: number) => brlCurto.format(centavos / 100);
 /** "1.234,56" -> 123456 centavos; vazio = 0; o que não for número = null. */

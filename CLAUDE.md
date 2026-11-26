@@ -42,7 +42,7 @@ api/src/
   patrimonio.ts   soma das posições e foto diária dos saldos
   metas.ts        o que as metas pedem por mês, progresso pela posição ligada e previsão (as rotas ficam em server.ts)
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
-  compromissos.ts Contas do mês: contas à mão, recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês)
+  compromissos.ts Contas do mês: contas à mão, recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês; o ano chama a do mês 12 vezes)
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
   tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
@@ -50,7 +50,7 @@ web/src/
   lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
   components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
-  pages/                Resumo, Lancamentos, Orcamento, ContasDoMes (menu logo depois de Orçamento), Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
+  pages/                Resumo, Lancamentos, Orcamento, ContasDoMes (menu logo depois de Orçamento; abas Mês e Ano), Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -109,6 +109,8 @@ web/src/
   o mesmo dono. O texto **não é regra de categoria**. Marca à mão só vale quando nada casou. **A conta à mão escolhe primeiro:** a cobrança que
   ela pegou sai da recorrente (naquele mês a recorrente fica só com o que sobrou, sem projeção), e a que perdeu a última cobrança não aparece mais
   a pagar (o passado que a conta à mão não pegou fica); a página Recorrentes não muda.
+  **Aba Ano:** cada coluna é a aba Mês daquele mês, pela mesma função (nunca refaça a regra na grade). Rodapé: o mês que passou pelo pago e pela
+  renda que entrou, do atual em diante pelo esperado; a fatura que foi para a seguinte conta só o que foi pago dela (o resto está na seguinte).
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

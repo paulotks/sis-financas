@@ -2,16 +2,32 @@ import { Fragment, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  api, dataCurta, dinheiro, lerDinheiro, mesAtual, mesCurto, nomeMes, type Compromisso, type CompromissoFatura, type CompromissoManual, type EdicaoCompromisso, type Recorrente,
+  api, dataCurta, dinheiro, lerDinheiro, mesAtual, mesCurto, nomeMes, semSimbolo, type Compromisso, type CompromissoFatura, type CompromissoManual, type EdicaoCompromisso, type Recorrente,
 } from "../lib/api";
 import CampoDinheiro from "../components/CampoDinheiro";
 import SeletorMes from "../components/SeletorMes";
+
+/** Duas abas: o mês (com as ações) e o ano (só leitura), que mostra cada mês como a aba Mês dele. */
+export default function ContasDoMes() {
+  const [params] = useSearchParams();
+  return params.get("aba") === "ano" ? <Ano /> : <Mes />;
+}
+
+function Abas({ aba }: { aba: "mes" | "ano" }) {
+  const [params, setParams] = useSearchParams();
+  return (
+    <div className="segmentado">
+      <button className={aba === "mes" ? "ativo" : ""} onClick={() => setParams({})}>Mês</button>
+      <button className={aba === "ano" ? "ativo" : ""} onClick={() => setParams({ aba: "ano", ano: (params.get("mes") ?? mesAtual()).slice(0, 4) })}>Ano</button>
+    </div>
+  );
+}
 
 /**
  * O mês pelo dinheiro que sai da conta, no mês em que sai. Nada daqui soma em outro número: as ações são a decisão da sugestão (a mesma de
  * Recorrentes) e as contas à mão, que só existem nesta página.
  */
-export default function ContasDoMes() {
+function Mes() {
   const [params, setParams] = useSearchParams();
   const mes = params.get("mes") ?? mesAtual();
   const qc = useQueryClient();
@@ -41,6 +57,7 @@ export default function ContasDoMes() {
     <section>
       <header className="topo">
         <h1>Contas do mês</h1>
+        <Abas aba="mes" />
         <SeletorMes mes={mes} onChange={(m) => setParams({ mes: m }, { replace: true })} />
       </header>
 
@@ -196,6 +213,97 @@ export default function ContasDoMes() {
       )}
     </section>
   );
+}
+
+/** As contas × os 12 meses, só leitura. Cada coluna é a aba Mês daquele mês (o cabeçalho abre ela); o rodapé soma o passado pelo que saiu. */
+function Ano() {
+  const [params, setParams] = useSearchParams();
+  const ano = params.get("ano") ?? mesAtual().slice(0, 4);
+  const q = useQuery({ queryKey: ["compromissos", "ano", ano], queryFn: () => api.compromissosDoAno(ano) });
+  const d = q.data, irPara = (n: number) => setParams({ aba: "ano", ano: String(Number(ano) + n) }, { replace: true });
+  const rodape = (rotulo: string, dica: string, valor: (m: NonNullable<typeof d>["meses"][number]) => number | null) => (
+    <tr>
+      <th title={dica}>{rotulo}</th>
+      {d!.meses.map((m) => {
+        const v = valor(m);
+        return <td key={m.mes} className={`num ${m.passou ? "" : "previsto"} ${v !== null && v < 0 ? "neg" : ""}`}>{v === null ? "—" : semSimbolo(v)}</td>;
+      })}
+    </tr>
+  );
+
+  return (
+    <section>
+      <header className="topo">
+        <h1>Contas do mês</h1>
+        <Abas aba="ano" />
+        <div className="seletor-mes">
+          <button className="icone-botao" title="Ano anterior" onClick={() => irPara(-1)}>‹</button>
+          <span>{ano}</span>
+          <button className="icone-botao" title="Próximo ano" onClick={() => irPara(1)}>›</button>
+        </div>
+      </header>
+
+      {q.error && <div className="aviso erro">{q.error.message}</div>}
+      <p className="mudo pequeno">
+        Em reais. Cada coluna é a aba Mês daquele mês: clique no mês para abrir, e para confirmar, marcar ou editar. O que já foi pago aparece em cor
+        cheia; o que ainda vai sair, mais claro (≈ = fatura estimada). No rodapé, o mês que passou conta o que saiu e a renda que entrou; do mês
+        atual em diante, o esperado. A fatura que foi para a seguinte conta só o que foi pago dela: o resto está no total da seguinte.
+      </p>
+
+      <div className="tabela-wrap">
+        <table className="tabela compacta contas-do-ano">
+          <thead>
+            <tr>
+              <th>Conta</th>
+              {(d?.meses ?? []).map((m) => (
+                <th key={m.mes} className={`num ${m.mes === mesAtual() ? "atual" : ""}`}>
+                  <Link to={`?mes=${m.mes}`} title={`Abrir ${nomeMes(m.mes).toLowerCase()}`}>{nomeMes(m.mes).slice(0, 3)}</Link>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {d?.linhas.length === 0 && <tr><td colSpan={13} className="vazio">Nenhuma conta neste ano.</td></tr>}
+            {!d && <tr><td colSpan={13} className="vazio">{q.isLoading ? "Carregando…" : ""}</td></tr>}
+            {d?.linhas.map((l) => {
+              const ultima = l.meses.findLast((c) => c.length)![0];
+              return (
+                <tr key={l.id}>
+                  <td className="nome" title={l.tipo === "fatura" ? `Fatura ${l.nome}` : l.nome}>
+                    {l.tipo === "fatura" ? `Fatura ${l.nome}` : l.nome}
+                    {l.tipo === "manual" && <span className="selo">à mão</span>}
+                    {ultima.tipo === "recorrente" && ultima.sugestao && <span className="selo">sugestão</span>}
+                  </td>
+                  {l.meses.map((c, i) => <td key={i} className="num">{c.map((x, j) => <Celula key={j} l={x} passou={d.meses[i].passou} />)}</td>)}
+                </tr>
+              );
+            })}
+          </tbody>
+          {d && (
+            <tfoot>
+              {rodape("Contas", "O que saiu, no mês que passou; o esperado, do atual em diante.", (m) => m.total)}
+              {rodape("Renda", "A que entrou, no mês que passou; a esperada (a régua do alarme), do atual em diante.", (m) => m.renda)}
+              {rodape("Metas", "O que as metas pedem no mês.", (m) => m.metas)}
+              {rodape("Livre", "Renda − contas − metas desta tabela. Pelo vencimento: não é o número do Resumo nem a sobra do Orçamento.", (m) => m.livre)}
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** Pago em cor cheia; o que vai sair, mais claro; o mês que passou sem pagamento, "não paga". */
+function Celula({ l, passou }: { l: Compromisso; passou: boolean }) {
+  if (l.situacao === "paga") return <div title={l.pago_em ? `paga em ${dataCurta(l.pago_em)}` : "nada a pagar"}>{semSimbolo(l.valor)}</div>;
+  if (l.situacao === "nao_paga") {
+    const para = l.tipo === "fatura" && l.foi_para ? ` foi para a fatura de ${mesCurto(l.foi_para)}` : "";
+    return <div className="mudo" title={l.pago > 0 ? `paga ${dinheiro(l.pago)} de ${dinheiro(l.valor)} · o resto${para}` : `não paga ·${para}`}>{l.pago > 0 ? semSimbolo(l.pago) : "não paga"}</div>;
+  }
+  if (passou) return <div className="alerta" title={`venceu em ${dataCurta(l.dia)} sem pagamento`}>não paga</div>;
+  const estimada = l.tipo === "fatura" && l.estimada;
+  const dica = `${l.situacao === "atrasada" ? "atrasada" : "a pagar"}, ${dataCurta(l.dia)}${estimada ? " (estimada)" : ""}${l.pago > 0 ? ` · paga ${dinheiro(l.pago)}` : ""}`;
+  return <div className={`previsto ${l.situacao === "atrasada" ? "alerta" : ""}`} title={dica}>{estimada && "≈ "}{semSimbolo(l.valor)}</div>;
 }
 
 function Situacao({ l }: { l: Compromisso }) {

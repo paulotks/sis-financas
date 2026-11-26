@@ -2,7 +2,7 @@ import fs from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
-import { candidatosPara, compromissosDoMes, lerCadastros, MINIMO_LETRAS_DO_TEXTO, normalizarTexto } from "./compromissos.js";
+import { candidatosPara, compromissosDoAno, compromissosDoMes, lerCadastros, MINIMO_LETRAS_DO_TEXTO, normalizarTexto } from "./compromissos.js";
 import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
@@ -19,7 +19,7 @@ import {
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 import type {
-  Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
+  Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, CompromissosDoAno, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
   MetaLinha, Metas, Ok, Orcamento, Patrimonio, PreviaRegra, Recorrente, Regra, RegraCriada, RegraLinha, ResultadoSync, Resumo, Ritmo, Sincronizacao,
   TotaisLancamentos,
 } from "./tipos.js";
@@ -326,6 +326,11 @@ app.get("/api/compromissos", async (req): Promise<Compromissos> => {
   const hoje = diaDeHoje();
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
   return compromissosDoMes(mes, hoje);
+});
+app.get("/api/compromissos/ano", async (req): Promise<CompromissosDoAno> => {
+  const hoje = diaDeHoje();
+  const { ano } = z.object({ ano: z.string().regex(/^\d{4}$/).default(hoje.slice(0, 4)) }).parse(req.query);
+  return compromissosDoAno(ano, hoje);
 });
 
 // conta à mão: o que o detector não pega. Só muda a página Contas do mês; o texto acha o pagamento e não é regra de categoria

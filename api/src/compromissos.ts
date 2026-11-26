@@ -8,9 +8,10 @@ import { db } from "./db.js";
 import { menosDias, previstas, type Prevista } from "./faltas.js";
 import { chaveDe, deveCobrar, nomeDe, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, somarMes } from "./ritmo.js";
-import { BASE_RESUMO, fimDoMes, listarRecorrentes, reguaDoMes, somar, totaisDoMes, ultimoDiaComDado } from "./totais.js";
+import { BASE_RESUMO, fimDoMes, historicoPF, listarRecorrentes, reguaDoMes, somar, totaisDoMes, ultimoDiaComDado } from "./totais.js";
 import type {
-  CandidatoAPagamento, CandidatosAPagamento, Compromisso, CompromissoCadastrado, CompromissoFatura, CompromissoManual, CompromissoRecorrente, Compromissos,
+  CandidatoAPagamento, CandidatosAPagamento, Compromisso, CompromissoCadastrado, CompromissoFatura, CompromissoManual, CompromissoRecorrente, Compromissos, CompromissosDoAno,
+  LinhaDoAno,
 } from "./tipos.js";
 
 const RUIDO = 100; // até R$ 1 de diferença, a fatura está paga
@@ -259,10 +260,15 @@ export function candidatosPara(cadastro: CompromissoCadastrado, mes: string, hoj
     .sort((a, b) => Math.abs(a.valor - cadastro.valor) - Math.abs(b.valor - cadastro.valor) || b.data.localeCompare(a.data));
 }
 
-/** O mês inteiro: linhas pelo dia (os pagos no fim) e o topo. Só PF, sem conta oculta. */
-export function compromissosDoMes(mes: string, hoje: string): Compromissos {
+/** Paga conta inteira (o banco pode ter abatido um crédito); pago a mais (perna repetida do banco) não vira crédito. */
+const pagoDe = (l: Compromisso) => (l.situacao === "paga" ? l.valor : Math.max(0, Math.min(l.pago, l.valor)));
+
+/**
+ * O mês inteiro: linhas pelo dia (os pagos no fim) e o topo. Só PF, sem conta oculta. A aba Ano passa as recorrentes e o histórico lidos uma
+ * vez só (o detector é o que pesa); sem eles, a leitura de hoje.
+ */
+export function compromissosDoMes(mes: string, hoje: string, recorrentes = listarRecorrentes("PF", hoje), historico = historicoPF(hoje.slice(0, 7))): Compromissos {
   const mesAtual = hoje.slice(0, 7), dadosAte = ultimoDiaComDado(hoje);
-  const recorrentes = listarRecorrentes("PF", hoje);
   const cadastros = lerCadastros();
   // a conta à mão escolhe primeiro: no mês, e no mês da última cobrança de cada recorrente (a que a perdeu não se projeta mais)
   const donos = donosDoMes(mes, hoje, cadastros), pegos = new Set([...donos.values()].map((c) => c.id));
@@ -294,12 +300,45 @@ export function compromissosDoMes(mes: string, hoje: string): Compromissos {
   const resolvida = (l: Compromisso) => l.situacao === "paga" || l.situacao === "nao_paga";
   linhas.sort((a, b) => Number(resolvida(a)) - Number(resolvida(b)) || a.dia.localeCompare(b.dia) || a.nome.localeCompare(b.nome));
 
-  const { esperada, metas } = reguaDoMes(mes, mesAtual);
-  // paga conta inteira (o banco pode ter abatido um crédito); pago a mais (perna repetida do banco) não vira crédito
-  const pagoDe = (l: Compromisso) => (l.situacao === "paga" ? l.valor : Math.max(0, Math.min(l.pago, l.valor)));
+  const { esperada, metas } = reguaDoMes(mes, mesAtual, historico);
   const total = somar(linhas.map((l) => l.valor)), pago = somar(linhas.map(pagoDe));
   return {
     mes, dados_ate: dadosAte, renda: { esperada, entrou: totaisDoMes(mes, "PF").entradas },
     total, pago, falta: somar(linhas.map((l) => Math.max(0, l.valor - pagoDe(l)))), metas, livre: esperada === null ? null : esperada - total - metas, linhas,
   };
+}
+
+/** A mesma conta em meses diferentes: a recorrente pela decisão, a fatura pelo cartão, a conta à mão pelo cadastro. */
+const idDaLinha = (l: Compromisso) => (l.tipo === "fatura" ? `f|${l.conta_id}` : l.tipo === "manual" ? `m|${l.cadastro.id}` : `r|${l.chave}|${l.valor_chave}`);
+
+/**
+ * Os meses do ano em linhas: cada coluna é a aba Mês daquele mês, sem tirar nem pôr. Rodapé: o mês que passou pelo que saiu e pela renda que
+ * entrou; do atual em diante, pelo esperado. A fatura que foi para a seguinte conta só o que foi pago dela: o resto está no total da seguinte.
+ */
+export function montarAno(meses: Compromissos[], mesAtual: string): Pick<CompromissosDoAno, "meses" | "linhas"> {
+  const linhas = new Map<string, LinhaDoAno>();
+  meses.forEach((m, i) => {
+    for (const l of m.linhas) {
+      const id = idDaLinha(l);
+      if (!linhas.has(id)) linhas.set(id, { id, tipo: l.tipo, nome: l.nome, meses: meses.map(() => []) });
+      linhas.get(id)!.meses[i].push(l);
+    }
+  });
+  const dia = (x: LinhaDoAno) => x.meses.findLast((c) => c.length)![0].dia.slice(8); // pelo dia do mês em que sai
+  return {
+    linhas: [...linhas.values()].sort((a, b) => dia(a).localeCompare(dia(b)) || a.nome.localeCompare(b.nome)),
+    meses: meses.map((m) => {
+      const passou = m.mes < mesAtual;
+      const total = m.pago + somar(m.linhas.map((l) => (passou || l.situacao === "nao_paga" ? 0 : l.valor - pagoDe(l))));
+      const renda = passou ? m.renda.entrou : m.renda.esperada;
+      return { mes: m.mes, passou, total, renda, metas: m.metas, livre: renda === null ? null : renda - total - m.metas };
+    }),
+  };
+}
+
+/** O ano inteiro, mês a mês pela mesma função da aba Mês: as duas abas nunca discordam. */
+export function compromissosDoAno(ano: string, hoje: string): CompromissosDoAno {
+  const recorrentes = listarRecorrentes("PF", hoje), historico = historicoPF(hoje.slice(0, 7));
+  const meses = Array.from({ length: 12 }, (_, i) => compromissosDoMes(`${ano}-${String(i + 1).padStart(2, "0")}`, hoje, recorrentes, historico));
+  return { ano, dados_ate: meses[0].dados_ate, ...montarAno(meses, hoje.slice(0, 7)) };
 }

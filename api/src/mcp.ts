@@ -9,7 +9,7 @@ import { z } from "zod";
 import { GRUPOS } from "./grupos.js";
 import { chaveDe } from "./recorrentes.js"; // função pura, sem base
 import type {
-  Analises, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
+  Analises, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, CompromissosDoAno, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
   PreviaRegra, Recorrente, Regra, RegraCriada, Resumo, Ritmo, Sincronizacao, TotaisLancamentos,
 } from "./tipos.js"; // o formato das respostas da API; só tipo, some na compilação
 
@@ -53,6 +53,9 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   marca à mão (marcar_compromisso_pago); o lançamento que casar vale mais que a marca. A conta à mão escolhe primeiro: a cobrança que
   ela pegou sai da recorrente naquele mês (e, se era a última, a recorrente não se projeta mais); a página Recorrentes não muda. Você cria e edita
   (definir_compromisso) e marca; apagar só o Paulo, na tela. O que se paga no cartão não é conta à mão: já está na fatura.
+  O ano (compromissos_do_ano): cada mês é o compromissos_do_mes daquele mês, as mesmas contas em linhas. No rodapé, o mês que passou
+  conta o que saiu (o pago) e a renda que entrou; do atual em diante, o esperado. A fatura que foi para a seguinte conta só o que foi pago
+  dela (o resto está no total da seguinte). Por isso o livre de um mês que passou não é o de compromissos_do_mes. Não some o ano com o Resumo.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -313,6 +316,35 @@ export function criarServidor(base: string) {
                   parcelas: l.parcelas.map((p) => ({ descricao: p.descricao, parcela: `${p.parcela}/${p.total}`, valor: reais(p.valor), ...(p.prevista && { prevista: true }) })),
                   outras_compras: { valor: reais(l.outras.valor), qtd: l.outras.qtd },
                 }),
+          })),
+        };
+      }),
+  );
+
+  servidor.registerTool(
+    "compromissos_do_ano",
+    {
+      description: "Contas do mês, o ano inteiro (só PF): as mesmas contas de compromissos_do_mes em linhas, com o valor e a situação de cada mês, e por mês o total das contas, a renda, as metas e o livre. Sem ano = o atual.",
+      inputSchema: { ano: z.string().regex(/^\d{4}$/).optional().describe("AAAA") },
+      annotations: LEITURA,
+    },
+    (a) =>
+      tentar(async () => {
+        const d = await ler<CompromissosDoAno>("/api/compromissos/ano", { ano: a.ano });
+        return {
+          ano: d.ano, dados_do_banco_ate: d.dados_ate,
+          por_mes: d.meses.map((m) => ({
+            mes: m.mes, contas: reais(m.total), contas_e: m.passou ? "o que saiu" : "o esperado", renda: reais(m.renda),
+            renda_e: m.passou ? "a que entrou" : "a esperada", metas: reais(m.metas), livre: reais(m.livre),
+          })),
+          // campo a campo: nenhum id de conta sai
+          compromissos: d.linhas.map((l) => ({
+            tipo: l.tipo, nome: l.nome,
+            meses: l.meses.flatMap((c, i) => c.map((x) => ({
+              mes: d.meses[i].mes, valor: reais(x.valor), situacao: x.situacao,
+              ...(x.situacao !== "paga" && x.pago > 0 && { pago_a_menos: reais(x.pago) }),
+              ...(x.tipo === "fatura" && x.estimada && { estimada: true }), ...(x.tipo === "recorrente" && x.sugestao && { sugestao: true }),
+            }))),
           })),
         };
       }),
