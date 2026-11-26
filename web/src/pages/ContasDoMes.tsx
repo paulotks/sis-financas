@@ -17,8 +17,15 @@ function Abas({ aba }: { aba: "mes" | "ano" }) {
   const [params, setParams] = useSearchParams();
   return (
     <div className="segmentado">
-      <button className={aba === "mes" ? "ativo" : ""} onClick={() => setParams({})}>Mês</button>
-      <button className={aba === "ano" ? "ativo" : ""} onClick={() => setParams({ aba: "ano", ano: (params.get("mes") ?? mesAtual()).slice(0, 4) })}>Ano</button>
+      {/* do ano de hoje, o mês atual; de outro ano, janeiro dele */}
+      <button className={aba === "mes" ? "ativo" : ""} aria-pressed={aba === "mes"}
+        onClick={() => aba === "ano" && setParams(params.get("ano") && params.get("ano") !== mesAtual().slice(0, 4) ? { mes: `${params.get("ano")}-01` } : {})}>
+        Mês
+      </button>
+      <button className={aba === "ano" ? "ativo" : ""} aria-pressed={aba === "ano"}
+        onClick={() => aba === "mes" && setParams({ aba: "ano", ano: (params.get("mes") ?? mesAtual()).slice(0, 4) })}>
+        Ano
+      </button>
     </div>
   );
 }
@@ -293,17 +300,24 @@ function Ano() {
   );
 }
 
-/** Pago em cor cheia; o que vai sair, mais claro; o mês que passou sem pagamento, "não paga". */
+/**
+ * A situação da aba Mês, curta: pago em cor cheia; o que vai sair, mais claro. No mês que passou, atrasada sem nada pago vira "não paga"; o
+ * que os dados do banco ainda não cobrem continua "a pagar", como na aba Mês.
+ */
 function Celula({ l, passou }: { l: Compromisso; passou: boolean }) {
-  if (l.situacao === "paga") return <div title={l.pago_em ? `paga em ${dataCurta(l.pago_em)}` : "nada a pagar"}>{semSimbolo(l.valor)}</div>;
+  if (l.situacao === "paga") {
+    const dica = l.tipo === "manual" && l.marcada ? "marcada como paga" : l.pago_em ? `paga em ${dataCurta(l.pago_em)}` : "nada a pagar";
+    return <div title={dica}>{semSimbolo(l.valor)}</div>;
+  }
+  const parcial = l.pago > 0 ? `paga ${dinheiro(l.pago)} de ${dinheiro(l.valor)}` : null;
   if (l.situacao === "nao_paga") {
     const para = l.tipo === "fatura" && l.foi_para ? ` foi para a fatura de ${mesCurto(l.foi_para)}` : "";
-    return <div className="mudo" title={l.pago > 0 ? `paga ${dinheiro(l.pago)} de ${dinheiro(l.valor)} · o resto${para}` : `não paga ·${para}`}>{l.pago > 0 ? semSimbolo(l.pago) : "não paga"}</div>;
+    return <div className="mudo" title={parcial ? `${parcial} · o resto${para}` : `não paga ·${para}`}>{parcial ? semSimbolo(l.pago) : "não paga"}</div>;
   }
-  if (passou) return <div className="alerta" title={`venceu em ${dataCurta(l.dia)} sem pagamento`}>não paga</div>;
-  const estimada = l.tipo === "fatura" && l.estimada;
-  const dica = `${l.situacao === "atrasada" ? "atrasada" : "a pagar"}, ${dataCurta(l.dia)}${estimada ? " (estimada)" : ""}${l.pago > 0 ? ` · paga ${dinheiro(l.pago)}` : ""}`;
-  return <div className={`previsto ${l.situacao === "atrasada" ? "alerta" : ""}`} title={dica}>{estimada && "≈ "}{semSimbolo(l.valor)}</div>;
+  const atrasada = l.situacao === "atrasada", estimada = l.tipo === "fatura" && l.estimada;
+  const dica = `${atrasada ? "atrasada" : "a pagar"}, ${dataCurta(l.dia)}${estimada ? " (estimada)" : ""}${parcial ? ` · ${parcial}` : ""}`;
+  if (passou && atrasada && !parcial) return <div className="alerta" title={dica}>não paga</div>;
+  return <div className={`previsto ${atrasada ? "alerta" : ""}`} title={dica}>{estimada && "≈ "}{semSimbolo(l.valor)}</div>;
 }
 
 function Situacao({ l }: { l: Compromisso }) {

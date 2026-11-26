@@ -2506,7 +2506,10 @@ test("contas do ano: a mesma conta em linhas; o rodapé soma o passado pelo que 
     ["r|agua|4000", [["04-28"], ["05-28"], ["06-28"]]],
   ]);
   // cada coluna é o mês, sem tirar nem pôr
-  meses.forEach((m, i) => assert.deepEqual(new Set(linhas.flatMap((l) => l.meses[i])), new Set(m.linhas)));
+  meses.forEach((m, i) => {
+    const coluna = linhas.flatMap((l) => l.meses[i]);
+    assert.ok(coluna.length === m.linhas.length && m.linhas.every((l: object) => coluna.filter((x) => x === l).length === 1));
+  });
   // passou: o pago e a renda que entrou; daqui em diante, o esperado, e a que foi para a seguinte só pelo que foi pago
   assert.deepEqual(rodape.map((r) => [r.mes, r.passou, r.total, r.renda, r.metas, r.livre]), [
     ["2031-04", true, 7000, 48000, 1000, 40000],
@@ -2739,6 +2742,15 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
   // a que ainda cobra se repete pelo valor de hoje
   const revista = "Revista Teste Anual";
   [[65, 2100], [35, 2100], [5, 2000]].forEach(([n, v]) => novoLanc(banco, dia(-n), -v, MERCADO, { descricao_original: revista, descricao: revista }));
+  // cartão no ano passado: a fatura de agosto não foi paga e foi para a de setembro, que foi paga inteira
+  const PAGAMENTO = 20, cartao = novaConta("CREDIT");
+  const fatura = (m: string, total: number) => db.prepare("INSERT INTO faturas (id, conta_id, vencimento, total_centavos, bruto) VALUES (?,?,?,?,?)")
+    .run(`fat-${cartao}-${m}`, cartao, `${A}-${m}-15`, total, JSON.stringify({ billClosingDate: `${A}-${m}-05T00:00:00.000Z` }));
+  fatura("08", 5000);
+  fatura("09", 8000);
+  novoLanc(cartao, `${A}-07-20`, -5000, MERCADO, { fatura_id: `fat-${cartao}-08` });
+  novoLanc(cartao, `${A}-08-20`, -3000, MERCADO, { fatura_id: `fat-${cartao}-09` });
+  novoLanc(cartao, `${A}-09-14`, 8000, PAGAMENTO);
   // conta à mão de março a junho deste ano
   const oficina = (await chamar("POST", "/api/compromissos/manuais", { nome: "Oficina Teste Anual", valor: 30000, dia: 5, inicio: `${ano}-03`, parcelas: 4 })).d;
 
@@ -2759,6 +2771,13 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
   }
   const linha = (a: number, nome: string) => anos[a].linhas.find((l: any) => l.nome === nome);
   const celulas = (a: number, nome: string) => linha(a, nome).meses.map((c: any[]) => c.map((x) => [x.valor, x.situacao]));
+  // o mês que passou soma o que saiu de cada célula: a fatura que foi para a seguinte não entra (está nos 8000 de setembro)
+  for (const [i, rod] of anos[ano - 1].meses.entries()) {
+    const celulas = anos[ano - 1].linhas.flatMap((l: any) => l.meses[i]);
+    assert.equal(rod.total, celulas.reduce((s: number, l: any) => s + (l.situacao === "paga" ? l.valor : Math.min(l.pago, l.valor)), 0), rod.mes);
+  }
+  const doCartao = anos[ano - 1].linhas.find((l: any) => l.id === `f|${cartao}`).meses.map((c: any[]) => c.map((x) => [x.valor, x.situacao, x.foi_para]));
+  assert.deepEqual(doCartao, [[], [], [], [], [], [], [], [[5000, "nao_paga", `${A}-09`]], [[8000, "paga", null]], [], [], []]);
   // cancelada: só nos meses em que cobrou, pelo valor real, e não volta depois
   assert.deepEqual(celulas(ano - 1, clube), [[], ...[2, 3, 4, 5, 6].map(() => [[7000, "paga"]]), [], [], [], [], [], []]);
   assert.deepEqual([linha(ano, clube), linha(ano + 1, clube)], [undefined, undefined]);
@@ -2775,7 +2794,9 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
   // MCP: em reais, campo a campo, sem id
   const { cliente, usar } = await ligarMcp();
   const mcp = await usar("compromissos_do_ano", { ano: A });
-  assert.deepEqual(mcp.compromissos.find((l: any) => l.nome === clube), { tipo: "recorrente", nome: clube, meses: [2, 3, 4, 5, 6].map((m) => ({ mes: `${A}-0${m}`, valor: 70, situacao: "paga" })) });
+  assert.deepEqual(mcp.compromissos.find((l: any) => l.nome === clube), { tipo: "recorrente", nome: clube, meses: [2, 3, 4, 5, 6].map((m) => ({ mes: `${A}-0${m}`, dia: `${A}-0${m}-10`, valor: 70, situacao: "paga" })) });
+  assert.deepEqual(mcp.compromissos.find((l: any) => l.tipo === "fatura" && l.meses.some((x: any) => x.mes === `${A}-08`)).meses[0],
+    { mes: `${A}-08`, dia: `${A}-08-15`, valor: 50, situacao: "nao_paga", saldo_foi_para_a_fatura_de: `${A}-09` });
   assert.ok(mcp.compromissos.every((l: any) => Object.keys(l).join() === "tipo,nome,meses"));
   const rod = anos[ano - 1].meses[5];
   assert.deepEqual(mcp.por_mes[5], { mes: `${A}-06`, contas: rod.total / 100, contas_e: "o que saiu", renda: rod.renda / 100, renda_e: "a que entrou", metas: rod.metas / 100, livre: rod.livre / 100 });
@@ -2784,8 +2805,11 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
 
   db.prepare("DELETE FROM compromissos WHERE id = ?").run(oficina.id);
   db.prepare("DELETE FROM recorrencias WHERE chave = ?").run(chaveDe(clube));
-  db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(banco);
-  db.prepare("DELETE FROM contas WHERE id = ?").run(banco);
+  for (const c of [banco, cartao]) {
+    db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(c);
+    db.prepare("DELETE FROM faturas WHERE conta_id = ?").run(c);
+    db.prepare("DELETE FROM contas WHERE id = ?").run(c);
+  }
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

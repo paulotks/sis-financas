@@ -341,9 +341,11 @@ export function criarServidor(base: string) {
           compromissos: d.linhas.map((l) => ({
             tipo: l.tipo, nome: l.nome,
             meses: l.meses.flatMap((c, i) => c.map((x) => ({
-              mes: d.meses[i].mes, valor: reais(x.valor), situacao: x.situacao,
+              mes: d.meses[i].mes, dia: x.dia, valor: reais(x.valor), situacao: x.situacao,
               ...(x.situacao !== "paga" && x.pago > 0 && { pago_a_menos: reais(x.pago) }),
-              ...(x.tipo === "fatura" && x.estimada && { estimada: true }), ...(x.tipo === "recorrente" && x.sugestao && { sugestao: true }),
+              ...(x.tipo === "fatura" && x.estimada && { estimada: true }), ...(x.tipo === "fatura" && x.foi_para && { saldo_foi_para_a_fatura_de: x.foi_para }),
+              ...(x.tipo === "recorrente" && x.sugestao && { sugestao: true }), ...(x.tipo === "recorrente" && x.parada && { parada: true }),
+              ...(x.tipo === "manual" && x.marcada && { marcada_a_mao: true }),
             }))),
           })),
         };
