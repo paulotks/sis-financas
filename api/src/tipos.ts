@@ -1,6 +1,7 @@
 /**
  * O formato das respostas da API: a tela (web/src/lib/api.ts) e o MCP leem daqui com `import type`, e as rotas de server.ts declaram que
  * devolvem isto. Campo renomeado num lado vira erro de tipo nos outros. Valores em centavos; saída negativa.
+ * Horário gravado pelo app: local, "AAAA-MM-DD HH:MM:SS" (às vezes com ".mmm"); só `atualizado_pluggy` (do banco) vem em UTC, com Z.
  * Só tipos, e só de arquivos sem base: a tela confere este arquivo com o tsc dela, que não conhece node:sqlite.
  * ponytail: linha que vem do SQL entra por cast, e o tsc não confere o SELECT contra estes tipos; um SELECT renomeado ainda passa calado.
  */

@@ -248,6 +248,14 @@ export const MIGRACOES: string[] = [
     PRIMARY KEY (meta_id, mes)
   );
   `,
+  // horários gravados pelo app: de UTC (toISOString) para o local das outras colunas; misturados, a comparação de texto erra no mesmo dia
+  `
+  UPDATE conexoes       SET ultimo_sync   = strftime('%Y-%m-%d %H:%M:%f', ultimo_sync, 'localtime')   WHERE ultimo_sync   LIKE '%Z';
+  UPDATE contas         SET atualizado_em = strftime('%Y-%m-%d %H:%M:%f', atualizado_em, 'localtime') WHERE atualizado_em LIKE '%Z';
+  UPDATE investimentos  SET atualizado_em = strftime('%Y-%m-%d %H:%M:%f', atualizado_em, 'localtime') WHERE atualizado_em LIKE '%Z';
+  UPDATE sincronizacoes SET inicio        = strftime('%Y-%m-%d %H:%M:%f', inicio, 'localtime')        WHERE inicio        LIKE '%Z';
+  UPDATE sincronizacoes SET fim           = strftime('%Y-%m-%d %H:%M:%f', fim, 'localtime')           WHERE fim           LIKE '%Z';
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo
@@ -345,4 +353,9 @@ export function transacao<T>(fn: () => T): T {
 }
 
 export const centavos = (v: number | null | undefined) => (v == null ? null : Math.round(v * 100));
-export const agora = () => new Date().toISOString();
+/**
+ * Horário local, como o DEFAULT das colunas (`datetime('now','localtime')`), mais os milissegundos: todo horário que o app grava se compara
+ * como texto. Sem os milissegundos, duas sincronizações no mesmo segundo fariam o saldo da anterior parecer novo (faltas.ts).
+ * Só `conexoes.atualizado_pluggy` (do banco) é UTC, com Z.
+ */
+export const agora = () => agoraLocal("%Y-%m-%d %H:%M:%f");

@@ -128,8 +128,9 @@ export const dataCurta = (iso: string) => {
   const [a, m, d] = iso.slice(0, 10).split("-");
   return `${d}/${m}${a !== String(new Date().getFullYear()) ? "/" + a.slice(2) : ""}`;
 };
+/** Horário do app (local, "AAAA-MM-DD HH:MM:SS[.mmm]") ou do banco (UTC, com Z). Com o "T", o do app vale como local em todo navegador. */
 export const quando = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca";
+  iso ? new Date(iso.replace(" ", "T")).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca";
 /** O Meu Pluggy atualiza 1x por dia: passou de 48 h, o banco está atrasado. */
 export const dadosVelhos = (iso: string | null) => iso !== null && Date.now() - Date.parse(iso) > 48 * 3_600_000;
 export const nomeMes = (mes: string) => {

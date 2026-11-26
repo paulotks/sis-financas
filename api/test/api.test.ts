@@ -757,6 +757,36 @@ test("migração das regras: mesmas regras com os mesmos ids, valendo para tudo,
   m.close();
 });
 
+test("migração dos horários: o que o app gravou em UTC passa a local; o do banco e o que já era local ficam", () => {
+  const m = new DatabaseSync(":memory:");
+  const ANTES = 12; // versão da base antes do item 58
+  MIGRACOES.slice(0, ANTES).forEach((sql) => m.exec(sql));
+  const utc = "2031-03-10T02:30:00.250Z", local = `${new Date(utc).toLocaleString("sv")}.250`; // a conta de JS, sem o SQLite
+  m.exec(`INSERT INTO conexoes (item_id, ultimo_sync, atualizado_pluggy) VALUES ('i', '${utc}', '${utc}');
+    INSERT INTO contas (id, item_id, atualizado_em) VALUES ('c', 'i', '${utc}'), ('d', 'i', '2031-03-09 08:00:00'), ('e', 'i', NULL);
+    INSERT INTO investimentos (id, item_id, atualizado_em) VALUES ('v', 'i', '${utc}');
+    INSERT INTO sincronizacoes (item_id, inicio, fim) VALUES ('i', '${utc}', '${utc}'), ('i', '${utc}', NULL)`);
+  m.exec("BEGIN");
+  m.exec(MIGRACOES[ANTES]);
+  m.exec("COMMIT");
+  const valores = (sql: string) => m.prepare(sql).all().map((r) => Object.values(r));
+  assert.deepEqual(valores("SELECT ultimo_sync, atualizado_pluggy FROM conexoes"), [[local, utc]]);
+  assert.deepEqual(valores("SELECT atualizado_em FROM contas ORDER BY id"), [[local], ["2031-03-09 08:00:00"], [null]]);
+  assert.deepEqual(valores("SELECT atualizado_em FROM investimentos"), [[local]]);
+  assert.deepEqual(valores("SELECT inicio, fim FROM sincronizacoes ORDER BY id"), [[local, local], [local, null]]);
+  m.close();
+});
+
+test("o app grava horário local, no formato do DEFAULT das colunas mais os milissegundos", async () => {
+  const { agora } = await import("../src/db.js");
+  const t = agora();
+  assert.match(t, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+  const { padrao } = db.prepare("SELECT datetime('now','localtime') AS padrao").get() as { padrao: string };
+  assert.ok(Math.abs(Date.parse(padrao.replace(" ", "T")) - Date.parse(t.replace(" ", "T"))) <= 2000);
+  for (const c of db.prepare("SELECT ultimo_sync AS t FROM conexoes UNION ALL SELECT inicio FROM sincronizacoes UNION ALL SELECT atualizado_em FROM contas").all() as { t: string | null }[])
+    assert.ok(c.t === null || !c.t.endsWith("Z"), c.t ?? "");
+});
+
 /** Base na versão atual, com uma conta, um lançamento categorizado, uma fatura, uma regra e um orçamento. */
 function baseComDados(caminho = ":memory:") {
   const m = new DatabaseSync(caminho);

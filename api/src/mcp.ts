@@ -55,6 +55,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Banco com erro, ou fora de status UPDATED com execucao SUCCESS (em estado): o dado dele pode estar velho, faltando ou repetido. Diga isso
   antes de concluir algo do mês. execucao PARTIAL_SUCCESS = o banco mandou só parte; não é caso de reautorizar.
 - saldo_lido_em de um dia anterior ao de ultimo_sync: o banco não mandou o saldo e vale o último conhecido. Diga a data ao usar o número.
+- Horários do app (agora, ultimo_sync, saldo_lido_em) são do relógio do PC do Paulo (Brasília), sem fuso. dados_do_banco_de vem do banco
+  em UTC (termina em Z): converta antes de comparar com eles.
 - Investimento de tipo RESERVA é cofrinho ou caixinha: dinheiro separado dentro da conta, fora do saldo dela. Só soma no patrimônio se
   usa_cofrinho da conta for true. null = o banco informou a reserva e o Paulo ainda não disse, no cartão da conta na tela Contas, se usa:
   avise-o (você não responde por ele). false = ele não usa ali: não some.
@@ -166,7 +168,7 @@ export function criarServidor(base: string) {
           ler<Ritmo>("/api/ritmo"),
         ]);
         return {
-          agora: new Date().toISOString(),
+          agora: new Date().toLocaleString("sv"), // local, no formato dos horários do app
           bancos: conexoes.map((c) => ({ contas: c.nomes_contas ?? c.conector, status: c.status, execucao: c.status_execucao, ultimo_sync: c.ultimo_sync, dados_do_banco_de: c.atualizado_pluggy, erro: c.erro })),
           mes_atual: { mes: ritmo.mes, nivel: ritmo.nivel },
           meses: { primeiro: meses.at(-1) ?? null, ultimo: meses[0] ?? null },
