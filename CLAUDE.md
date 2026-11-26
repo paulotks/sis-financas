@@ -111,6 +111,7 @@ web/src/
   a pagar (o passado que a conta à mão não pegou fica); a página Recorrentes não muda.
   **Aba Ano:** cada coluna é a aba Mês daquele mês, pela mesma função (nunca refaça a regra na grade). Rodapé: o mês que passou pelo pago e pela
   renda que entrou, do atual em diante pelo esperado; a fatura que foi para a seguinte conta só o que foi pago dela (o resto está na seguinte).
+  Antes do início da análise, o mês que passou fica sem livre (renda incompleta). Ano até 2100.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

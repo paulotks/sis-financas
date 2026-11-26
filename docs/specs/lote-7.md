@@ -190,7 +190,9 @@ Grade só de leitura: as linhas (recorrente, fatura, conta à mão) × os 12 mes
   - **Rodapé:** contas = no mês que passou, o pago da aba Mês (o que saiu); do atual em diante, o total, menos o resto da fatura que foi para a
     seguinte (está no total dela). Renda = a que entrou no mês que passou; a esperada do atual em diante. **Livre = renda − contas − metas do
     próprio rodapé**: no mês que passou não é o livre da aba Mês (que usa a renda esperada e o total). Sem total do ano: somaria de novo a
-    fatura que foi para a seguinte.
+    fatura que foi para a seguinte. Antes do início da análise (o mesmo das Análises), o mês que passou fica sem livre (—): a renda que
+    entrou ainda vinha incompleta (pedido do Paulo).
+  - Ano até 2100 (e mês até 2100-12 na aba Mês): depois disso a conta dos meses passa de 4 dígitos no ano e dava erro 500.
   - O ano lê as recorrentes e o histórico da renda uma vez e passa para a função do mês (o detector é o que pesa): o ano sai em ~0,3 s na cópia.
 
 ## Limites conhecidos

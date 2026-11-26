@@ -314,8 +314,9 @@ const idDaLinha = (l: Compromisso) => (l.tipo === "fatura" ? `f|${l.conta_id}` :
 /**
  * Os meses do ano em linhas: cada coluna é a aba Mês daquele mês, sem tirar nem pôr. Rodapé: o mês que passou pelo que saiu e pela renda que
  * entrou; do atual em diante, pelo esperado. A fatura que foi para a seguinte conta só o que foi pago dela: o resto está no total da seguinte.
+ * Antes do início da análise a renda que entrou está incompleta: o mês que passou fica sem livre, como fica sem veredito no alarme.
  */
-export function montarAno(meses: Compromissos[], mesAtual: string): Pick<CompromissosDoAno, "meses" | "linhas"> {
+export function montarAno(meses: Compromissos[], mesAtual: string, inicio: string | null): Pick<CompromissosDoAno, "meses" | "linhas"> {
   const linhas = new Map<string, LinhaDoAno>();
   meses.forEach((m, i) => {
     for (const l of m.linhas) {
@@ -330,8 +331,8 @@ export function montarAno(meses: Compromissos[], mesAtual: string): Pick<Comprom
     meses: meses.map((m) => {
       const passou = m.mes < mesAtual;
       const total = m.pago + somar(m.linhas.map((l) => (passou || l.situacao === "nao_paga" ? 0 : l.valor - pagoDe(l))));
-      const renda = passou ? m.renda.entrou : m.renda.esperada;
-      return { mes: m.mes, passou, total, renda, metas: m.metas, livre: renda === null ? null : renda - total - m.metas };
+      const renda = passou ? m.renda.entrou : m.renda.esperada, incompleta = passou && (inicio === null || m.mes < inicio);
+      return { mes: m.mes, passou, total, renda, metas: m.metas, livre: renda === null || incompleta ? null : renda - total - m.metas };
     }),
   };
 }
@@ -340,5 +341,5 @@ export function montarAno(meses: Compromissos[], mesAtual: string): Pick<Comprom
 export function compromissosDoAno(ano: string, hoje: string): CompromissosDoAno {
   const recorrentes = listarRecorrentes("PF", hoje), historico = historicoPF(hoje.slice(0, 7));
   const meses = Array.from({ length: 12 }, (_, i) => compromissosDoMes(`${ano}-${String(i + 1).padStart(2, "0")}`, hoje, recorrentes, historico));
-  return { ano, dados_ate: meses[0].dados_ate, ...montarAno(meses, hoje.slice(0, 7)) };
+  return { ano, dados_ate: meses[0].dados_ate, inicio_analise: historico.inicio, ...montarAno(meses, hoje.slice(0, 7), historico.inicio) };
 }

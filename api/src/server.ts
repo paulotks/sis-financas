@@ -324,12 +324,12 @@ app.put("/api/orcamento", async (req): Promise<Ok> => {
 
 app.get("/api/compromissos", async (req): Promise<Compromissos> => {
   const hoje = diaDeHoje();
-  const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
+  const { mes } = z.object({ mes: z.string().regex(mesRe).refine((m) => m <= "2100-12", "o mês vai até 2100").default(hoje.slice(0, 7)) }).parse(req.query);
   return compromissosDoMes(mes, hoje);
 });
 app.get("/api/compromissos/ano", async (req): Promise<CompromissosDoAno> => {
   const hoje = diaDeHoje();
-  const { ano } = z.object({ ano: z.string().regex(/^\d{4}$/).default(hoje.slice(0, 4)) }).parse(req.query);
+  const { ano } = z.object({ ano: z.string().regex(/^\d{4}$/).refine((a) => a <= "2100", "o ano vai até 2100").default(hoje.slice(0, 4)) }).parse(req.query);
   return compromissosDoAno(ano, hoje);
 });
 

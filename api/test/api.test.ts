@@ -2498,7 +2498,7 @@ test("contas do ano: a mesma conta em linhas; o rodapé soma o passado pelo que 
     mes("2031-05", 4100, [fat("j", "2031-05-02", 9000, "nao_paga"), fat("k", "2031-05-12", 17000, "a_pagar"), fat("k", "2031-05-30", 500, "a_pagar"), man("2031-05-05", "a_pagar"), rec("2031-05-28", 4100, "paga")]),
     mes("2031-06", 0, [rec("2031-06-28", 4100, "a_pagar")]),
   ];
-  const { linhas, meses: rodape } = montarAno(meses, "2031-05");
+  const { linhas, meses: rodape } = montarAno(meses, "2031-05", "2031-04");
   assert.deepEqual(linhas.map((l) => [l.id, l.meses.map((c) => c.map((x) => x.dia.slice(5)))]), [
     ["f|j", [[], ["05-02"], []]],
     ["m|7", [["04-05"], ["05-05"], []]],
@@ -2516,7 +2516,10 @@ test("contas do ano: a mesma conta em linhas; o rodapé soma o passado pelo que 
     ["2031-05", false, 4100 + 17000 + 500 + 2000, 50000, 1000, 50000 - 23600 - 1000],
     ["2031-06", false, 4100, 50000, 1000, 44900],
   ]);
-  assert.equal(montarAno([{ ...meses[2], renda: { esperada: null, entrou: 0 } }], "2031-05").meses[0].livre, null); // sem renda esperada, não há livre
+  assert.equal(montarAno([{ ...meses[2], renda: { esperada: null, entrou: 0 } }], "2031-05", "2031-04").meses[0].livre, null); // sem renda esperada, não há livre
+  // antes do início da análise a renda que entrou está incompleta: o mês que passou fica sem livre; o atual e os futuros, não
+  assert.deepEqual(montarAno(meses, "2031-05", "2031-05").meses.map((r) => r.livre), [null, 25400, 44900]);
+  assert.deepEqual(montarAno(meses, "2031-05", null).meses.map((r) => r.livre), [null, 25400, 44900]);
 });
 
 test("contas do mês na API e no MCP: só PF e conta visível; o topo usa a régua do alarme e as metas", async () => {
@@ -2758,7 +2761,7 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
   const anos: Record<number, any> = {};
   for (const a of [ano - 1, ano, ano + 1]) {
     const d = (anos[a] = await doAno(a));
-    assert.equal(d.ano, String(a));
+    assert.deepEqual([d.ano, d.inicio_analise], [String(a), (await chamar("GET", "/api/analises")).d.inicio]);
     for (const [i, rod] of d.meses.entries()) {
       const m = (await chamar("GET", `/api/compromissos?mes=${rod.mes}`)).d, passou = rod.mes < atual;
       assert.equal(rod.mes, `${a}-${String(i + 1).padStart(2, "0")}`);
@@ -2766,7 +2769,8 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
       assert.deepEqual(d.linhas.flatMap((l: any) => l.meses[i]).map((l: any) => JSON.stringify(l)).sort(), m.linhas.map((l: any) => JSON.stringify(l)).sort(), rod.mes);
       const foiParaASeguinte = m.linhas.filter((l: any) => l.situacao === "nao_paga").reduce((s: number, l: any) => s + l.valor - Math.min(l.pago, l.valor), 0);
       const total = passou ? m.pago : m.total - foiParaASeguinte, renda = passou ? m.renda.entrou : m.renda.esperada;
-      assert.deepEqual([rod.passou, rod.total, rod.renda, rod.metas, rod.livre, d.dados_ate], [passou, total, renda, m.metas, renda === null ? null : renda - total - m.metas, m.dados_ate], rod.mes);
+      const incompleta = passou && (d.inicio_analise === null || rod.mes < d.inicio_analise);
+      assert.deepEqual([rod.passou, rod.total, rod.renda, rod.metas, rod.livre, d.dados_ate], [passou, total, renda, m.metas, renda === null || incompleta ? null : renda - total - m.metas, m.dados_ate], rod.mes);
     }
   }
   const linha = (a: number, nome: string) => anos[a].linhas.find((l: any) => l.nome === nome);
@@ -2788,8 +2792,11 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
   assert.equal(linha(ano + 1, "Oficina Teste Anual"), undefined);
   // ano sem dado
   const vazio = await doAno(1999);
-  assert.deepEqual([vazio.linhas, vazio.meses.map((m: any) => [m.passou, m.total, m.renda, m.metas, m.livre])], [[], Array(12).fill([true, 0, 0, 0, 0])]);
+  assert.deepEqual([vazio.linhas, vazio.meses.map((m: any) => [m.passou, m.total, m.renda, m.metas, m.livre])], [[], Array(12).fill([true, 0, 0, 0, null])]); // antes do início da análise
   assert.deepEqual([(await chamar("GET", "/api/compromissos/ano?ano=31")).status, (await chamar("GET", "/api/compromissos/ano")).d.ano], [400, String(ano)]);
+  // até 2100: depois disso a conta dos meses passa de 4 dígitos no ano
+  assert.deepEqual(await Promise.all(["/api/compromissos/ano?ano=2100", "/api/compromissos/ano?ano=2101", "/api/compromissos/ano?ano=9999", "/api/compromissos?mes=2100-12", "/api/compromissos?mes=2101-01", "/api/compromissos?mes=9999-11"]
+    .map(async (u) => (await chamar("GET", u)).status)), [200, 400, 400, 200, 400, 400]);
 
   // MCP: em reais, campo a campo, sem id
   const { cliente, usar } = await ligarMcp();
@@ -2799,7 +2806,7 @@ test("contas do ano na API e no MCP: cada coluna é a aba Mês do mesmo mês; pa
     { mes: `${A}-08`, dia: `${A}-08-15`, valor: 50, situacao: "nao_paga", saldo_foi_para_a_fatura_de: `${A}-09` });
   assert.ok(mcp.compromissos.every((l: any) => Object.keys(l).join() === "tipo,nome,meses"));
   const rod = anos[ano - 1].meses[5];
-  assert.deepEqual(mcp.por_mes[5], { mes: `${A}-06`, contas: rod.total / 100, contas_e: "o que saiu", renda: rod.renda / 100, renda_e: "a que entrou", metas: rod.metas / 100, livre: rod.livre / 100 });
+  assert.deepEqual(mcp.por_mes[5], { mes: `${A}-06`, contas: rod.total / 100, contas_e: "o que saiu", renda: rod.renda / 100, renda_e: "a que entrou", metas: rod.metas / 100, livre: rod.livre === null ? null : rod.livre / 100 });
   assert.equal((await usar("compromissos_do_ano", { ano: String(ano + 1) })).por_mes[0].renda_e, "a esperada");
   await cliente.close();
 

@@ -246,7 +246,7 @@ function Ano() {
         <div className="seletor-mes">
           <button className="icone-botao" title="Ano anterior" onClick={() => irPara(-1)}>‹</button>
           <span>{ano}</span>
-          <button className="icone-botao" title="Próximo ano" onClick={() => irPara(1)}>›</button>
+          <button className="icone-botao" title="Próximo ano" disabled={Number(ano) >= 2100} onClick={() => irPara(1)}>›</button>
         </div>
       </header>
 
@@ -255,6 +255,9 @@ function Ano() {
         Em reais. Cada coluna é a aba Mês daquele mês: clique no mês para abrir, e para confirmar, marcar ou editar. O que já foi pago aparece em cor
         cheia; o que ainda vai sair, mais claro (≈ = fatura estimada). No rodapé, o mês que passou conta o que saiu e a renda que entrou; do mês
         atual em diante, o esperado. A fatura que foi para a seguinte conta só o que foi pago dela: o resto está no total da seguinte.
+        {d?.inicio_analise && d.meses.some((m) => m.passou && m.mes < d.inicio_analise!) && (
+          <> Antes de {mesCurto(d.inicio_analise)} a renda ainda vinha incompleta: o livre fica em branco (—).</>
+        )}
       </p>
 
       <div className="tabela-wrap">
@@ -291,7 +294,7 @@ function Ano() {
               {rodape("Contas", "O que saiu, no mês que passou; o esperado, do atual em diante.", (m) => m.total)}
               {rodape("Renda", "A que entrou, no mês que passou; a esperada (a régua do alarme), do atual em diante.", (m) => m.renda)}
               {rodape("Metas", "O que as metas pedem no mês.", (m) => m.metas)}
-              {rodape("Livre", "Renda − contas − metas desta tabela. Pelo vencimento: não é o número do Resumo nem a sobra do Orçamento.", (m) => m.livre)}
+              {rodape("Livre", "Renda − contas − metas desta tabela. Pelo vencimento: não é o número do Resumo nem a sobra do Orçamento. — = sem renda esperada, ou mês antes do início da análise.", (m) => m.livre)}
             </tfoot>
           )}
         </table>

@@ -55,7 +55,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   (definir_compromisso) e marca; apagar só o Paulo, na tela. O que se paga no cartão não é conta à mão: já está na fatura.
   O ano (compromissos_do_ano): cada mês é o compromissos_do_mes daquele mês, as mesmas contas em linhas. No rodapé, o mês que passou
   conta o que saiu (o pago) e a renda que entrou; do atual em diante, o esperado. A fatura que foi para a seguinte conta só o que foi pago
-  dela (o resto está no total da seguinte). Por isso o livre de um mês que passou não é o de compromissos_do_mes. Não some o ano com o Resumo.
+  dela (o resto está no total da seguinte). Por isso o livre de um mês que passou não é o de compromissos_do_mes. Livre null num mês que
+  passou = antes do início da análise (a renda ainda vinha incompleta): não há veredito. Não some o ano com o Resumo.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -325,7 +326,7 @@ export function criarServidor(base: string) {
     "compromissos_do_ano",
     {
       description: "Contas do mês, o ano inteiro (só PF): as mesmas contas de compromissos_do_mes em linhas, com o valor e a situação de cada mês, e por mês o total das contas, a renda, as metas e o livre. Sem ano = o atual.",
-      inputSchema: { ano: z.string().regex(/^\d{4}$/).optional().describe("AAAA") },
+      inputSchema: { ano: z.string().regex(/^\d{4}$/).optional().describe("AAAA, até 2100") },
       annotations: LEITURA,
     },
     (a) =>

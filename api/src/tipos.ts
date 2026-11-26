@@ -342,8 +342,11 @@ export interface CompromissosDoAno {
     total: number; // passou: o que saiu (o pago); senão, o esperado. A fatura que foi para a seguinte conta só o pago dela
     renda: number | null; // passou: a que entrou; senão, a esperada (nulo = sem renda esperada)
     metas: number;
-    livre: number | null; // renda − total − metas deste rodapé: no mês que passou, não é o livre da aba Mês (que usa a esperada e o total)
+    // renda − total − metas deste rodapé: no mês que passou, não é o livre da aba Mês (que usa a esperada e o total). Nulo: sem renda
+    // esperada, ou mês que passou antes do início da análise (a renda que entrou está incompleta)
+    livre: number | null;
   }[];
+  inicio_analise: string | null; // o mesmo das Análises e do alarme
   linhas: LinhaDoAno[]; // pelo dia do mês em que saem
 }
 
