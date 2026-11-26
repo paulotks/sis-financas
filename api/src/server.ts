@@ -2,7 +2,7 @@ import fs from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
-import { compromissosDoMes } from "./compromissos.js";
+import { candidatosPara, compromissosDoMes, lerCadastros, MINIMO_LETRAS_DO_TEXTO, normalizarTexto } from "./compromissos.js";
 import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
@@ -19,7 +19,7 @@ import {
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 import type {
-  Analises, Bem, Categoria, CategoriaComUsos, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
+  Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
   MetaLinha, Metas, Ok, Orcamento, Patrimonio, PreviaRegra, Recorrente, Regra, RegraCriada, RegraLinha, ResultadoSync, Resumo, Ritmo, Sincronizacao,
   TotaisLancamentos,
 } from "./tipos.js";
@@ -326,6 +326,61 @@ app.get("/api/compromissos", async (req): Promise<Compromissos> => {
   const hoje = diaDeHoje();
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
   return compromissosDoMes(mes, hoje);
+});
+
+// conta à mão: o que o detector não pega. Só muda a página Contas do mês; o texto acha o pagamento e não é regra de categoria
+const camposDoCompromisso = z.object({
+  nome: z.string().trim().min(1).max(60),
+  valor: z.number().int().positive().max(1e11),
+  dia: z.number().int().min(1).max(31),
+  texto: z.string().max(100).nullable(),
+  inicio: z.string().regex(mesRe),
+  fim: z.string().regex(mesRe).nullable(),
+  parcelas: z.number().int().min(1).max(600), // "em N parcelas": fim = início + N − 1
+}).partial();
+const compromissoOu404 = (id: number) => ouNaoEncontrado(lerCadastros().find((k) => k.id === id), "conta à mão");
+const idDoCompromisso = (params: unknown) => z.object({ id: z.coerce.number().int() }).parse(params).id;
+
+function gravarCompromisso(atual: CompromissoCadastrado | undefined, d: z.infer<typeof camposDoCompromisso>): CompromissoCadastrado {
+  if (d.parcelas !== undefined && d.fim !== undefined) throw erro400("diga até quando (fim) ou em quantas parcelas, não os dois");
+  const inicio = d.inicio ?? atual?.inicio ?? diaDeHoje().slice(0, 7);
+  const k = {
+    nome: d.nome ?? atual?.nome, valor: d.valor ?? atual?.valor, dia: d.dia ?? atual?.dia, inicio,
+    texto: d.texto === undefined ? (atual?.texto ?? null) : d.texto === null || !d.texto.trim() ? null : normalizarTexto(d.texto),
+    fim: d.parcelas !== undefined ? somarMes(inicio, d.parcelas - 1) : d.fim !== undefined ? d.fim : (atual?.fim ?? null),
+  };
+  if (!k.nome || !k.valor || !k.dia) throw erro400("faltam nome, valor e dia");
+  if (k.texto !== null && k.texto.length < MINIMO_LETRAS_DO_TEXTO) throw erro400(`o texto precisa de pelo menos ${MINIMO_LETRAS_DO_TEXTO} letras (números, símbolos e acentos não contam)`);
+  if (k.fim !== null && k.fim < k.inicio) throw erro400("o fim vem antes do início");
+  const vals = [k.nome, k.valor, k.dia, k.texto, k.inicio, k.fim];
+  const { id } = (atual
+    ? db.prepare("UPDATE compromissos SET nome = ?, valor_centavos = ?, dia = ?, texto = ?, inicio = ?, fim = ? WHERE id = ? RETURNING id").get(...vals, atual.id)
+    : db.prepare("INSERT INTO compromissos (nome, valor_centavos, dia, texto, inicio, fim) VALUES (?,?,?,?,?,?) RETURNING id").get(...vals)) as { id: number };
+  return compromissoOu404(id);
+}
+
+app.post("/api/compromissos/manuais", async (req): Promise<CompromissoCadastrado> =>
+  gravarCompromisso(undefined, camposDoCompromisso.required({ nome: true, valor: true, dia: true }).parse(req.body)));
+app.patch("/api/compromissos/manuais/:id", async (req): Promise<CompromissoCadastrado> =>
+  gravarCompromisso(compromissoOu404(idDoCompromisso(req.params)), camposDoCompromisso.parse(req.body)));
+/** Leva as marcas de pago junto (ON DELETE CASCADE). */
+app.delete("/api/compromissos/manuais/:id", async (req): Promise<Ok> => {
+  db.prepare("DELETE FROM compromissos WHERE id = ?").run(compromissoOu404(idDoCompromisso(req.params)).id);
+  return { ok: true };
+});
+/** A marca à mão, para o que não passa por conta conectada. Guarda o esperado de hoje; o lançamento que casar depois vale mais que ela. */
+app.put("/api/compromissos/manuais/:id/pago", async (req): Promise<Ok> => {
+  const k = compromissoOu404(idDoCompromisso(req.params));
+  const { mes, pago } = z.object({ mes: z.string().regex(mesRe), pago: z.boolean() }).parse(req.body);
+  if (mes < k.inicio || (k.fim !== null && mes > k.fim)) throw erro400("a conta não vale nesse mês");
+  if (pago) db.prepare("INSERT INTO compromissos_pagos (compromisso_id, mes, valor_centavos) VALUES (?,?,?) ON CONFLICT (compromisso_id, mes) DO UPDATE SET valor_centavos = excluded.valor_centavos").run(k.id, mes, k.valor);
+  else db.prepare("DELETE FROM compromissos_pagos WHERE compromisso_id = ? AND mes = ?").run(k.id, mes);
+  return { ok: true };
+});
+app.get("/api/compromissos/manuais/:id/candidatos", async (req): Promise<CandidatosAPagamento> => {
+  const hoje = diaDeHoje(), k = compromissoOu404(idDoCompromisso(req.params));
+  const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
+  return candidatosPara(k, mes, hoje);
 });
 
 // ---------------- ritmo: a renda aguenta o mês? (só PF) ----------------

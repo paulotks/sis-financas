@@ -286,7 +286,34 @@ export interface CompromissoFatura extends CompromissoBase {
   parcelas: { descricao: string; parcela: number; total: number; valor: number; prevista: boolean }[];
   outras: { valor: number; qtd: number }; // o resto das compras do ciclo, com créditos abatidos
 }
-export type Compromisso = CompromissoRecorrente | CompromissoFatura;
+/** Conta cadastrada à mão, como está gravada: vale de `inicio` a `fim` (nulo = sem fim); texto nulo = só a marca à mão acha o pagamento. */
+export interface CompromissoCadastrado {
+  id: number;
+  nome: string;
+  valor: number; // o esperado
+  dia: number; // 1 a 31; 31 = o último do mês
+  texto: string | null; // normalizado como o nome da cobrança (sem acento, número, símbolo, espaço nem forma de pagamento)
+  inicio: string;
+  fim: string | null;
+}
+/** Um lançamento que pode pagar a conta à mão: saída de conta PF que não é cartão, com os filtros do Resumo, no mês e até hoje. */
+export interface CandidatoAPagamento {
+  id: string;
+  data: string;
+  valor: number; // positivo
+  descricao: string;
+  nome: string; // o que vai para o texto ao vincular
+  conta: string | null;
+}
+export interface CompromissoManual extends CompromissoBase {
+  tipo: "manual";
+  cadastro: CompromissoCadastrado;
+  pago_por: Pick<CandidatoAPagamento, "data" | "descricao" | "conta"> | null; // o lançamento que casou com o texto
+  marcada: boolean; // paga pela marca à mão (nada casou)
+}
+export type Compromisso = CompromissoRecorrente | CompromissoFatura | CompromissoManual;
+/** Candidatos do mês para "Vincular pagamento", do valor mais próximo do esperado ao mais longe. */
+export type CandidatosAPagamento = (CandidatoAPagamento & { de: string | null })[]; // de = a outra conta à mão que já ficou com ele
 export interface Compromissos {
   mes: string;
   dados_ate: string; // último dia com dado de todos os bancos: atrasada é o que venceu antes dele

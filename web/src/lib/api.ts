@@ -1,6 +1,6 @@
 // Chamadas da API local. Valores sempre em centavos (saída negativa).
 // O formato das respostas é o da própria API (api/src/tipos.ts): campo renomeado lá vira erro de tipo aqui.
-import type { Analises, Bem, Categoria, CategoriaComUsos, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
+import type { Analises, Bem, CandidatosAPagamento, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
 import type { ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio, Posicao, PreviaRegra, Recorrente, Regra, RegraCriada } from "../../../api/src/tipos";
 import type { ResultadoSync, Resumo, Ritmo, Sentido, Sincronizacao, TotaisLancamentos } from "../../../api/src/tipos";
 export type * from "../../../api/src/tipos";
@@ -19,6 +19,9 @@ export interface EdicaoMeta {
   mes?: string; // o por_mes vale deste mês em diante
   medida?: Pick<Posicao, "origem" | "ref_id"> | null;
 }
+
+/** "parcelas" no lugar de fim: a API grava fim = início + parcelas − 1. */
+export type EdicaoCompromisso = Partial<Omit<CompromissoCadastrado, "id"> & { parcelas: number }>;
 
 export interface FiltroLancamentos {
   mes?: string;
@@ -87,6 +90,11 @@ export const api = {
 
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
   compromissos: (mes: string) => req<Compromissos>("GET", `/api/compromissos${qs({ mes })}`),
+  criarCompromisso: (d: EdicaoCompromisso & Pick<CompromissoCadastrado, "nome" | "valor" | "dia">) => req<CompromissoCadastrado>("POST", "/api/compromissos/manuais", d),
+  editarCompromisso: (id: number, d: EdicaoCompromisso) => req<CompromissoCadastrado>("PATCH", `/api/compromissos/manuais/${id}`, d),
+  apagarCompromisso: (id: number) => req<Ok>("DELETE", `/api/compromissos/manuais/${id}`),
+  marcarCompromisso: (id: number, mes: string, pago: boolean) => req<Ok>("PUT", `/api/compromissos/manuais/${id}/pago`, { mes, pago }),
+  candidatos: (id: number, mes: string) => req<CandidatosAPagamento>("GET", `/api/compromissos/manuais/${id}/candidatos${qs({ mes })}`),
 
   analises: (mes: string) => req<Analises>("GET", `/api/analises${qs({ mes })}`),
   definirInicio: (mes: string | null) => req<Ok>("PUT", "/api/analises/inicio", { mes }),

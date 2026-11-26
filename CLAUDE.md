@@ -42,7 +42,7 @@ api/src/
   patrimonio.ts   soma das posições e foto diária dos saldos
   metas.ts        o que as metas pedem por mês, progresso pela posição ligada e previsão (as rotas ficam em server.ts)
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
-  compromissos.ts Contas do mês: recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês)
+  compromissos.ts Contas do mês: contas à mão, recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês)
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
   tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
@@ -69,6 +69,7 @@ web/src/
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho, encerrar meta, ligá-la a uma posição ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
 - Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
+- Conta à mão (Contas do mês): o MCP cria e edita (`definir_compromisso`) e marca ou desfaz o pago (`marcar_compromisso_pago`); **não apaga** (o teste confere).
 - `criar_regra` exige o `total_previsto` da prévia (quantos mudam de categoria: depende da categoria, e sai do mesmo `calcular` da gravação) e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
 - **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
@@ -95,13 +96,19 @@ web/src/
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). Cofrinho e caixinha (`salvarReservas` em `sync.ts`) viram investimento de tipo `RESERVA`, que segue a pessoa e o "ocultar" da conta e **só soma com `contas.usa_reservas = 1`** (pergunta no cartão da conta; nulo = não respondeu, e o valor pode estar numa linha de `bens`); o que sai da lista vai a 0, nunca se apaga. A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
 - **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme. Atrasada = a próxima cobrança antes de `ultimoDiaComDado`; parada (45 dias) conta de hoje, porque é ela que tira do alarme.
 - **Dado que falta** (`faltas.ts`, regras em `docs/specs/avisos.md`): é aviso, **nunca soma** em gasto, projeção, nível ou patrimônio, e nada é gravado. Parcela prevista só em série à parte. Falta real não se esconde; exceção de banco, só por peça do adaptador (`totalDaFatura`).
-- **Contas do mês** (`compromissos.ts`, spec em `docs/specs/lote-7.md`): só PF, sem conta oculta, e **só leitura**: lente de caixa (pelo vencimento, no
-  mês em que o dinheiro sai), **nunca soma** em Resumo, Orçamento, alarme, Análises, metas ou patrimônio, e não muda categoria. Linha = recorrente que
-  sai de conta (a do cartão está na fatura; ignorada nunca) ou a fatura de um cartão. Valor da fatura = o **total do banco** (o que ele cobra, já com o
+- **Contas do mês** (`compromissos.ts`, spec em `docs/specs/lote-7.md`): só PF, sem conta oculta, lente de caixa (pelo vencimento, no
+  mês em que o dinheiro sai), **nunca soma** em Resumo, Orçamento, alarme, Análises, metas ou patrimônio, e não muda categoria nem lançamento. Linha =
+  conta à mão, recorrente que sai de conta (a do cartão está na fatura; ignorada nunca) ou a fatura de um cartão. Valor da fatura = o **total do banco** (o que ele cobra, já com o
   que ficou da anterior; `totalDaFatura` é só do aviso 70); sem o total, estimada. Pago = Pagamento de fatura positivo no lado do cartão, pela
   **janela de datas** (do fechamento dela ao da seguinte), nunca pelo `fatura_id`. Atrasada = vencimento antes de `ultimoDiaComDado`. Não paga com
   a seguinte já fechada = "foi para a fatura seguinte". O dia do fechamento é do próprio ciclo, menos no banco com `fechamentoAbreOSeguinte`.
-  A única ação é Confirmar/Ignorar sugestão, o mesmo `PUT /api/recorrentes` da página Recorrentes.
+  A única ação que mexe em total é Confirmar/Ignorar sugestão, o mesmo `PUT /api/recorrentes` da página Recorrentes.
+  **Conta à mão** (tabelas `compromissos` e `compromissos_pagos`): vale de `inicio` a `fim`; o pagamento é achado **a cada leitura**, sem guardar id:
+  saída de conta PF que não é cartão, com os filtros de `NO_RESUMO`, no mês e até hoje, cujo `nomeDe(chaveDe(descricao_original))` contém o `texto`
+  (gravado já com a mesma normalização, 3 letras ou mais). Disputa: pelo valor mais próximo do esperado, um lançamento por conta, empate sempre com
+  o mesmo dono. O texto **não é regra de categoria**. Marca à mão só vale quando nada casou. **A conta à mão escolhe primeiro:** a cobrança que
+  ela pegou sai da recorrente (naquele mês a recorrente fica só com o que sobrou, sem projeção), e a que perdeu a última cobrança não aparece mais
+  a pagar (o passado que a conta à mão não pegou fica); a página Recorrentes não muda.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

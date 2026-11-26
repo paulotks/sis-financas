@@ -1,15 +1,17 @@
 /**
  * Contas do mês (docs/specs/lote-7.md): o mês pelo dinheiro que sai da conta, no mês em que sai. Lente de caixa e só leitura: nada daqui
- * soma em Resumo, Orçamento, alarme, Análises, metas ou patrimônio. Uma linha por recorrente que sai de conta e uma por fatura de cartão PF
- * visível; o que é pago no cartão está dentro da fatura. As funções puras montam um mês: a aba Ano chama as mesmas.
+ * soma em Resumo, Orçamento, alarme, Análises, metas ou patrimônio. Uma linha por conta cadastrada à mão, por recorrente que sai de conta e
+ * por fatura de cartão PF visível; o que é pago no cartão está dentro da fatura. As funções puras montam um mês: a aba Ano chama as mesmas.
  */
 import { fechamentoAbreOSeguinte } from "./adaptadores.js";
 import { db } from "./db.js";
 import { menosDias, previstas, type Prevista } from "./faltas.js";
-import { deveCobrar, type Recorrente } from "./recorrentes.js";
+import { chaveDe, deveCobrar, nomeDe, type Recorrente } from "./recorrentes.js";
 import { diasDoMes, somarMes } from "./ritmo.js";
-import { listarRecorrentes, reguaDoMes, somar, totaisDoMes, ultimoDiaComDado } from "./totais.js";
-import type { Compromisso, CompromissoFatura, CompromissoRecorrente, Compromissos } from "./tipos.js";
+import { BASE_RESUMO, fimDoMes, listarRecorrentes, reguaDoMes, somar, totaisDoMes, ultimoDiaComDado } from "./totais.js";
+import type {
+  CandidatoAPagamento, CandidatosAPagamento, Compromisso, CompromissoCadastrado, CompromissoFatura, CompromissoManual, CompromissoRecorrente, Compromissos,
+} from "./tipos.js";
 
 const RUIDO = 100; // até R$ 1 de diferença, a fatura está paga
 const IGUAL = 5; // folga de centavos ao comparar com um crédito
@@ -25,9 +27,10 @@ const diaEm = (mes: string, data: string) => `${mes}-${String(Math.min(Number(da
 
 /**
  * As recorrentes que saem de conta no mês; a cobrança feita no cartão está na fatura e a ignorada não é recorrente. Série que trocou de meio
- * de pagamento: o passado vale cobrança a cobrança; o que vem, pela conta da última.
+ * de pagamento: o passado vale cobrança a cobrança; o que vem, pela conta da última. `pegos` = lançamentos que uma conta à mão levou (no mês
+ * e no da última cobrança de cada recorrente): a conta à mão escolhe primeiro.
  */
-export function linhasDeRecorrentes(rs: Recorrente[], mes: string, hoje: string, dadosAte: string): CompromissoRecorrente[] {
+export function linhasDeRecorrentes(rs: Recorrente[], mes: string, hoje: string, dadosAte: string, pegos = new Set<string>()): CompromissoRecorrente[] {
   const mesAtual = hoje.slice(0, 7);
   return rs.filter((r) => r.status !== "ignorada").flatMap((r): CompromissoRecorrente[] => {
     const linha = (dia: string, valor: number, pago: boolean, parada = false): CompromissoRecorrente => ({
@@ -35,10 +38,13 @@ export function linhasDeRecorrentes(rs: Recorrente[], mes: string, hoje: string,
       sugestao: r.status === null, parada, dia, valor, pago: pago ? valor : 0, pago_em: pago ? dia : null,
       situacao: pago ? "paga" : parada || dia < dadosAte ? "atrasada" : "a_pagar",
     });
-    const doMes = r.cobrancas.filter((c) => !c.cartao && c.data.startsWith(mes));
+    const todasDoMes = r.cobrancas.filter((c) => !c.cartao && c.data.startsWith(mes));
+    const doMes = todasDoMes.filter((c) => !pegos.has(c.id)); // a que uma conta à mão pegou é dela; a que sobrou ainda é desta
     const pagas = doMes.filter((c) => c.data <= hoje); // em qualquer mês e qualquer status de hoje: a cancelada aparece onde cobrou
     if (pagas.length) return [linha(pagas.at(-1)!.data, somar(pagas.map((c) => c.valor)), true)];
-    if (mes < mesAtual || r.cartao) return []; // mês que passou: só o que cobrou; a que hoje cobra no cartão vem na fatura
+    // mês que passou: só o que cobrou; a que hoje cobra no cartão vem na fatura; a do mês que a conta à mão pegou não se projeta
+    if (mes < mesAtual || r.cartao || doMes.length < todasDoMes.length) return [];
+    if (pegos.has(r.cobrancas.findLast((c) => c.data <= hoje)?.id ?? "")) return []; // a última é de uma conta à mão: o que vem é dela
     const agendada = doMes.find((c) => c.data > hoje); // já lançada com data futura: ainda não saiu
     if (agendada) return [linha(agendada.data, agendada.valor, false)];
     if (deveCobrar(r) && r.a_lancar.slice(0, 7) <= mes) {
@@ -48,6 +54,45 @@ export function linhasDeRecorrentes(rs: Recorrente[], mes: string, hoje: string,
     // confirmada nunca some calada: se parou de cobrar, fica atrasada no mês atual (nos futuros não se projeta, como no alarme)
     if (r.status === "confirmada" && r.situacao === "parada" && mes === mesAtual) return [linha(r.a_lancar, r.valor, false, true)];
     return [];
+  });
+}
+
+/** O texto da conta à mão e o nome do lançamento, do mesmo jeito: sem acento, número, símbolo, espaço nem forma de pagamento ("Pagamento de conta"). */
+export const normalizarTexto = (texto: string) => nomeDe(chaveDe(texto));
+export const MINIMO_LETRAS_DO_TEXTO = 3;
+
+const vale = (c: CompromissoCadastrado, mes: string) => c.inicio <= mes && (c.fim === null || mes <= c.fim);
+
+/**
+ * Quem paga cada conta à mão no mês: o candidato cujo nome contém o texto. Disputa (duas contas, ou dois candidatos): cada conta fica com o de
+ * valor mais próximo do esperado, começando pela menor diferença, e um lançamento paga uma conta só. O empate se decide pela conta, a data e o
+ * id, para a mesma leitura dar sempre o mesmo dono.
+ */
+export function casar(contas: CompromissoCadastrado[], candidatos: CandidatoAPagamento[]): Map<number, CandidatoAPagamento> {
+  const pares = contas.flatMap((k) => (k.texto ? candidatos.filter((c) => c.nome.includes(k.texto!)).map((c) => ({ k, c, d: Math.abs(c.valor - k.valor) })) : []))
+    .sort((a, b) => a.d - b.d || a.k.id - b.k.id || a.c.data.localeCompare(b.c.data) || a.c.id.localeCompare(b.c.id));
+  const donos = new Map<number, CandidatoAPagamento>(), usados = new Set<string>();
+  for (const { k, c } of pares) {
+    if (donos.has(k.id) || usados.has(c.id)) continue;
+    donos.set(k.id, c);
+    usados.add(c.id);
+  }
+  return donos;
+}
+
+/**
+ * As contas à mão do mês (de `inicio` a `fim`). Paga pelo lançamento que casou (valor e dia reais); senão pela marca à mão; senão, atrasada
+ * quando os dados do banco já cobrem o dia, também nos meses que passaram.
+ */
+export function linhasDeManuais(
+  contas: CompromissoCadastrado[], donos: Map<number, CandidatoAPagamento>, marcas: Map<number, number>, mes: string, dadosAte: string,
+): CompromissoManual[] {
+  return contas.filter((k) => vale(k, mes)).map((k): CompromissoManual => {
+    const c = donos.get(k.id), marcado = marcas.get(k.id), dia = `${mes}-${String(Math.min(k.dia, diasDoMes(mes))).padStart(2, "0")}`;
+    const base = { tipo: "manual" as const, nome: k.nome, cadastro: k, pago_por: c ? { data: c.data, descricao: c.descricao, conta: c.conta } : null, marcada: false };
+    if (c) return { ...base, dia: c.data, valor: c.valor, pago: c.valor, pago_em: c.data, situacao: "paga" };
+    if (marcado !== undefined) return { ...base, marcada: true, dia, valor: marcado, pago: marcado, pago_em: null, situacao: "paga" };
+    return { ...base, dia, valor: k.valor, pago: 0, pago_em: null, situacao: dia < dadosAte ? "atrasada" : "a_pagar" };
   });
 }
 
@@ -186,10 +231,45 @@ export function faturasDoCartao(
   });
 }
 
+export const lerCadastros = () =>
+  db.prepare("SELECT id, nome, valor_centavos AS valor, dia, texto, inicio, fim FROM compromissos ORDER BY id").all() as unknown as CompromissoCadastrado[];
+
+/** Saída de conta PF que não é cartão (o do cartão já está na fatura), com os filtros do Resumo, no mês e até hoje. */
+export function candidatosDoMes(mes: string, hoje: string): CandidatoAPagamento[] {
+  const ate = fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje;
+  return (db.prepare(
+    `SELECT l.id, l.data, -l.valor_centavos AS valor, COALESCE(l.descricao, l.descricao_original, '') AS descricao, l.descricao_original,
+            COALESCE(ct.apelido, ct.nome) AS conta
+     ${BASE_RESUMO} AND ct.tipo IS NOT 'CREDIT' AND l.valor_centavos < 0 ORDER BY l.data, l.id`,
+  ).all(`${mes}-01`, ate, "PF") as unknown as (CandidatoAPagamento & { descricao_original: string | null })[])
+    .map(({ descricao_original, ...c }) => ({ ...c, nome: normalizarTexto(descricao_original ?? "") }));
+}
+
+/** Quem paga cada conta à mão no mês. A busca é refeita a cada leitura: a Pluggy recriar o lançamento com outro id não quebra nada. */
+export function donosDoMes(mes: string, hoje: string, cadastros = lerCadastros()) {
+  const vigentes = cadastros.filter((k) => vale(k, mes));
+  return vigentes.length ? casar(vigentes, candidatosDoMes(mes, hoje)) : new Map<number, CandidatoAPagamento>();
+}
+
+/** Para "Vincular pagamento": os candidatos do mês, do valor mais próximo do esperado ao mais longe, com a conta à mão que já ficou com cada um. */
+export function candidatosPara(cadastro: CompromissoCadastrado, mes: string, hoje: string): CandidatosAPagamento {
+  const cadastros = lerCadastros(), donos = donosDoMes(mes, hoje, cadastros);
+  const de = new Map([...donos].flatMap(([id, c]) => (id === cadastro.id ? [] : [[c.id, cadastros.find((k) => k.id === id)!.nome] as const])));
+  return candidatosDoMes(mes, hoje).map((c) => ({ ...c, de: de.get(c.id) ?? null }))
+    .sort((a, b) => Math.abs(a.valor - cadastro.valor) - Math.abs(b.valor - cadastro.valor) || b.data.localeCompare(a.data));
+}
+
 /** O mês inteiro: linhas pelo dia (os pagos no fim) e o topo. Só PF, sem conta oculta. */
 export function compromissosDoMes(mes: string, hoje: string): Compromissos {
   const mesAtual = hoje.slice(0, 7), dadosAte = ultimoDiaComDado(hoje);
   const recorrentes = listarRecorrentes("PF", hoje);
+  const cadastros = lerCadastros();
+  // a conta à mão escolhe primeiro: no mês, e no mês da última cobrança de cada recorrente (a que a perdeu não se projeta mais)
+  const donos = donosDoMes(mes, hoje, cadastros), pegos = new Set([...donos.values()].map((c) => c.id));
+  const mesesDaUltima = new Set(recorrentes.flatMap((r) => r.cobrancas.findLast((c) => c.data <= hoje)?.data.slice(0, 7) ?? []));
+  for (const m of mesesDaUltima) if (m !== mes) for (const c of donosDoMes(m, hoje, cadastros).values()) pegos.add(c.id);
+  const marcas = new Map((db.prepare("SELECT compromisso_id AS id, valor_centavos AS valor FROM compromissos_pagos WHERE mes = ?").all(mes) as { id: number; valor: number }[])
+    .map((m) => [m.id, m.valor]));
   const cartoes = db.prepare(
     `SELECT ct.id, COALESCE(ct.apelido, ct.nome) AS nome, ct.vencimento, cx.banco
      FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id WHERE ct.tipo = 'CREDIT' AND ct.pessoa = 'PF' AND ct.oculta = 0`,
@@ -206,7 +286,8 @@ export function compromissosDoMes(mes: string, hoje: string): Compromissos {
   ).all() as unknown as (LancadoNoCartao & { conta_id: string })[]; // ignorado entra: continua na fatura
   const futuras = previstas(hoje);
   const linhas: Compromisso[] = [
-    ...linhasDeRecorrentes(recorrentes, mes, hoje, dadosAte),
+    ...linhasDeManuais(cadastros, donos, marcas, mes, dadosAte),
+    ...linhasDeRecorrentes(recorrentes, mes, hoje, dadosAte, pegos),
     ...cartoes.flatMap((c) => faturasDoCartao(c, faturas.filter((f) => f.conta_id === c.id), lancados.filter((l) => l.conta_id === c.id),
       futuras.filter((p) => p.conta_id === c.id), recorrentes, mes, hoje, dadosAte)),
   ];

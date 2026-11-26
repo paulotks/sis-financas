@@ -7,9 +7,9 @@ parcelas), cada uma com um valor e uma marca de "pago". Em cima, renda −
 contas = o que sobra. O app já sabe quase tudo isso (recorrentes, faturas, renda esperada, metas), só que espalhado e pela data da compra.
 Esta página é **outra forma de olhar o que já existe**: pelo dinheiro que sai, no mês em que sai.
 
-**Regra de todas as fatias:** é só leitura, como os [avisos](avisos.md). **Nada aqui soma** em Resumo, Orçamento, alarme, Análises, metas ou
-patrimônio, e nenhuma categoria muda. A única ação que mexe em total é Confirmar/Ignorar uma sugestão de recorrente, que é a mesma decisão da
-página Recorrentes (já mexe no alarme hoje).
+**Regra de todas as fatias:** é uma lente, como os [avisos](avisos.md). **Nada aqui soma** em Resumo, Orçamento, alarme, Análises, metas ou
+patrimônio, e nenhuma categoria nem lançamento muda. A única ação que mexe em total é Confirmar/Ignorar uma sugestão de recorrente, que é a
+mesma decisão da página Recorrentes (já mexe no alarme hoje). A conta à mão (fatia 13) grava só nas tabelas dela e só muda esta página.
 
 ## Decisões (2026-11-26)
 
@@ -95,7 +95,7 @@ as cobranças da série (`id`, `data`, `valor`, já com as de data futura). `sit
   abatidos), link para os Lançamentos do cartão no mês que tem a maior parte do ciclo.
 
 **Quem paga o quê:** a fatura usa só o lado do cartão do Pagamento de fatura. Recorrentes (e a conta à mão, fatia 13) nunca veem transferência.
-As fontes não disputam lançamento.
+A fatura não disputa lançamento com as outras; entre a conta à mão e a recorrente, a conta à mão escolhe primeiro (fatia 13).
 
 **Rota:** `GET /api/compromissos?mes=AAAA-MM` (padrão: o atual), com as linhas e o topo. Dinheiro em centavos, como no resto da API. Topo: a linha
 paga conta inteira no pago; falta = o que não foi pago de cada linha (no mês que passou, a tela diz "não pago").
@@ -127,23 +127,32 @@ Em worktree com cópia da base: tem migração.
 **Como acha o pagamento:**
 - Candidatos: saída de conta **PF que não é cartão**, sem conta oculta, com os filtros de `NO_RESUMO` (sem transferência, ignorado ou
   `REMOVIDO`), com data no mês e até hoje. É o que impede contar de novo o que já está na fatura.
-- Casa quando `nomeDe(chaveDe(descricao_original))` **contém** `texto`, normalizado do mesmo jeito (sem acento, número, símbolo e espaço).
-  `texto` com pelo menos 3 letras depois de normalizado.
-- Duas contas, ou dois candidatos, com o mesmo texto no mês (mesmo recebedor no mesmo dia): cada conta fica com o de **valor mais próximo** do
-  esperado. Um lançamento paga uma conta só.
-- **Vincular pagamento:** a linha abre os candidatos do mês; escolher um grava em `texto` o nome normalizado dele (dá para encurtar). **Não cria
-  regra de categoria.** Nenhum vínculo por id é guardado: a busca é refeita a cada leitura, então a Pluggy apagar e recriar o lançamento não
-  quebra nada.
-- Marca à mão vale quando nada casou. Se depois casar, vale o lançamento.
+- Casa quando `nomeDe(chaveDe(descricao_original))` **contém** `texto`. O `texto` passa pela **mesma** `nomeDe(chaveDe())` ao ser gravado (sem
+  acento, número, símbolo, espaço nem a forma de pagamento: "Pagamento de conta X S.A." digitado vira `x`) e precisa de pelo menos 3 letras
+  depois disso. A tela mostra o texto como ficou gravado.
+- Disputa (duas contas, ou dois candidatos): todos os pares conta × lançamento que casam, da menor diferença entre o valor e o esperado para a
+  maior; cada conta fica com um lançamento e **um lançamento paga uma conta só**. Empate: a conta mais antiga, depois a data e o id do
+  lançamento, para a mesma leitura dar sempre o mesmo dono.
+- **Vincular pagamento:** a linha abre os candidatos do mês (`GET /api/compromissos/manuais/:id/candidatos?mes=`), do valor mais perto do
+  esperado ao mais longe, com "já paga X" no que outra conta à mão levou; escolher um grava em `texto` o nome normalizado dele (dá para
+  encurtar: quando o nome muda com a forma de pagamento, só o trecho comum pega as duas). **Não cria regra de categoria.** Nenhum vínculo por
+  id é guardado: a busca é refeita a cada leitura, então a Pluggy apagar e recriar o lançamento não quebra nada.
+- Marca à mão vale quando nada casou. Se depois casar, vale o lançamento. A marca guarda o esperado do dia em que foi feita.
+- **Paga** pelo lançamento: o valor e o dia reais. Sem pagamento nem marca: atrasada quando os dados do banco já cobrem o dia (também nos meses
+  que passaram, com "Marcar como pago" à mão), senão a pagar.
 
-**Prioridade sobre a recorrente:** a conta à mão escolhe primeiro. A recorrente cuja cobrança do mês foi pega por uma conta à mão some daquele
-mês, e a que tem a última cobrança pega some de todos (na página Recorrentes nada muda).
+**Prioridade sobre a recorrente:** a conta à mão escolhe primeiro. A cobrança que uma conta à mão pegou sai da recorrente: naquele mês a
+recorrente mostra só as cobranças que sobraram (pagas; com nenhuma, não aparece) e não se projeta. A que tem a última cobrança (até hoje)
+pega não aparece mais a pagar em mês nenhum: nem a prevista, nem a já lançada com data futura, nem a parada. O mês que passou continua com a
+cobrança que a conta à mão não pegou (por exemplo, de antes do início dela): é dinheiro que saiu. Na página Recorrentes nada muda.
 
 **Na tela:** "+ Adicionar conta" na aba Mês; editar direto na linha (nome, valor, dia, texto, até quando); apagar; "Vincular pagamento";
 "Marcar como pago" / desfazer. Aparece de `inicio` a `fim`.
 
 **Rotas:** `POST /api/compromissos/manuais`, `PATCH` e `DELETE /api/compromissos/manuais/:id`, `PUT /api/compromissos/manuais/:id/pago`
-(`mes`, `pago`). Tudo validado com zod.
+(`mes`, `pago`; mês fora de início a fim é recusado) e `GET /api/compromissos/manuais/:id/candidatos?mes=`. Tudo validado com zod. Criar e
+editar aceitam `parcelas` no lugar de `fim` (a API grava `fim` = início + N − 1: a tela e o MCP não fazem a conta); sem `inicio`, o mês atual
+(a tela manda o mês que está nela).
 
 **MCP:** `definir_compromisso` (cria ou edita) e `marcar_compromisso_pago` (marca ou desfaz). Sem apagar. `CONVENCOES`: o que é a conta à mão e que o
 texto não é regra de categoria.
@@ -151,7 +160,14 @@ texto não é regra de categoria.
 **Testes:** casamento (texto normalizado, boleto × Pix do mesmo recebedor, cartão fora, transferência, ignorado e removido fora, desempate pelo
 valor, um lançamento numa conta só); vigência e parcelas; marca à mão (e o lançamento que vence ela); prioridade sobre a recorrente; apagar
 leva as marcas. **Totais iguais com e sem contas à mão:** Resumo, Orçamento, ritmo, Análises e patrimônio. MCP: lista de ferramentas e o que ele
-não pode (apagar).
+não pode (apagar). Descobertos ao implementar: empate sempre com o mesmo dono, lançamento com data futura não paga, dia 31 em mês curto,
+atrasada pelo último dia com dado, a última cobrança pega também tira a agendada e a parada, e o mês anterior ao início fica com a
+recorrente. Na cópia da base: sem conta à mão, todas as respostas iguais ao `main` (a aba Mês também); com elas, só a aba Mês muda.
+
+**Conferido em 2026-11-26 (só leitura, na cópia):** no caso que motivou a fatia (duas contas do mesmo recebedor, cujo nome muda entre o
+boleto e o Pix), um texto curto comum aos dois nomes pega só elas nas saídas de conta PF, e nada no lançamento diz de qual das duas é cada
+pagamento. **Decidido com o Paulo:** as duas contas ficam com o mesmo texto; no mês com um pagamento só, ele vai para a de esperado mais
+próximo, e qual delas aparece paga pode trocar de um mês para outro (o número de contas pagas no mês fica certo).
 
 ## Fatia 14 (item 81): aba Ano
 
@@ -178,6 +194,14 @@ Grade só de leitura: as linhas (recorrente, fatura, conta à mão) × os 12 mes
 - O pagamento de um cartão conectado lançado sem a categoria Pagamento de fatura conta como gasto e pode virar recorrente: é categoria errada,
   e se corrige na categoria.
 - Conta paga no cartão não se cadastra à mão: ela já está na fatura.
+- Duas contas à mão com o mesmo texto e esperados parecidos: no mês com um pagamento só, qual delas aparece paga é decidido pelo valor (decidido
+  com o Paulo, fatia 13).
+- A conta à mão leva a última cobrança da recorrente só se já valia no mês dela. Cadastrada com início depois desse mês, a recorrente
+  continua prevista nos meses seguintes, ao lado dela: comece a conta à mão no mês da última cobrança.
+- "Vincular pagamento" grava o nome inteiro do lançamento: se o nome muda com a forma de pagamento, encurte o texto à mão.
+- O pagamento de um cartão fora do Open Finance que veio com a categoria Pagamento de fatura é transferência e não é candidato: troque a
+  categoria (Cartões não conectados) ou marque à mão.
+- O texto casa por "contém", com 3 letras ou mais, sem limite de diferença de valor: texto curto pode pegar o pagamento de outro recebedor.
 
 ## Depois (fora deste lote)
 

@@ -70,7 +70,7 @@ export const chaveDe = (descricao: string) =>
  * Quem recebeu, sem a forma de pagamento: o banco escreve "Pagamento de conta X S.A." num mês e "Pagamento com Pix X SA" no outro.
  * A decisão continua guardada pela chave inteira; a antiga (valor 0) acha as cobranças por este nome.
  */
-const nomeDe = (chave: string) =>
+export const nomeDe = (chave: string) =>
   chave
     .replace(/^(pagamento (com (qr )?pix|de conta)|(transferencia )?pix envi\w+|transferencia enviada|pagamento)( |$)/, "")
     .replace(/( s a| sa| ltda)+$/, "")

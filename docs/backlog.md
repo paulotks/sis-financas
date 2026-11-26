@@ -27,7 +27,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | **10. Metas (lote 6)** (feita em 2026-11-25) | 33 | Spec: [specs/lote-6.md](specs/lote-6.md). Revê o texto do 72 | migração | 1 e 9 |
 | **11. Formato único e horários** (feita em 2026-11-25) | 56 → 58 | Tocam API, tela e MCP inteiros: por último, para não conflitar | migração (58): worktree | 10 |
 | **12. Contas do mês: aba Mês** (feita em 2026-11-26) | 79 | Spec: [specs/lote-7.md](specs/lote-7.md). Junta recorrentes, faturas, renda esperada e metas numa página nova. Muda só a `situacao` das recorrentes (atrasada pelo último dia com dado) | não | 11 |
-| **13. Contas do mês: conta à mão** | 80 | Entra na mesma regra de quem paga qual linha, que nasce no 79 | migração: worktree | 12 |
+| **13. Contas do mês: conta à mão** (feita em 2026-11-26) | 80 | Entra na mesma regra de quem paga qual linha, que nasce no 79 | migração: worktree | 12 |
 | **14. Contas do mês: aba Ano** | 81 | Reaproveita o cálculo das fatias 12 e 13 | não | 13 |
 
 - **Por que esta ordem:** primeiro não perder dado (1), depois ler certo (3 a 5), depois avisar o que falta (6). Refinar conta (9) só vale com o dado completo.
@@ -113,7 +113,7 @@ Spec: [specs/lote-7.md](specs/lote-7.md). Página nova, só leitura: o mês pelo
 | # | Melhoria | Tam. | Base | Status |
 |---|---|---|---|---|
 | 79 | Aba Mês: recorrentes + faturas, pago automático, fatura parcial e estimada, atrasada pelo último dia com dado (também em Recorrentes), topo com renda e metas, MCP lê. Como ficou: a fatura vale pelo total do banco (decidido com o Paulo: o traduzido não bate quando a anterior não foi paga), e a não paga com a seguinte fechada "foi para a fatura seguinte"; peça nova `fechamentoAbreOSeguinte` no adaptador. Na cópia, Resumo, Orçamento, alarme, Análises e metas iguais ao `main` em todos os meses | M | não | feito (2026-11-26) |
-| 80 | Conta cadastrada à mão: texto para achar o pagamento, vincular, marcar como paga, prioridade sobre a recorrente, MCP cria e edita | M | migração | a fazer |
+| 80 | Conta cadastrada à mão: texto para achar o pagamento, vincular, marcar como paga, prioridade sobre a recorrente, MCP cria e edita. Como ficou: o texto passa pela mesma normalização do nome do lançamento; disputa pelo valor mais próximo, um lançamento por conta, empate sempre com o mesmo dono (decidido com o Paulo: duas contas com o mesmo texto podem trocar qual aparece paga no mês de um pagamento só); a recorrente que perdeu a última cobrança não se projeta mais, e o passado dela fica. Migração 14 (tabelas `compromissos` e `compromissos_pagos`). Na cópia, sem conta à mão, todas as respostas iguais ao `main`; com elas, só a aba Mês muda | M | migração | feito (2026-11-26) |
 | 81 | Aba Ano: grade linhas × 12 meses, passado real e futuro previsto, MCP lê | M | não | a fazer |
 
 ## Antes do lote 6: base segura (revisão de arquitetura e banco)

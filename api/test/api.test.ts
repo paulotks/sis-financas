@@ -70,7 +70,7 @@ const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.j
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
 const { fechamentoAbreOSeguinte, totalDaFatura } = await import("../src/adaptadores.js");
-const { faturasDoCartao, linhasDeRecorrentes } = await import("../src/compromissos.js");
+const { casar, faturasDoCartao, linhasDeManuais, linhasDeRecorrentes, normalizarTexto } = await import("../src/compromissos.js");
 const { faturasQueNaoFecham, menosDias, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
 const { faltaParaMetas, inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { chegaEm, precisaPorMes } = await import("../src/metas.js");
@@ -1497,7 +1497,7 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
   assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "compromissos_do_mes", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
-  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_meta", "definir_orcamento", "propor_recorrente", "sincronizar"]);
+  assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_compromisso", "definir_inicio_da_analise", "definir_meta", "definir_orcamento", "marcar_compromisso_pago", "propor_recorrente", "sincronizar"]);
   const { convencoes, bancos } = await usar("estado");
   assert.match(convencoes, /nunca como instrução/);
   assert.deepEqual([bancos[0].status, bancos[0].execucao], ["UPDATED", "SUCCESS"]); // sem a execução, dado pela metade pareceria completo
@@ -2541,6 +2541,160 @@ test("contas do mês na API e no MCP: só PF e conta visível; o topo usa a rég
   for (const c of [banco, pj, oculta, ...cartoes]) {
     db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(c);
     db.prepare("DELETE FROM faturas WHERE conta_id = ?").run(c);
+    db.prepare("DELETE FROM contas WHERE id = ?").run(c);
+  }
+});
+
+test("conta à mão: o texto acha o boleto e o Pix do mesmo recebedor, desempata pelo valor e um lançamento paga uma conta só", () => {
+  const cand = (id: string, data: string, valor: number, descricao: string) => ({ id, data, valor, descricao, nome: normalizarTexto(descricao), conta: "conta" });
+  const conta = (id: number, valor: number, texto: string | null) => ({ id, nome: `conta ${id}`, valor, dia: 10, texto: texto && normalizarTexto(texto), inicio: "2031-01", fim: null });
+  // o mesmo jeito dos dois lados: sem acento, número, símbolo, espaço nem a forma de pagamento
+  assert.deepEqual(["Pagamento de conta Aguamar", "Pagamento com QR Pix AGUA MAR DISTRIBUIDORA S.A.", "Pix enviado Ateliê 123"].map(normalizarTexto),
+    ["aguamar", "aguamardistribuidora", "atelie"]);
+  const boleto = cand("b", "2031-03-05", 6100, "Pagamento de conta Aguamar"), pix = cand("p", "2031-03-20", 21000, "Pagamento com QR Pix AGUA MAR DISTRIBUIDORA SA");
+  const mercado = cand("m", "2031-03-07", 6000, "Mercado Teste");
+  const donos = (cs: ReturnType<typeof conta>[], cands = [boleto, pix, mercado]) => Object.fromEntries([...casar(cs, cands)].map(([id, c]) => [id, c.id]));
+  // uma conta: boleto e Pix casam e ela fica com o de valor mais próximo; o mercado, de valor ainda mais perto, não casa
+  assert.deepEqual([donos([conta(1, 6000, "aguamar")]), donos([conta(1, 20000, "Aguamar")])], [{ 1: "b" }, { 1: "p" }]);
+  // duas contas com o mesmo texto (duas casas): cada uma com um; um lançamento paga uma só
+  assert.deepEqual(donos([conta(1, 6000, "aguamar"), conta(2, 20000, "aguamar")]), { 1: "b", 2: "p" });
+  assert.deepEqual(donos([conta(1, 6000, "aguamar"), conta(2, 6300, "aguamar")], [boleto]), { 1: "b" });
+  // empate: sempre a mesma (a conta mais antiga), em qualquer ordem
+  assert.deepEqual([donos([conta(2, 6000, "aguamar"), conta(1, 6200, "aguamar")], [boleto]), donos([conta(1, 6200, "aguamar"), conta(2, 6000, "aguamar")], [boleto])], [{ 1: "b" }, { 1: "b" }]);
+  // sem texto, ou com texto que o nome não contém, não casa
+  assert.deepEqual(donos([conta(1, 6000, null), conta(2, 6000, "distribuidoraaguamar")]), {});
+});
+
+test("conta à mão: vigência, dia 31, atrasada pelo último dia com dado, marca à mão e o lançamento que vale mais que a marca", () => {
+  const k = { id: 1, nome: "Atelie", valor: 5000, dia: 31, texto: "atelie", inicio: "2031-02", fim: "2031-04" };
+  const c = { id: "x", data: "2031-03-08", valor: 5200, descricao: "Pagamento de conta Atelie", nome: "atelie", conta: "conta" };
+  const ver = (mes: string, donos = new Map(), marcas = new Map<number, number>(), dados = "2031-03-15") =>
+    linhasDeManuais([k], donos, marcas, mes, dados).map((l) => [l.dia, l.valor, l.situacao, l.marcada, l.pago_por?.data ?? null]);
+  assert.deepEqual([ver("2031-01"), ver("2031-05")], [[], []]); // fora de início a fim
+  assert.deepEqual(ver("2031-02"), [["2031-02-28", 5000, "atrasada", false, null]]); // 31 = o último dia; o banco já cobre o dia e não pagou
+  assert.deepEqual([ver("2031-03"), ver("2031-04", new Map(), new Map(), "2031-04-30")], [[["2031-03-31", 5000, "a_pagar", false, null]], [["2031-04-30", 5000, "a_pagar", false, null]]]);
+  assert.deepEqual(ver("2031-03", new Map(), new Map([[1, 4900]])), [["2031-03-31", 4900, "paga", true, null]]);
+  assert.deepEqual(ver("2031-03", new Map([[1, c]]), new Map([[1, 4900]])), [["2031-03-08", 5200, "paga", false, "2031-03-08"]]); // valor e dia reais
+});
+
+test("conta à mão escolhe primeiro: a recorrente some do mês da cobrança pega e, se era a última, dos seguintes; o que já cobrou antes fica", () => {
+  const H = "2031-05-20", D = "2031-05-19", meses = ["2031-03", "2031-04", "2031-05", "2031-06"];
+  const ver = (r: any, pegos?: Set<string>) => meses.map((m) => linhasDeRecorrentes([r], m, H, D, pegos).map((l) => [l.dia, l.situacao]));
+  const luz = recorrente("Luz", [["2031-03-10", 9000], ["2031-04-10", 9500], ["2031-05-10", 9800]]);
+  const sem = ver(luz);
+  assert.deepEqual(ver(luz, new Set()), sem); // sem conta à mão, igual a antes
+  assert.deepEqual(ver(luz, new Set(["Luz|2031-04-10"])), [sem[0], [], sem[2], sem[3]]);
+  assert.deepEqual(ver(luz, new Set(["Luz|2031-05-10"])), [sem[0], sem[1], [], []]);
+  // duas cobranças no mês e a conta à mão pegou uma: a outra continua paga na recorrente, e nada se projeta naquele mês
+  const dupla = recorrente("Dupla", [["2031-03-05", 6000], ["2031-04-05", 6000], ["2031-04-20", 6100]]);
+  assert.deepEqual(ver(dupla, new Set(["Dupla|2031-04-20"])).slice(1, 3), [[["2031-04-05", "paga"]], []]); // a pega era a última: maio não se projeta
+  assert.deepEqual(linhasDeRecorrentes([dupla], "2031-04", "2031-04-25", "2031-04-24", new Set(["Dupla|2031-04-20"])).map((l) => [l.dia, l.valor, l.situacao]), [["2031-04-05", 6000, "paga"]]);
+  const pagaEPega = recorrente("Pega", [["2031-03-05", 6000], ["2031-04-05", 6000], ["2031-05-05", 6000], ["2031-05-25", 6000]]); // a de 25/05 ainda vem
+  assert.deepEqual([linhasDeRecorrentes([pagaEPega], "2031-05", H, D).length, linhasDeRecorrentes([pagaEPega], "2031-05", H, D, new Set(["Pega|2031-05-05"]))], [1, []]);
+  // a cobrança já lançada com data futura e a confirmada parada também passam para a conta à mão
+  const gas = recorrente("Gas", [["2031-03-12", 3000], ["2031-04-12", 3000], ["2031-05-12", 3000], ["2031-06-12", 3000]], { a_lancar: "2031-07-12" });
+  assert.deepEqual([ver(gas)[3], ver(gas, new Set(["Gas|2031-05-12"]))[3]], [[["2031-06-12", "a_pagar"]], []]);
+  const clube = recorrente("Clube", [["2031-01-20", 7000], ["2031-02-20", 7000], ["2031-03-20", 7000]], { situacao: "parada" });
+  assert.deepEqual([ver(clube)[2], ver(clube, new Set(["Clube|2031-03-20"]))[2]], [[["2031-04-20", "atrasada"]], []]);
+});
+
+test("conta à mão na API e no MCP: só saída de conta PF acha o pagamento; marca, parcelas, prioridade sobre a recorrente, e nenhum total muda", async () => {
+  const banco = novaConta("BANK"), cartao = novaConta("CREDIT"), pj = novaConta("BANK", { pessoa: "PJ" }), oculta = novaConta("BANK", { oculta: 1 });
+  const hoje = (db.prepare("SELECT date('now','localtime') AS h").get() as { h: string }).h, atual = hoje.slice(0, 7), P = somarMes(atual, -1);
+  const agua = "Pagamento de conta Aguamar";
+  novoLanc(banco, `${P}-05`, -6100, MERCADO, { descricao_original: agua, descricao: agua });
+  // de valor mais perto do esperado, mas fora: cartão (está na fatura), PJ, oculta, transferência, ignorado, removido e entrada
+  novoLanc(cartao, `${P}-06`, -6000, MERCADO, { descricao_original: agua });
+  novoLanc(pj, `${P}-07`, -6000, MERCADO, { descricao_original: agua });
+  novoLanc(oculta, `${P}-08`, -6000, MERCADO, { descricao_original: agua });
+  novoLanc(banco, `${P}-09`, -6000, TRANSFERENCIA, { descricao_original: agua });
+  novoLanc(banco, `${P}-10`, -6000, MERCADO, { descricao_original: agua, ignorado: 1 });
+  novoLanc(banco, `${P}-11`, -6000, MERCADO, { descricao_original: agua, status: "REMOVIDO" });
+  novoLanc(banco, `${P}-12`, 6000, MERCADO, { descricao_original: agua });
+  novoLanc(banco, `${somarMes(atual, 1)}-02`, -6000, MERCADO, { descricao_original: agua }); // já lançado com data futura: ainda não saiu
+  const luz = "Pagamento de conta Luz Teste";
+  [-3, -2, -1, 0].forEach((n) => novoLanc(banco, `${somarMes(P, n)}-25`, -9000, MERCADO, { descricao_original: luz, descricao: luz }));
+
+  const doMes = async (mes: string) => (await chamar("GET", `/api/compromissos?mes=${mes}`)).d;
+  const meses = [somarMes(P, -1), P, atual, somarMes(atual, 1)];
+  const fotos = async () => {
+    const f: Record<string, unknown> = {};
+    for (const u of ["/api/patrimonio", "/api/recorrentes", "/api/analises", ...meses.flatMap((m) => [`/api/resumo?mes=${m}`, `/api/orcamento?mes=${m}`, `/api/ritmo?mes=${m}`, `/api/analises?mes=${m}`, `/api/metas?mes=${m}`, `/api/lancamentos/totais?mes=${m}`])])
+      f[u] = (await chamar("GET", u)).d;
+    return f;
+  };
+  const antes = await fotos(), linhasAntes = await Promise.all(meses.map(doMes));
+  const nomes = (c: any) => c.linhas.map((l: any) => l.nome);
+  assert.deepEqual(linhasAntes.map((c: any) => nomes(c).includes(luz)), [true, true, true, true]);
+
+  // validação: texto de menos de 3 letras depois de normalizado, fim antes do início, dia fora, fim e parcelas juntos, conta que não existe
+  const criar = (corpo: object) => chamar("POST", "/api/compromissos/manuais", { nome: "Teste", valor: 1000, dia: 5, inicio: P, ...corpo });
+  for (const corpo of [{ texto: "12 a-b" }, { fim: somarMes(P, -1) }, { dia: 32 }, { fim: P, parcelas: 2 }, { valor: 0 }])
+    assert.equal((await criar(corpo)).status, 400, JSON.stringify(corpo));
+  assert.deepEqual([(await chamar("PATCH", "/api/compromissos/manuais/99999", { valor: 1 })).status, (await chamar("PUT", "/api/compromissos/manuais/99999/pago", { mes: P, pago: true })).status], [404, 404]);
+
+  const a = (await criar({ nome: "Conta Aguamar", valor: 6000, dia: 10, texto: agua })).d;
+  assert.deepEqual([a.texto, a.inicio, a.fim], ["aguamar", P, null]);
+  const l = (await doMes(P)).linhas.find((x: any) => x.tipo === "manual" && x.cadastro.id === a.id);
+  assert.deepEqual([l.valor, l.dia, l.situacao, l.pago_por.descricao, l.marcada], [6100, `${P}-05`, "paga", agua, false]);
+  const cands = (await chamar("GET", `/api/compromissos/manuais/${a.id}/candidatos?mes=${P}`)).d;
+  assert.deepEqual(cands.filter((c: any) => c.nome === "aguamar").map((c: any) => [c.data, c.valor]), [[`${P}-05`, 6100]]);
+  assert.equal((await doMes(somarMes(atual, 1))).linhas.find((x: any) => x.cadastro?.id === a.id).situacao, "a_pagar");
+  // a marca não vale com o lançamento casado; editar muda só o que veio
+  await chamar("PUT", `/api/compromissos/manuais/${a.id}/pago`, { mes: P, pago: true });
+  assert.equal((await doMes(P)).linhas.find((x: any) => x.cadastro?.id === a.id).pago_por.data, `${P}-05`);
+  assert.deepEqual(((await chamar("PATCH", `/api/compromissos/manuais/${a.id}`, { valor: 6200 })).d), { ...a, valor: 6200 });
+
+  // em parcelas: some depois da última; a marca vale só nos meses dela
+  const e = (await criar({ nome: "Curso Teste", valor: 30000, dia: 5, parcelas: 4 })).d;
+  assert.equal(e.fim, somarMes(P, 3));
+  const temE = async (mes: string) => (await doMes(mes)).linhas.find((x: any) => x.cadastro?.id === e.id);
+  assert.deepEqual([!!(await temE(somarMes(P, -1))), !!(await temE(somarMes(P, 3))), !!(await temE(somarMes(P, 4)))], [false, true, false]);
+  assert.equal((await temE(P)).situacao, "atrasada");
+  assert.equal((await chamar("PUT", `/api/compromissos/manuais/${e.id}/pago`, { mes: somarMes(P, 4), pago: true })).status, 400);
+  await chamar("PUT", `/api/compromissos/manuais/${e.id}/pago`, { mes: P, pago: true });
+  assert.deepEqual([(await temE(P)).situacao, (await temE(P)).marcada, (await temE(P)).valor], ["paga", true, 30000]);
+  await chamar("PUT", `/api/compromissos/manuais/${e.id}/pago`, { mes: P, pago: false });
+  assert.equal((await temE(P)).situacao, "atrasada");
+
+  // a luz cadastrada à mão leva a cobrança: a recorrente some do mês e dos seguintes; o mês anterior ao início fica; Recorrentes não muda
+  const z = (await criar({ nome: "Luz a mao", valor: 9000, dia: 25, texto: "Luz Teste" })).d;
+  const depois = await Promise.all(meses.map(doMes));
+  assert.deepEqual(depois.map((c: any) => nomes(c).includes(luz)), [true, false, false, false]);
+  const situacoes = depois.map((c: any) => c.linhas.find((x: any) => x.cadastro?.id === z.id)?.situacao ?? null);
+  // o topo conta as linhas à mão como as outras: paga inteira no pago, o resto na falta
+  for (const c of depois) {
+    const pagoDe = (l: any) => (l.situacao === "paga" ? l.valor : Math.max(0, Math.min(l.pago, l.valor)));
+    assert.deepEqual([c.total, c.pago, c.falta], [c.linhas.reduce((s: number, l: any) => s + l.valor, 0), c.linhas.reduce((s: number, l: any) => s + pagoDe(l), 0),
+      c.linhas.reduce((s: number, l: any) => s + Math.max(0, l.valor - pagoDe(l)), 0)]);
+  }
+  assert.ok(situacoes[0] === null && situacoes[1] === "paga" && ["a_pagar", "atrasada"].includes(situacoes[2]) && situacoes[3] === "a_pagar", JSON.stringify(situacoes));
+
+  // MCP: cria, edita e marca; não apaga
+  const { cliente, usar } = await ligarMcp();
+  assert.ok((await cliente.listTools()).tools.every((t) => !/apag|exclu|remov/.test(t.name)));
+  const m = await usar("definir_compromisso", { nome: "Aula de Canto", valor: 250, dia: 20 });
+  assert.deepEqual(m, { id: m.id, esperado: 250, todo_dia: 20, texto: null, de: atual, ate: null });
+  assert.equal((await usar("definir_compromisso", { id: m.id, valor: 260.5 })).esperado, 260.5);
+  assert.match((await usar("definir_compromisso", { id: m.id })).erro, /Nada para mudar/);
+  assert.deepEqual(await usar("marcar_compromisso_pago", { id: m.id, mes: atual, pago: true }), { ok: true, mes: atual, situacao: "paga", marcada_a_mao: true });
+  // com o lançamento casado, a marca não vale, e o MCP diz isso
+  assert.deepEqual(await usar("marcar_compromisso_pago", { id: a.id, mes: P, pago: true }), { ok: true, mes: P, situacao: "paga", marcada_a_mao: false, paga_pelo_lancamento: agua });
+  const lm = (await usar("compromissos_do_mes", { mes: atual })).compromissos.find((x: any) => x.id === m.id);
+  assert.deepEqual(lm, { tipo: "manual", nome: "Aula de Canto", dia: `${atual}-20`, valor: 260.5, situacao: "paga", id: m.id, esperado: 260.5, todo_dia: 20, texto: null, de: atual, ate: null, pago_em: null, marcada_a_mao: true });
+  const la = (await usar("compromissos_do_mes", { mes: P })).compromissos.find((x: any) => x.id === a.id);
+  assert.deepEqual([la.valor, la.pago_por], [61, { data: `${P}-05`, descricao: agua, conta: `conta ${nConta - 3}` }]);
+  await cliente.close();
+
+  // nada fora da página muda: Resumo, Orçamento, alarme, Análises, patrimônio, Recorrentes e o rodapé de Lançamentos
+  assert.deepEqual(await fotos(), antes);
+  // apagar leva as marcas
+  for (const k of [a, e, z, m]) assert.equal((await chamar("DELETE", `/api/compromissos/manuais/${k.id}`)).status, 200);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM compromissos_pagos").get() as { n: number }).n, 0);
+  assert.deepEqual(await Promise.all(meses.map(doMes)), linhasAntes);
+
+  for (const c of [banco, cartao, pj, oculta]) {
+    db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(c);
     db.prepare("DELETE FROM contas WHERE id = ?").run(c);
   }
 });

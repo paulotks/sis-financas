@@ -1,10 +1,16 @@
 import { Fragment, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dataCurta, dinheiro, mesAtual, mesCurto, type Compromisso, type CompromissoFatura, type Recorrente } from "../lib/api";
+import {
+  api, dataCurta, dinheiro, lerDinheiro, mesAtual, mesCurto, nomeMes, type Compromisso, type CompromissoFatura, type CompromissoManual, type EdicaoCompromisso, type Recorrente,
+} from "../lib/api";
+import CampoDinheiro from "../components/CampoDinheiro";
 import SeletorMes from "../components/SeletorMes";
 
-/** O mês pelo dinheiro que sai da conta, no mês em que sai. Só lê: a única ação é a decisão da sugestão, a mesma de Recorrentes. */
+/**
+ * O mês pelo dinheiro que sai da conta, no mês em que sai. Nada daqui soma em outro número: as ações são a decisão da sugestão (a mesma de
+ * Recorrentes) e as contas à mão, que só existem nesta página.
+ */
 export default function ContasDoMes() {
   const [params, setParams] = useSearchParams();
   const mes = params.get("mes") ?? mesAtual();
@@ -14,9 +20,16 @@ export default function ContasDoMes() {
     mutationFn: api.decidirRecorrente,
     onSettled: () => Promise.all([["compromissos"], ["recorrentes"], ["ritmo"], ["analises"]].map((queryKey) => qc.invalidateQueries({ queryKey }))), // sugestão conta no alarme
   });
+  // a conta à mão só muda esta página
+  const aoMudar = { onSettled: () => Promise.all([["compromissos"], ["candidatos"]].map((queryKey) => qc.invalidateQueries({ queryKey }))) };
+  const criar = useMutation({ mutationFn: api.criarCompromisso, ...aoMudar });
+  const editar = useMutation({ mutationFn: ({ id, ...e }: EdicaoCompromisso & { id: number }) => api.editarCompromisso(id, e), ...aoMudar });
+  const apagar = useMutation({ mutationFn: api.apagarCompromisso, ...aoMudar });
+  const marcar = useMutation({ mutationFn: ({ id, pago }: { id: number; pago: boolean }) => api.marcarCompromisso(id, mes, pago), ...aoMudar });
   const [aberta, setAberta] = useState<string | null>(null);
+  const [nova, setNova] = useState(false);
   const d = q.data, passou = mes < mesAtual();
-  const erro = q.error ?? decidir.error;
+  const erro = q.error ?? decidir.error ?? criar.error ?? editar.error ?? apagar.error ?? marcar.error;
   const acao = (l: Extract<Compromisso, { tipo: "recorrente" }>, status: Recorrente["status"], rotulo: string) => (
     <button className="botao secundario" aria-label={`${rotulo}: ${l.nome}, ${dinheiro(l.valor)}`} disabled={decidir.isPending}
       onClick={() => decidir.mutate({ chave: l.chave, valor: l.valor_chave, status })}>
@@ -56,11 +69,16 @@ export default function ContasDoMes() {
         </div>
       </div>
       <p className="mudo pequeno">
-        Só pessoa física. Cada linha é o que sai da conta no mês: a recorrente que cobra na conta e a fatura de cada cartão, que já tem as compras
-        dele. O pago vem dos lançamentos do banco. Estes números não entram em nenhum outro; só confirmar ou ignorar uma sugestão muda o alarme,
-        como em Recorrentes.
+        Só pessoa física. Cada linha é o que sai da conta no mês: a conta que você cadastrou à mão, a recorrente que cobra na conta e a fatura de
+        cada cartão, que já tem as compras dele. O pago vem dos lançamentos do banco. Estes números não entram em nenhum outro; só confirmar ou
+        ignorar uma sugestão muda o alarme, como em Recorrentes.
         {d && <> Atrasada = venceu e os dados do banco já vão até {dataCurta(d.dados_ate)}.</>}
       </p>
+
+      <div className="acoes-linha">
+        <button className="botao" aria-expanded={nova} onClick={() => setNova(!nova)}>{nova ? "Fechar" : "+ Adicionar conta"}</button>
+      </div>
+      {nova && <Nova mes={mes} salvando={criar.isPending} onCriar={(k, depois) => criar.mutate(k, { onSuccess: () => (depois(), setNova(false)) })} />}
 
       <div className="tabela-wrap">
         <table className="tabela compacta contas-do-mes">
@@ -70,15 +88,69 @@ export default function ContasDoMes() {
               <th>Conta</th>
               <th className="num" style={{ width: 130 }}>Valor</th>
               <th style={{ width: 280 }}>Situação</th>
-              <th style={{ width: 200 }}><span className="so-leitor">Ações</span></th>
+              <th style={{ width: 330 }}><span className="so-leitor">Ações</span></th>
             </tr>
           </thead>
           <tbody>
             {d?.linhas.length === 0 && <tr><td colSpan={5} className="vazio">Nenhuma conta neste mês.</td></tr>}
             {!d && <tr><td colSpan={5} className="vazio">{q.isLoading ? "Carregando…" : ""}</td></tr>}
             {d?.linhas.map((l) => {
-              const id = l.tipo === "fatura" ? `f|${l.conta_id}|${l.dia}` : `r|${l.chave}|${l.valor_chave}|${l.dia}`;
+              const id = l.tipo === "fatura" ? `f|${l.conta_id}|${l.dia}` : l.tipo === "manual" ? `m|${l.cadastro.id}` : `r|${l.chave}|${l.valor_chave}|${l.dia}`;
               const resolvida = l.situacao === "paga" || l.situacao === "nao_paga";
+              if (l.tipo === "manual") {
+                const k = l.cadastro, salvar = (e: EdicaoCompromisso) => editar.mutate({ id: k.id, ...e });
+                return (
+                  <Fragment key={id}>
+                    <tr className={resolvida ? "resolvida" : ""}>
+                      <td>{dataCurta(l.dia)}</td>
+                      <td>
+                        <div className="linha-nome">
+                          <CampoTexto nome="nome" valor={k.nome} rotulo={`Nome de ${k.nome}`} maximo={60} obrigatorio onSalvar={(nome) => salvar({ nome })} />
+                          <span className="selo">à mão</span>
+                        </div>
+                        <div className="sub campos-linha">
+                          <label>todo dia <CampoDia valor={k.dia} rotulo={`Dia de ${k.nome}`} onSalvar={(dia) => salvar({ dia })} /></label>
+                          <label>acha por <CampoTexto nome="texto" valor={k.texto ?? ""} rotulo={`Texto do pagamento de ${k.nome}`} dica="texto do lançamento" onSalvar={(texto) => salvar({ texto: texto || null })} /></label>
+                          <label>
+                            até
+                            <input
+                              key={k.fim ?? ""} className="editavel" type="month" name="fim" aria-label={`Até quando vale ${k.nome}`} min={k.inicio} defaultValue={k.fim ?? ""}
+                              onBlur={(e) => e.target.value !== (k.fim ?? "") && !e.target.validity.badInput && salvar({ fim: e.target.value || null })}
+                            />
+                          </label>
+                        </div>
+                      </td>
+                      <td className="num">
+                        <CampoDinheiro valor={k.valor} obrigatorio rotulo={`Valor esperado de ${k.nome}`} onSalvar={(valor) => salvar({ valor })} />
+                        {l.situacao === "paga" && l.valor !== k.valor && <div className="sub">pago {dinheiro(l.valor)}</div>}
+                      </td>
+                      <td><Situacao l={l} /></td>
+                      <td>
+                        <div className="acoes-linha">
+                          {!l.pago_por && (
+                            <button className="botao secundario" disabled={marcar.isPending} aria-label={`${l.marcada ? "Desfazer a marca de pago" : "Marcar como pago"}: ${k.nome}`}
+                              onClick={() => marcar.mutate({ id: k.id, pago: !l.marcada })}>
+                              {l.marcada ? "Desfazer" : "Marcar como pago"}
+                            </button>
+                          )}
+                          <button className="botao secundario" aria-expanded={aberta === id} aria-label={`Vincular pagamento: ${k.nome}`} onClick={() => setAberta(aberta === id ? null : id)}>
+                            {aberta === id ? "Fechar" : "Vincular pagamento"}
+                          </button>
+                          <button
+                            className="icone-botao" title="Apagar de todos os meses" aria-label={`Apagar ${k.nome}`}
+                            onClick={() => confirm(`Apagar "${k.nome}"? Some de todos os meses, com as marcas de pago.`) && apagar.mutate(k.id)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {aberta === id && (
+                      <tr className="detalhe"><td /><td colSpan={4}><Candidatos l={l} mes={mes} onUsar={(texto) => salvar({ texto })} /></td></tr>
+                    )}
+                  </Fragment>
+                );
+              }
               return (
                 <Fragment key={id}>
                   <tr className={resolvida ? "resolvida" : ""}>
@@ -128,6 +200,11 @@ export default function ContasDoMes() {
 
 function Situacao({ l }: { l: Compromisso }) {
   const parcial = l.situacao !== "paga" && l.pago > 0 ? `paga ${dinheiro(l.pago)} de ${dinheiro(l.valor)}` : null;
+  if (l.tipo === "manual" && l.situacao === "paga") {
+    return l.pago_por
+      ? <span className="ok">✓ paga em {dataCurta(l.pago_por.data)}<div className="sub">{l.pago_por.descricao}{l.pago_por.conta && ` · ${l.pago_por.conta}`}</div></span>
+      : <span className="ok">✓ marcada como paga</span>;
+  }
   if (l.situacao === "paga") {
     const semFatura = l.tipo === "fatura" && l.sem_fatura;
     return <span className="ok">✓ {l.pago_em ? `paga em ${dataCurta(l.pago_em)}` : "nada a pagar"}{semFatura && <span className="mudo"> · sem o total do banco: vale o que foi pago</span>}</span>;
@@ -167,6 +244,112 @@ function Detalhe({ f }: { f: CompromissoFatura }) {
       )}
       <h3>Outras compras</h3>
       <ul><li><span>{f.outras.qtd} {f.outras.qtd === 1 ? "lançamento" : "lançamentos"} <span className="mudo">(com estornos abatidos)</span></span><span className="num">{dinheiro(f.outras.valor)}</span></li></ul>
+    </div>
+  );
+}
+
+/** Texto editável na linha: Enter ou sair do campo salva, Esc desfaz. Volta ao gravado na hora: o que a API gravar (ou recusar) aparece em seguida. */
+function CampoTexto({ nome, valor, rotulo, dica, maximo = 100, obrigatorio = false, onSalvar }: {
+  nome: string; valor: string; rotulo: string; dica?: string; maximo?: number; obrigatorio?: boolean; onSalvar: (v: string) => void;
+}) {
+  return (
+    <input
+      key={valor} className="editavel" name={nome} aria-label={rotulo} placeholder={dica} maxLength={maximo} defaultValue={valor}
+      onBlur={(e) => {
+        const v = e.target.value.trim();
+        if (v !== valor && (v || !obrigatorio)) onSalvar(v);
+        e.target.value = valor;
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") e.currentTarget.value = valor;
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+function CampoDia({ valor, rotulo, onSalvar }: { valor: number; rotulo: string; onSalvar: (dia: number) => void }) {
+  return (
+    <input
+      key={valor} className="editavel num dia" name="dia" type="number" min={1} max={31} aria-label={rotulo} defaultValue={valor}
+      onBlur={(e) => {
+        const n = Number(e.target.value);
+        if (Number.isInteger(n) && n >= 1 && n <= 31 && n !== valor) onSalvar(n);
+        e.target.value = String(valor); // o gravado; o novo chega com a resposta
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") e.currentTarget.value = String(valor);
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+/** Conta nova, valendo do mês que está na tela em diante: em N parcelas, até o mês da última. */
+function Nova({ mes, salvando, onCriar }: { mes: string; salvando: boolean; onCriar: (k: EdicaoCompromisso & { nome: string; valor: number; dia: number }, depois: () => void) => void }) {
+  const [nome, setNome] = useState(""), [valor, setValor] = useState(""), [dia, setDia] = useState(""), [texto, setTexto] = useState(""), [parcelas, setParcelas] = useState("");
+  const centavos = lerDinheiro(valor), n = Number(dia), p = Number(parcelas);
+  const diaOk = Number.isInteger(n) && n >= 1 && n <= 31, parcelasOk = !parcelas || (Number.isInteger(p) && p >= 1);
+  const pronto = !!nome.trim() && (centavos ?? 0) > 0 && diaOk && parcelasOk;
+  return (
+    <form
+      className="painel nova-conta"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!pronto) return;
+        onCriar(
+          { nome: nome.trim(), valor: centavos!, dia: n, inicio: mes, ...(texto.trim() && { texto: texto.trim() }), ...(parcelas && { parcelas: p }) },
+          () => (setNome(""), setValor(""), setDia(""), setTexto(""), setParcelas("")),
+        );
+      }}
+    >
+      <div className="linha-form">
+        <input className="campo" name="nova-nome" aria-label="Nome da conta" placeholder="Nome (aluguel, curso…)" maxLength={60} value={nome} onChange={(e) => setNome(e.target.value)} />
+        <input className="campo num" name="nova-valor" aria-label="Valor esperado" inputMode="decimal" placeholder="Valor" value={valor} aria-invalid={!!valor && !((centavos ?? 0) > 0)} onChange={(e) => setValor(e.target.value)} />
+        <input className="campo num dia" name="nova-dia" aria-label="Dia do mês" type="number" min={1} max={31} placeholder="Dia" value={dia} onChange={(e) => setDia(e.target.value)} />
+        <input className="campo" name="nova-texto" aria-label="Texto do pagamento (opcional)" placeholder="Texto do pagamento (opcional)" maxLength={100} value={texto} onChange={(e) => setTexto(e.target.value)} />
+        <input className="campo num" name="nova-parcelas" aria-label="Em quantas parcelas (opcional)" type="number" min={1} placeholder="Parcelas" value={parcelas} aria-invalid={!parcelasOk} onChange={(e) => setParcelas(e.target.value)} />
+        <button className="botao" disabled={!pronto || salvando}>Adicionar</button>
+      </div>
+      <p className="mudo pequeno">
+        Vale de {nomeMes(mes).toLowerCase()} em diante; com parcelas, até a última. O pagamento é achado pelo texto, numa saída de conta (não de
+        cartão: o que se paga no cartão já está na fatura). Sem texto, marque como paga à mão. Dá para escolher o lançamento depois, em
+        “Vincular pagamento”. O texto não cria regra de categoria.
+      </p>
+    </form>
+  );
+}
+
+/** Os candidatos do mês, do valor mais próximo ao mais longe: escolher grava o nome do lançamento no texto da conta. */
+function Candidatos({ l, mes, onUsar }: { l: CompromissoManual; mes: string; onUsar: (texto: string) => void }) {
+  const k = l.cadastro;
+  const q = useQuery({ queryKey: ["candidatos", k.id, mes], queryFn: () => api.candidatos(k.id, mes) });
+  const [todos, setTodos] = useState(false);
+  const lista = (q.data ?? []).filter((c) => c.nome.length >= 3); // nome curto demais não serve de texto
+  return (
+    <div className="fatura-aberta">
+      <p className="mudo pequeno">
+        Saídas de conta de {nomeMes(mes).toLowerCase()}, da mais perto de {dinheiro(k.valor)} à mais longe. Escolher grava o nome do lançamento em
+        “acha por”. Se o nome muda com a forma de pagamento (boleto e Pix, por exemplo), encurte o texto para o trecho que os dois têm. Não cria
+        regra de categoria.
+      </p>
+      {q.isLoading && <p className="mudo pequeno">Carregando…</p>}
+      {q.error && <div className="aviso erro">{q.error.message}</div>}
+      {q.data && lista.length === 0 && <p className="mudo pequeno">Nenhuma saída de conta neste mês.</p>}
+      <ul>
+        {(todos ? lista : lista.slice(0, 10)).map((c) => (
+          <li key={c.id}>
+            <span>{dataCurta(c.data)} · {c.descricao} <span className="mudo">{c.conta}{c.de && ` · já paga “${c.de}”`}</span></span>
+            <span className="num">
+              {dinheiro(c.valor)}{" "}
+              <button className="botao secundario" disabled={c.nome === k.texto} aria-label={`Usar ${c.descricao}, ${dinheiro(c.valor)}`} onClick={() => onUsar(c.nome)}>
+                {c.nome === k.texto ? "Em uso" : "Usar"}
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!todos && lista.length > 10 && <button className="botao secundario" onClick={() => setTodos(true)}>Mostrar todas ({lista.length})</button>}
     </div>
   );
 }

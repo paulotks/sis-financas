@@ -9,7 +9,7 @@ import { z } from "zod";
 import { GRUPOS } from "./grupos.js";
 import { chaveDe } from "./recorrentes.js"; // função pura, sem base
 import type {
-  Analises, Categoria, CategoriaComUsos, Compromissos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
+  Analises, Categoria, CategoriaComUsos, CompromissoCadastrado, Compromissos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
   PreviaRegra, Recorrente, Regra, RegraCriada, Resumo, Ritmo, Sincronizacao, TotaisLancamentos,
 } from "./tipos.js"; // o formato das respostas da API; só tipo, some na compilação
 
@@ -37,7 +37,7 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   muda os meses passados. precisa_por_mes é sugestão: nada muda sozinho. Progresso null = não há posição ligada, ou ela saiu do patrimônio.
   Ligar a uma posição, encerrar e apagar, só o Paulo, na tela Metas. Dívida de cartão é o limite usado, com as parcelas futuras.
 - Contas do mês (compromissos_do_mes, só PF): o mês pelo dinheiro que sai da conta, no mês do vencimento (lente de caixa). Uma linha por
-  recorrente que sai de conta e uma por fatura de cartão; o que é pago no cartão (inclusive as recorrentes do cartão) está dentro da fatura.
+  conta à mão, por recorrente que sai de conta e por fatura de cartão; o que é pago no cartão (inclusive as recorrentes do cartão) está dentro da fatura.
   Por isso nunca some com o Resumo nem com o Orçamento: são números diferentes de propósito, e nada daqui soma em total nenhum.
   livre_depois_das_contas = renda esperada − contas − metas: não é a sobra do Resumo nem a do Orçamento (o nome é outro de propósito).
   Certo: o que está paga (vem do lançamento do banco) e o total da fatura fechada (é o que o banco cobra, já com o que ficou da anterior).
@@ -46,6 +46,13 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   Recorrentes ou na Contas do mês (você só propõe). atrasada = venceu e os dados do banco já cobrem o dia; parada = confirmada que parou de cobrar (pergunte se
   cancelou). nao_paga = fatura não paga no prazo cujo saldo foi para a fatura seguinte (está no total dela: não conte duas vezes).
   pago_a_menos em fatura não paga = parcial (vale para o pagamento mínimo).
+  Conta à mão (tipo manual): para o que o detector não pega (nome que muda com a forma de pagamento, parcela de empréstimo, o que se paga
+  fora de conta conectada). Vale de "de" a "ate". O pagamento é achado a cada leitura: saída de conta PF que não é cartão, sem transferência,
+  cujo nome (sem acento, número, símbolo, espaço nem "Pagamento de conta"/"Pix") contém o texto; com disputa, cada conta fica com o de
+  valor mais próximo do esperado, e um lançamento paga uma só. O texto não é regra de categoria e não muda lançamento nenhum. Sem texto, só a
+  marca à mão (marcar_compromisso_pago); o lançamento que casar vale mais que a marca. A conta à mão escolhe primeiro: a cobrança que
+  ela pegou sai da recorrente naquele mês (e, se era a última, a recorrente não se projeta mais); a página Recorrentes não muda. Você cria e edita
+  (definir_compromisso) e marca; apagar só o Paulo, na tela. O que se paga no cartão não é conta à mão: já está na fatura.
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -85,6 +92,8 @@ const texto = (dados: unknown): CallToolResult => ({ content: [{ type: "text", t
 const falha = (mensagem: string): CallToolResult => ({ isError: true, content: [{ type: "text", text: mensagem }] });
 
 const reais = (centavos: number | null | undefined) => (centavos == null ? null : centavos / 100);
+/** A conta à mão como está cadastrada; o id é o dela (para editar e marcar), não o de conta bancária. */
+const enxugarCompromisso = (k: CompromissoCadastrado) => ({ id: k.id, esperado: reais(k.valor), todo_dia: k.dia, texto: k.texto, de: k.inicio, ate: k.fim });
 
 const pessoa = z.enum(["PF", "PJ"]).default("PF").describe("PJ (empresa) só se o Paulo pedir");
 const mes = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).describe("AAAA-MM");
@@ -275,7 +284,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "compromissos_do_mes",
     {
-      description: "Contas do mês (só PF): tudo que sai da conta no mês, pelo vencimento — recorrentes e a fatura de cada cartão —, com o que já foi pago, o que falta e o que sobra da renda esperada depois das contas e das metas. Na fatura vêm as recorrentes do cartão, as parcelas e as outras compras do ciclo. Sem mes = mês atual.",
+      description: "Contas do mês (só PF): tudo que sai da conta no mês, pelo vencimento — contas à mão, recorrentes e a fatura de cada cartão —, com o que já foi pago, o que falta e o que sobra da renda esperada depois das contas e das metas. Na fatura vêm as recorrentes do cartão, as parcelas e as outras compras do ciclo. Sem mes = mês atual.",
       inputSchema: { mes: mes.optional() },
       annotations: LEITURA,
     },
@@ -291,6 +300,12 @@ export function criarServidor(base: string) {
             ...(l.situacao !== "paga" && l.pago > 0 && { pago_a_menos: reais(l.pago) }),
             ...(l.tipo === "recorrente"
               ? { ...(l.sugestao && { sugestao: true }), ...(l.parada && { parada: true }), conta: l.conta, categoria: l.categoria, chave: l.chave, valor_chave: reais(l.valor_chave) }
+              : l.tipo === "manual"
+              ? {
+                  ...enxugarCompromisso(l.cadastro), pago_em: l.pago_em,
+                  ...(l.pago_por && { pago_por: { data: l.pago_por.data, descricao: l.pago_por.descricao, conta: l.pago_por.conta } }),
+                  ...(l.marcada && { marcada_a_mao: true }),
+                }
               : {
                   pago_em: l.pago_em, ...(l.estimada && { estimada: true }), ...(l.sem_fatura && !l.estimada && { banco_nao_mandou_a_fatura: true }),
                   ...(l.foi_para && { saldo_foi_para_a_fatura_de: l.foi_para }), ja_comprometido: reais(l.comprometido),
@@ -619,6 +634,47 @@ export function criarServidor(base: string) {
         if (id === undefined) return enxugarMeta(await chamar<Meta>("POST", "/api/metas", { ...corpo, tipo }));
         if (!Object.values(corpo).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
         return enxugarMeta(await chamar<Meta>("PATCH", `/api/metas/${id}`, corpo));
+      }),
+  );
+
+  servidor.registerTool(
+    "definir_compromisso",
+    {
+      description: "Cria uma conta à mão em Contas do mês (sem id: nome, valor e dia obrigatórios) ou edita uma (com id, vindo de compromissos_do_mes: só o que vier muda). Para o que o detector de recorrentes não pega: nome que muda com a forma de pagamento, parcela de empréstimo, o que se paga fora de conta conectada. Não é para o que se paga no cartão (já está na fatura). Só muda a página Contas do mês: nenhum total nem categoria. Só com o ok do Paulo.",
+      inputSchema: {
+        id: z.number().int().optional().describe("id vindo de compromissos_do_mes (tipo manual); sem ele, cria"),
+        nome: z.string().trim().min(1).max(60).optional(),
+        valor: z.number().positive().max(1e9).optional().describe("em reais, o esperado"),
+        dia: z.number().int().min(1).max(31).optional().describe("dia do mês em que sai; 31 = o último"),
+        texto: z.string().max(100).nullable().optional().describe("trecho do nome do lançamento que paga a conta (saída de conta, não de cartão), com 3 letras ou mais; null = só a marca à mão. Não é regra de categoria"),
+        inicio: mes.optional().describe("primeiro mês; ao criar, sem ele, o atual"),
+        fim: mes.nullable().optional().describe("último mês; null = sem fim"),
+        parcelas: z.number().int().min(1).max(600).optional().describe("no lugar de fim: em quantos meses, contando o início"),
+      },
+      annotations: TROCA,
+    },
+    ({ id, valor, ...d }) =>
+      tentar(async () => {
+        const corpo = { ...d, valor: valor === undefined ? undefined : Math.round(valor * 100) };
+        if (id === undefined) return enxugarCompromisso(await chamar<CompromissoCadastrado>("POST", "/api/compromissos/manuais", corpo));
+        if (!Object.values(corpo).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
+        return enxugarCompromisso(await chamar<CompromissoCadastrado>("PATCH", `/api/compromissos/manuais/${id}`, corpo));
+      }),
+  );
+
+  servidor.registerTool(
+    "marcar_compromisso_pago",
+    {
+      description: "Marca (pago: true) ou desfaz (false) o pago de uma conta à mão num mês, para o que não passa por conta conectada. Se um lançamento casar com o texto, vale ele, não a marca. Só com o ok do Paulo.",
+      inputSchema: { id: z.number().int().describe("id vindo de compromissos_do_mes (tipo manual)"), mes, pago: z.boolean() },
+      annotations: TROCA,
+    },
+    (a) =>
+      tentar(async () => {
+        await chamar<Ok>("PUT", `/api/compromissos/manuais/${a.id}/pago`, { mes: a.mes, pago: a.pago });
+        const l = (await ler<Compromissos>("/api/compromissos", { mes: a.mes })).linhas.find((x) => x.tipo === "manual" && x.cadastro.id === a.id);
+        // o lançamento que casou vale mais que a marca
+        return { ok: true, mes: a.mes, situacao: l?.situacao, marcada_a_mao: l?.tipo === "manual" && l.marcada, ...(l?.tipo === "manual" && l.pago_por && { paga_pelo_lancamento: l.pago_por.descricao }) };
       }),
   );
 

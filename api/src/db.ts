@@ -256,6 +256,26 @@ export const MIGRACOES: string[] = [
   UPDATE sincronizacoes SET inicio        = strftime('%Y-%m-%d %H:%M:%f', inicio, 'localtime')        WHERE inicio        LIKE '%Z';
   UPDATE sincronizacoes SET fim           = strftime('%Y-%m-%d %H:%M:%f', fim, 'localtime')           WHERE fim           LIKE '%Z';
   `,
+  // contas do mês cadastradas à mão (só PF): não somam em total nenhum; o pagamento é achado pelo texto a cada leitura, sem guardar id
+  `
+  CREATE TABLE compromissos (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,             -- apagada não empresta o id: o MCP edita pelo id que leu
+    nome           TEXT NOT NULL,
+    valor_centavos INTEGER NOT NULL CHECK (valor_centavos > 0),  -- o esperado
+    dia            INTEGER NOT NULL CHECK (dia BETWEEN 1 AND 31), -- 31 = o último do mês
+    texto          TEXT,                                          -- normalizado como o nome da cobrança; nulo = só a marca à mão
+    inicio         TEXT NOT NULL,                                 -- AAAA-MM
+    fim            TEXT,                                          -- AAAA-MM; nulo = sem fim
+    criado_em      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    CHECK (fim IS NULL OR fim >= inicio)
+  );
+  CREATE TABLE compromissos_pagos (
+    compromisso_id INTEGER NOT NULL REFERENCES compromissos(id) ON DELETE CASCADE,
+    mes            TEXT NOT NULL,                                 -- AAAA-MM
+    valor_centavos INTEGER NOT NULL,                              -- o esperado no dia da marca
+    PRIMARY KEY (compromisso_id, mes)
+  );
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo
