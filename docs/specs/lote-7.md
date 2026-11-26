@@ -183,8 +183,10 @@ Grade só de leitura: as linhas (recorrente, fatura, conta à mão) × os 12 mes
 - **Como ficou (2026-11-26):**
   - Uma linha da grade = a mesma recorrente (pela decisão: `chave` + valor), a mesma fatura (pelo cartão) ou a mesma conta à mão, na ordem do
     dia do mês em que sai. A célula traz a linha da aba Mês inteira; o cartão com duas faturas no mesmo mês tem as duas na célula.
-  - Pago em cor cheia; o que ainda vai sair, mais claro (≈ = fatura estimada); o mês que passou sem pagamento, "não paga"; a fatura que foi
-    para a seguinte mostra o que foi pago dela (ou "não paga"). O cabeçalho de cada mês abre a aba Mês dele, onde ficam as ações.
+  - Pago em cor cheia; o que ainda vai sair, mais claro (≈ = fatura estimada). A célula diz o mesmo que a aba Mês: no mês que passou, só a
+    atrasada sem nada pago vira "não paga"; a paga em parte mostra o valor com "paga X de Y" na dica, e a que os dados do banco ainda não cobrem
+    continua "a pagar". A fatura que foi para a seguinte mostra o que foi pago dela (ou "não paga"). O cabeçalho de cada mês abre a aba Mês
+    dele, onde ficam as ações.
   - **Rodapé:** contas = no mês que passou, o pago da aba Mês (o que saiu); do atual em diante, o total, menos o resto da fatura que foi para a
     seguinte (está no total dela). Renda = a que entrou no mês que passou; a esperada do atual em diante. **Livre = renda − contas − metas do
     próprio rodapé**: no mês que passou não é o livre da aba Mês (que usa a renda esperada e o total). Sem total do ano: somaria de novo a
