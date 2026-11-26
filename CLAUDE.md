@@ -42,6 +42,7 @@ api/src/
   patrimonio.ts   soma das posições e foto diária dos saldos
   metas.ts        o que as metas pedem por mês, progresso pela posição ligada e previsão (as rotas ficam em server.ts)
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
+  compromissos.ts Contas do mês: recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês)
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
   tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
@@ -49,7 +50,7 @@ web/src/
   lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
   components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
-  pages/                Resumo, Lancamentos, Orcamento, Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
+  pages/                Resumo, Lancamentos, Orcamento, ContasDoMes (menu logo depois de Orçamento), Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
   styles.css            tema escuro (variáveis CSS); sem framework de CSS
 ```
 
@@ -92,8 +93,15 @@ web/src/
 - **Renda esperada**: linha de `orcamentos` numa categoria do grupo `renda` (nunca soma no planejado de gasto); sem nenhuma, mediana dos 3 últimos meses fechados. É a régua do alarme (`GET /api/ritmo`, só PF): renda extra não alivia o mês aberto. A projeção e a curva do mês param no último dia com dado de todos os bancos (`ultimoDiaComDado`). Meses antes do primeiro com renda completa (`inicioDaAnalise`, ou o escolhido em Análises: `config.inicio_analise`) não têm veredito. Normal de categoria nulo = não há o que comparar (nunca vira zero). Contas e decisões em `docs/specs/lote-3.md`.
 - **Metas** (`metas.ts`, contas em `docs/specs/lote-6.md`): só PF. Teto = renda esperada − o "por mês" das metas (sem renda, o teto é o orçado e a meta não desconta); amarelo = passou do orçado **ou não sobra para as metas**; vermelho só para passar da renda. `metas_mensais` funciona como `orcamentos`: vale do mês em diante, 0 = não pede nada; encerrar põe 0 do mês atual em diante e o passado fica. O mês se mede por entradas − saídas; o alvo, pelo saldo de **uma** posição (`origem` + `ref_id`, sem FK; posição fora do patrimônio = sem medida, nunca zero). Dívida sem "por mês" não mexe no teto: a parcela já é gasto. Nada fixo no código.
 - **Patrimônio** (`patrimonio.ts`): contas + investimentos + `bens` (linhas manuais; negativo = dívida; 0 = quitado ou vendido, que guarda a evolução; apagar muda os dias anteriores) − cartões. O saldo do cartão no Open Finance é o **limite usado** (já com parcelas futuras): nunca somar `faturas` junto. Investimento resgatado vira `status = TOTAL_WITHDRAWAL` (não some da Pluggy). Cofrinho e caixinha (`salvarReservas` em `sync.ts`) viram investimento de tipo `RESERVA`, que segue a pessoa e o "ocultar" da conta e **só soma com `contas.usa_reservas = 1`** (pergunta no cartão da conta; nulo = não respondeu, e o valor pode estar numa linha de `bens`); o que sai da lista vai a 0, nunca se apaga. A evolução vem de `saldos_diarios`: uma foto por item a cada sincronização, porque o saldo é sobrescrito. Saldo, limite e total de fatura que vêm nulos mantêm o último; `contas.atualizado_em` diz quando o saldo foi lido.
-- **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme.
+- **Recorrentes** (`recorrentes.ts`, contas em `docs/specs/lote-5.md`): detecção refeita a cada leitura, uma linha por cobrança; `recorrencias` guarda só a decisão por `chave` (descrição original sem acento, número e símbolo: **não mude `chaveDe` nem `nomeDe`**, perde ou troca de alcance as decisões) + um valor que a cobrança já teve (0 = o nome todo, decisões antigas). Ignorada = não é recorrente; cancelada = acabou (avisa se cobrar de novo). Sugestão conta no alarme. Atrasada = a próxima cobrança antes de `ultimoDiaComDado`; parada (45 dias) conta de hoje, porque é ela que tira do alarme.
 - **Dado que falta** (`faltas.ts`, regras em `docs/specs/avisos.md`): é aviso, **nunca soma** em gasto, projeção, nível ou patrimônio, e nada é gravado. Parcela prevista só em série à parte. Falta real não se esconde; exceção de banco, só por peça do adaptador (`totalDaFatura`).
+- **Contas do mês** (`compromissos.ts`, spec em `docs/specs/lote-7.md`): só PF, sem conta oculta, e **só leitura**: lente de caixa (pelo vencimento, no
+  mês em que o dinheiro sai), **nunca soma** em Resumo, Orçamento, alarme, Análises, metas ou patrimônio, e não muda categoria. Linha = recorrente que
+  sai de conta (a do cartão está na fatura; ignorada nunca) ou a fatura de um cartão. Valor da fatura = o **total do banco** (o que ele cobra, já com o
+  que ficou da anterior; `totalDaFatura` é só do aviso 70); sem o total, estimada. Pago = Pagamento de fatura positivo no lado do cartão, pela
+  **janela de datas** (do fechamento dela ao da seguinte), nunca pelo `fatura_id`. Atrasada = vencimento antes de `ultimoDiaComDado`. Não paga com
+  a seguinte já fechada = "foi para a fatura seguinte". O dia do fechamento é do próprio ciclo, menos no banco com `fechamentoAbreOSeguinte`.
+  A única ação é Confirmar/Ignorar sugestão, o mesmo `PUT /api/recorrentes` da página Recorrentes.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

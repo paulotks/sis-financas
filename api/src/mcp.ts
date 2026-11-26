@@ -9,7 +9,7 @@ import { z } from "zod";
 import { GRUPOS } from "./grupos.js";
 import { chaveDe } from "./recorrentes.js"; // função pura, sem base
 import type {
-  Analises, Categoria, CategoriaComUsos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
+  Analises, Categoria, CategoriaComUsos, Compromissos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
   PreviaRegra, Recorrente, Regra, RegraCriada, Resumo, Ritmo, Sincronizacao, TotaisLancamentos,
 } from "./tipos.js"; // o formato das respostas da API; só tipo, some na compilação
 
@@ -36,6 +36,16 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   a parcela já é gasto e descontaria duas vezes; só preencha com o que sai da sobra (amortização extra). por_mes vale do mês em diante e não
   muda os meses passados. precisa_por_mes é sugestão: nada muda sozinho. Progresso null = não há posição ligada, ou ela saiu do patrimônio.
   Ligar a uma posição, encerrar e apagar, só o Paulo, na tela Metas. Dívida de cartão é o limite usado, com as parcelas futuras.
+- Contas do mês (compromissos_do_mes, só PF): o mês pelo dinheiro que sai da conta, no mês do vencimento (lente de caixa). Uma linha por
+  recorrente que sai de conta e uma por fatura de cartão; o que é pago no cartão (inclusive as recorrentes do cartão) está dentro da fatura.
+  Por isso nunca some com o Resumo nem com o Orçamento: são números diferentes de propósito, e nada daqui soma em total nenhum.
+  livre_depois_das_contas = renda esperada − contas − metas: não é a sobra do Resumo nem a do Orçamento (o nome é outro de propósito).
+  Certo: o que está paga (vem do lançamento do banco) e o total da fatura fechada (é o que o banco cobra, já com o que ficou da anterior).
+  Previsto: recorrente a pagar (pelo valor da última cobrança: conta de água e luz varia) e fatura estimada (estimada: true; o maior entre a
+  média das 3 últimas e o ja_comprometido do ciclo, que não sabe das compras que ainda virão). Sugestão é linha até o Paulo ignorar, na tela
+  Recorrentes ou na Contas do mês (você só propõe). atrasada = venceu e os dados do banco já cobrem o dia; parada = confirmada que parou de cobrar (pergunte se
+  cancelou). nao_paga = fatura não paga no prazo cujo saldo foi para a fatura seguinte (está no total dela: não conte duas vezes).
+  pago_a_menos em fatura não paga = parcial (vale para o pagamento mínimo).
 - Fale dos estouros de forma direta e com os números dele, sem sermão.
 - Comparações, tendência e meses futuros: use analises (os mesmos gráficos da página Análises). O mês aberto fica fora do acumulado. Em
   "comprometido", parcelas já estão lançadas; parcelas_previstas são as que o cartão ainda não mandou (estimativa, a partir da última que
@@ -46,7 +56,8 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   lançamentos ainda não: o gasto do mês aberto pode ser até isso maior (é teto: compra parcelada pesa inteira no limite); null = o banco não
   mandou o saldo, não dá para saber. É tudo aviso: não some em nada nem peça para lançar.
 - Recorrentes: uma linha por cobrança (o mesmo lugar pode ter várias). Sugestão e confirmada contam no alarme; ignorada ("não é recorrente"),
-  cancelada ("cancelei") e parada, não. "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
+  cancelada ("cancelei") e parada, não. atrasada = a próxima cobrança já devia estar nos dados do banco e não veio (o banco já mandou dados
+  de depois do dia dela). "antes" = o lojista trocou de nome. Você só propõe (propor_recorrente): nada muda até o Paulo aceitar
   na tela Recorrentes, então diga isso a ele. Só proponha cancelada se ele disser que cancelou. "cobrou_depois" = cobraram depois de
   cancelada: avise.
 - Lançamento ignorado ou com status REMOVIDO não soma. Entrada (em conta ou cartão) com categoria de gasto é
@@ -257,6 +268,37 @@ export function criarServidor(base: string) {
             categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), mes_passado: reais(c.mes_passado), orcado: reais(c.orcado),
           })),
           comprometido: d.comprometido.map((m) => ({ mes: m.mes, parcelas: reais(m.parcelas), parcelas_previstas: reais(m.previstas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
+        };
+      }),
+  );
+
+  servidor.registerTool(
+    "compromissos_do_mes",
+    {
+      description: "Contas do mês (só PF): tudo que sai da conta no mês, pelo vencimento — recorrentes e a fatura de cada cartão —, com o que já foi pago, o que falta e o que sobra da renda esperada depois das contas e das metas. Na fatura vêm as recorrentes do cartão, as parcelas e as outras compras do ciclo. Sem mes = mês atual.",
+      inputSchema: { mes: mes.optional() },
+      annotations: LEITURA,
+    },
+    (a) =>
+      tentar(async () => {
+        const d = await ler<Compromissos>("/api/compromissos", { mes: a.mes });
+        return {
+          mes: d.mes, dados_do_banco_ate: d.dados_ate, renda_esperada: reais(d.renda.esperada), entrou: reais(d.renda.entrou),
+          total_das_contas: reais(d.total), ja_pago: reais(d.pago), falta: reais(d.falta), metas_por_mes: reais(d.metas), livre_depois_das_contas: reais(d.livre),
+          // campo a campo: nenhum id de conta sai
+          compromissos: d.linhas.map((l) => ({
+            tipo: l.tipo, nome: l.nome, dia: l.dia, valor: reais(l.valor), situacao: l.situacao,
+            ...(l.situacao !== "paga" && l.pago > 0 && { pago_a_menos: reais(l.pago) }),
+            ...(l.tipo === "recorrente"
+              ? { ...(l.sugestao && { sugestao: true }), ...(l.parada && { parada: true }), conta: l.conta, categoria: l.categoria, chave: l.chave, valor_chave: reais(l.valor_chave) }
+              : {
+                  pago_em: l.pago_em, ...(l.estimada && { estimada: true }), ...(l.sem_fatura && !l.estimada && { banco_nao_mandou_a_fatura: true }),
+                  ...(l.foi_para && { saldo_foi_para_a_fatura_de: l.foi_para }), ja_comprometido: reais(l.comprometido),
+                  recorrentes_do_cartao: l.recorrentes.map((r) => ({ nome: r.nome, valor: reais(r.valor), ...(r.prevista && { prevista: true }) })),
+                  parcelas: l.parcelas.map((p) => ({ descricao: p.descricao, parcela: `${p.parcela}/${p.total}`, valor: reais(p.valor), ...(p.prevista && { prevista: true }) })),
+                  outras_compras: { valor: reais(l.outras.valor), qtd: l.outras.qtd },
+                }),
+          })),
         };
       }),
   );

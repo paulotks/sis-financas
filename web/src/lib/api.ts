@@ -1,6 +1,6 @@
 // Chamadas da API local. Valores sempre em centavos (saída negativa).
 // O formato das respostas é o da própria API (api/src/tipos.ts): campo renomeado lá vira erro de tipo aqui.
-import type { Analises, Bem, Categoria, CategoriaComUsos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
+import type { Analises, Bem, Categoria, CategoriaComUsos, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
 import type { ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio, Posicao, PreviaRegra, Recorrente, Regra, RegraCriada } from "../../../api/src/tipos";
 import type { ResultadoSync, Resumo, Ritmo, Sentido, Sincronizacao, TotaisLancamentos } from "../../../api/src/tipos";
 export type * from "../../../api/src/tipos";
@@ -86,6 +86,7 @@ export const api = {
   apagarMeta: (id: number) => req<Ok>("DELETE", `/api/metas/${id}`),
 
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
+  compromissos: (mes: string) => req<Compromissos>("GET", `/api/compromissos${qs({ mes })}`),
 
   analises: (mes: string) => req<Analises>("GET", `/api/analises${qs({ mes })}`),
   definirInicio: (mes: string | null) => req<Ok>("PUT", "/api/analises/inicio", { mes }),

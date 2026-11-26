@@ -16,7 +16,7 @@ export default function Metas() {
   const q = useQuery({ queryKey: ["metas", mes], queryFn: () => api.metas(mes) });
   const ritmo = useQuery({ queryKey: ["ritmo", mes], queryFn: () => api.ritmo(mes) });
   // mudam o teto: alarme, orçamento e análises
-  const aoSalvar = { onSettled: () => Promise.all([["metas"], ["ritmo"], ["orcamento"], ["analises"]].map((queryKey) => qc.invalidateQueries({ queryKey }))) };
+  const aoSalvar = { onSettled: () => Promise.all([["metas"], ["ritmo"], ["orcamento"], ["analises"], ["compromissos"]].map((queryKey) => qc.invalidateQueries({ queryKey }))) };
   const criar = useMutation({ mutationFn: api.criarMeta, ...aoSalvar });
   const editar = useMutation({ mutationFn: ({ id, ...d }: EdicaoMeta & { id: number; encerrada?: boolean }) => api.editarMeta(id, d), ...aoSalvar });
   const apagar = useMutation({ mutationFn: api.apagarMeta, ...aoSalvar });

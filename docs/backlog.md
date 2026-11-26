@@ -26,7 +26,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | **9. Totais, Alarme e Análises** (feita em 2026-11-25) | 55 → 73 → 76 → 57 → 49 | O 55 tira os totais do `server.ts`; os outros mexem nesses mesmos trechos | não | 6 |
 | **10. Metas (lote 6)** (feita em 2026-11-25) | 33 | Spec: [specs/lote-6.md](specs/lote-6.md). Revê o texto do 72 | migração | 1 e 9 |
 | **11. Formato único e horários** (feita em 2026-11-25) | 56 → 58 | Tocam API, tela e MCP inteiros: por último, para não conflitar | migração (58): worktree | 10 |
-| **12. Contas do mês: aba Mês** | 79 | Spec: [specs/lote-7.md](specs/lote-7.md). Junta recorrentes, faturas, renda esperada e metas numa página nova. Muda só a `situacao` das recorrentes (atrasada pelo último dia com dado) | não | 11 |
+| **12. Contas do mês: aba Mês** (feita em 2026-11-26) | 79 | Spec: [specs/lote-7.md](specs/lote-7.md). Junta recorrentes, faturas, renda esperada e metas numa página nova. Muda só a `situacao` das recorrentes (atrasada pelo último dia com dado) | não | 11 |
 | **13. Contas do mês: conta à mão** | 80 | Entra na mesma regra de quem paga qual linha, que nasce no 79 | migração: worktree | 12 |
 | **14. Contas do mês: aba Ano** | 81 | Reaproveita o cálculo das fatias 12 e 13 | não | 13 |
 
@@ -106,13 +106,13 @@ Spec: [specs/lote-6.md](specs/lote-6.md). Tem migração.
 |---|---|---|---|---|
 | 33 | Metas: tela própria (guardar, juntar, quitar dívida), nada fixo no código. Teto do alarme = renda − o que as metas pedem | G | migração | feito (2026-11-25) |
 
-## Lote 7: Contas do mês (a fazer)
+## Lote 7: Contas do mês (em andamento)
 
 Spec: [specs/lote-7.md](specs/lote-7.md). Página nova, só leitura: o mês pelo dinheiro que sai (pelo vencimento), não pela compra. Nada soma em total.
 
 | # | Melhoria | Tam. | Base | Status |
 |---|---|---|---|---|
-| 79 | Aba Mês: recorrentes + faturas, pago automático, fatura parcial e estimada, atrasada pelo último dia com dado (também em Recorrentes), topo com renda e metas, MCP lê | M | não | a fazer |
+| 79 | Aba Mês: recorrentes + faturas, pago automático, fatura parcial e estimada, atrasada pelo último dia com dado (também em Recorrentes), topo com renda e metas, MCP lê. Como ficou: a fatura vale pelo total do banco (decidido com o Paulo: o traduzido não bate quando a anterior não foi paga), e a não paga com a seguinte fechada "foi para a fatura seguinte"; peça nova `fechamentoAbreOSeguinte` no adaptador. Na cópia, Resumo, Orçamento, alarme, Análises e metas iguais ao `main` em todos os meses | M | não | feito (2026-11-26) |
 | 80 | Conta cadastrada à mão: texto para achar o pagamento, vincular, marcar como paga, prioridade sobre a recorrente, MCP cria e edita | M | migração | a fazer |
 | 81 | Aba Ano: grade linhas × 12 meses, passado real e futuro previsto, MCP lê | M | não | a fazer |
 

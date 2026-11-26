@@ -116,14 +116,14 @@ export function normalPorCategoria(anteriores: TotalMes[]) {
 }
 
 /**
- * Último dia com dado de todos os bancos PF visíveis: depois dele, dia sem gasto pode ser só dado que não chegou. Banco 48 h atrás do mais
- * novo não segura os outros (a tela já o acusa).
+ * Último dia com dado de todos os bancos visíveis da pessoa: depois dele, dia sem gasto pode ser só dado que não chegou. Banco 48 h atrás do
+ * mais novo não segura os outros (a tela já o acusa).
  */
-export function ultimoDiaComDado(hoje: string) {
+export function ultimoDiaComDado(hoje: string, pessoa = "PF") {
   const { dia } = db.prepare(
-    `WITH bancos AS (SELECT julianday(atualizado_pluggy) AS lido FROM conexoes WHERE item_id IN (SELECT item_id FROM contas WHERE pessoa = 'PF' AND oculta = 0))
+    `WITH bancos AS (SELECT julianday(atualizado_pluggy) AS lido FROM conexoes WHERE item_id IN (SELECT item_id FROM contas WHERE pessoa = ? AND oculta = 0))
      SELECT date(MIN(lido), 'localtime') AS dia FROM bancos WHERE lido >= (SELECT MAX(lido) FROM bancos) - 2`,
-  ).get() as { dia: string | null };
+  ).get(pessoa) as { dia: string | null };
   return dia !== null && dia < hoje ? dia : hoje;
 }
 /** Quantos dias do mês têm dado; 0 = os dados ainda são do mês anterior. */
@@ -131,9 +131,10 @@ export const diasComDado = (mes: string, ate: string) => (ate < `${mes}-01` ? 0 
 
 export function listarRecorrentes(pessoa: string, hoje: string) {
   const gastos = db.prepare(
-    `SELECT l.data, l.descricao, l.descricao_original, l.status, -l.valor_centavos AS valor, cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
+    `SELECT l.id, l.conta_id, ct.tipo IS 'CREDIT' AS cartao, l.data, l.descricao, l.descricao_original, l.status, -l.valor_centavos AS valor,
+            cat.nome AS categoria, cat.cor, COALESCE(ct.apelido, ct.nome) AS conta
      ${BASE_RESUMO} AND l.valor_centavos < 0 AND COALESCE(l.total_parcelas, 0) <= 1 ORDER BY l.data`,
   ).all("0000-01-01", "9999-12-31", pessoa) as unknown as Gasto[]; // o detector separa o que é futuro
   const decisoes = db.prepare("SELECT chave, valor_centavos AS valor, status, proposta, decidido_em FROM recorrencias").all() as unknown as Decisao[];
-  return detectarRecorrentes(gastos, hoje, decisoes);
+  return detectarRecorrentes(gastos, hoje, decisoes, ultimoDiaComDado(hoje, pessoa));
 }

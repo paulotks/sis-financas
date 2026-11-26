@@ -76,7 +76,7 @@ const DIAS_DE_HISTORICO = 365;
 const DIAS_DO_PAGAMENTO = 16; // numa série mensal completa, todo dia está a até 16 de um vencimento
 const DIAS_ATE_A_FATURA = 10; // o pagamento pode chegar antes da linha da fatura
 
-const menosDias = (data: string, n: number) => new Date(Date.parse(data) - n * 86_400_000).toISOString().slice(0, 10);
+export const menosDias = (data: string, n: number) => new Date(Date.parse(data) - n * 86_400_000).toISOString().slice(0, 10);
 const soma = (ns: number[]) => ns.reduce((s, n) => s + n, 0);
 const iguais = (a: number, b: number) => Math.abs(a - b) <= IGUAL;
 

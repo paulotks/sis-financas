@@ -280,6 +280,15 @@ code { font-size: 12px; color: #b9b9c6; }
 .ignoradas { margin-top: 20px; }
 .ignoradas summary { cursor: pointer; padding: 6px 0; }
 .ignoradas summary + .tabela-wrap { margin-top: 8px; }
+
+/* contas do mês */
+.contas-do-mes tr.resolvida { opacity: .55; }
+.contas-do-mes td > .selo { margin-left: 8px; }
+.contas-do-mes tr.detalhe td { background: #111114; }
+.fatura-aberta { padding: 4px 0 10px; max-width: 640px; }
+.fatura-aberta p { margin: 4px 0 0; }
+.fatura-aberta ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.fatura-aberta li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid #1c1c22; }
 .acoes-linha .botao { cursor: pointer; border-radius: 8px; font: inherit; font-size: 13px; }
 
 /* contas */

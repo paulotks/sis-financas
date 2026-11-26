@@ -48,29 +48,57 @@ as cobranças da série (`id`, `data`, `valor`, já com as de data futura). `sit
 - **Mês que passou:** só o que cobrou. O que deixou de cobrar não aparece ali: se ainda deve, aparece no mês atual.
 - **Mês atual e futuros**, sem cobrança paga em M:
   - cobrança com data futura em M (agendada): a pagar, com o dia e o valor dela;
-  - senão, aparece se cobra de novo (`deveCobrar`) e `a_lancar` ≤ M (a atrasada do mês passado continua aparecendo, como no alarme). Dia
-    esperado = o dia da última cobrança, limitado ao fim do mês;
+  - senão, aparece se cobra de novo (`deveCobrar`) e `a_lancar` ≤ M (a atrasada do mês passado continua aparecendo, como no alarme, com a data
+    dela). Dia esperado = o dia da última cobrança, limitado ao fim do mês;
   - **confirmada parada** (45 dias sem cobrar), só no mês atual: atrasada, com a dica "parou de cobrar? Se cancelou, marque Cancelei em
     Recorrentes". Conta confirmada sem pagamento nunca some calada. Nos meses futuros não se projeta, como no alarme. Sugestão parada não aparece.
 - Sugestão leva o selo "sugestão" e os botões Confirmar / Ignorar, os mesmos de Recorrentes (`PUT /api/recorrentes`).
+- **Série que trocou de meio de pagamento** (o detector junta cobranças de contas diferentes com o mesmo nome; achado da revisão): o passado vale
+  cobrança a cobrança, e a feita no cartão fica na fatura; o que vem segue a conta da última cobrança. A mesma cobrança nunca aparece duas vezes.
 
 **Linha de fatura** (cartão PF conectado):
-- A fatura que vence em M (`faturas.vencimento`). Valor = o total traduzido pelo adaptador (`totalDaFatura`, o mesmo do aviso 70).
-  Conferir na cópia da base com o Cartão B da [validação](../validacao-dados.md) se é isso que o banco cobra.
-- **Ciclo:** fecha em `billClosingDate` (ou vencimento − 10 dias, como nos avisos). Os ciclos futuros repetem o dia de `contas.vencimento`. Um
-  lançamento ou uma parcela prevista cai no primeiro ciclo cujo fechamento é ≥ a data dele; com `fatura_id`, vale a fatura dele.
+- A fatura que vence em M (`faturas.vencimento`). Valor = **o total do banco**, que é o que ele cobra (decidido em 2026-11-26, depois da conferência
+  abaixo). O total traduzido (`totalDaFatura`) fica só no aviso 70: no Cartão B da [validação](../validacao-dados.md) ele só bate com a cobrança quando a
+  anterior foi paga; quando não foi, o banco cobra o total, com o que ficou da anterior e os juros, e o traduzido daria só a parte nova.
+- **Ciclo:** fecha em `billClosingDate` (ou vencimento − 10 dias, como nos avisos). O mês sem fatura do banco (os futuros, e o que o banco não
+  mandou) repete o dia de `contas.vencimento` e a distância entre vencimento e fechamento da última fatura que trouxe a data (`contas.fechamento` vem
+  vazio, e a distância real varia de uns 5 a uns 11 dias por banco). Um lançamento ou uma parcela prevista cai no primeiro ciclo cujo fechamento é ≥ a
+  data dele; com `fatura_id` de fatura conhecida, vale a fatura dele.
+  - **O dia do fechamento** é do próprio ciclo, menos no banco com a peça `fechamentoAbreOSeguinte` do adaptador (Nubank e Cartão A): lá o que tem a
+    data do fechamento é da fatura seguinte, e é nesse dia que eles datam as parcelas futuras (conferido nos lançamentos ligados a fatura).
+  - **Fatura fechada** de um cartão que liga os lançamentos à fatura tem só os ligados: o total do banco bate com eles, e o lançamento sem ligação
+    daquele período não é dela. Parcela prevista e recorrente do cartão que ainda vem só entram em fatura sem o total do banco.
 - **Pago** = soma dos lançamentos no cartão com a categoria Pagamento de fatura, positivos, até hoje, depois do fechamento dela e até o
-  fechamento da seguinte. **Conferir primeiro** na cópia da base se todo cartão PF tem essa perna no lado do cartão (o que é pago por débito
-  automático passa por `internos` no adaptador): sem ela, a fatura ficaria atrasada para sempre. Estados: **paga** (soma ≥ total − R$ 1), **parcial** ("paga R$ X de R$ Y", que vale também para quem pagou só o mínimo),
-  **a pagar** / **atrasada** (vencimento < último dia com dado). Parcial vencida leva também o selo de atrasada.
-- **Sem a fatura** (não fechou, total nulo, mês futuro): **estimada** = o maior entre a média dos totais das 3 últimas faturas do cartão e o
-  **já comprometido** do ciclo (lançamentos dele + parcelas previstas + recorrentes do cartão que ainda cobram). Leva o selo "estimada".
-- **Abrir a linha:** recorrentes do cartão, parcelas (n/N, lançadas e previstas), "outras compras" (o resto), link para os Lançamentos do cartão.
+  fechamento da seguinte (pela data, não pelo `fatura_id`: há banco que liga o pagamento à fatura seguinte). **Conferido em 2026-11-26:** todo
+  cartão PF tem essa perna no lado do cartão, também o pago por débito automático (vem pelos `internos`). Estados (`situacao`): **paga** (soma ≥
+  total − R$ 1), **a_pagar** / **atrasada** (vencimento < último dia com dado) e **nao_paga**: não paga, ou paga em parte, com a fatura seguinte já
+  fechada, porque o saldo foi para ela e está no total que o banco cobra lá ("não paga: foi para a fatura de <mês>"). Parcial = `pago` > 0 sem estar
+  paga ("paga R$ X de R$ Y", que vale também para quem pagou só o mínimo); parcial vencida leva também o selo de atrasada.
+  - Falta igual (com folga de 5 centavos) a um crédito do cartão na mesma janela não é falta: o banco descontou do pagamento um estorno que chegou
+    depois do fechamento (o mesmo caso do aviso 70). Exige algum pagamento.
+  - Paga mostra o total do banco, não a soma: há banco que manda duas pernas no cartão para um pagamento só. No topo, o pago a mais não vira crédito.
+- **Sem o total do banco:** com pagamento na janela, **paga pelo valor pago** ("o banco não mandou a fatura"); sem pagamento, no mês atual e nos
+  futuros, **estimada** = o maior entre a média dos totais das 3 últimas faturas do cartão e o **já comprometido** do ciclo (lançamentos dele +
+  parcelas previstas + recorrentes do cartão que ainda cobram); leva o selo "estimada". **Mês que passou nunca tem estimativa**: sem pagamento, não
+  aparece.
+- Fatura que fechou antes do primeiro lançamento do cartão só aparece se o pagamento foi achado: sem lançamentos daquele período, não dá para saber.
+- Achados da revisão (2026-11-26):
+  - Fatura do banco a até 15 dias do vencimento esperado é a daquele ciclo: o vencimento empurrado para o começo do mês seguinte não cria uma
+    fatura inventada no mês dele.
+  - Os ciclos começam na primeira fatura ou no primeiro lançamento, o que vier antes: cartão sem nenhuma fatura do banco ainda mostra o mês
+    passado que foi pago.
+  - A média das 3 últimas só vale se a última fatura do banco é dos 2 meses anteriores ao atual: cartão parado não fica com fatura estimada
+    para sempre. Estimada de valor zero não vira linha.
+  - Saldo credor (total negativo) é "nada a pagar", com valor zero: não abate as outras contas.
+  - Fatura do banco sem o total conta como aberta: recebe o que não tem ligação, as parcelas previstas e as recorrentes que ainda vêm.
+- **Abrir a linha:** recorrentes do cartão (lançadas e a vir), parcelas (n/N, lançadas e previstas), "outras compras" (o resto, com os créditos
+  abatidos), link para os Lançamentos do cartão no mês que tem a maior parte do ciclo.
 
 **Quem paga o quê:** a fatura usa só o lado do cartão do Pagamento de fatura. Recorrentes (e a conta à mão, fatia 13) nunca veem transferência.
 As fontes não disputam lançamento.
 
-**Rota:** `GET /api/compromissos?mes=AAAA-MM` (padrão: o atual), com as linhas e o topo. Dinheiro em centavos, como no resto da API.
+**Rota:** `GET /api/compromissos?mes=AAAA-MM` (padrão: o atual), com as linhas e o topo. Dinheiro em centavos, como no resto da API. Topo: a linha
+paga conta inteira no pago; falta = o que não foi pago de cada linha (no mês que passou, a tela diz "não pago").
 
 **MCP:** `compromissos_do_mes` (lê), saída campo a campo e em reais. Os nomes das ferramentas também evitam "conta": a ferramenta `contas`
 já é a das contas bancárias, e o Claude do Desktop escolhe pelo nome. Em `CONVENCOES`: a lente de caixa (pelo vencimento; a fatura já contém as compras
@@ -79,7 +107,10 @@ do cartão, então não somar com o Resumo), o que é estimado e o que é certo.
 **Testes:** cada fonte e cada estado (recorrente paga, agendada com data futura (não conta como paga), prevista, atrasada, confirmada parada
 no mês atual, sugestão; ignorada, sugestão parada e de cartão fora; cancelada só nos meses em que cobrou; mês passado só com o que cobrou; fatura paga,
 parcial, a pagar, atrasada, estimada pela média e pelo comprometido); PJ e conta oculta fora; atrasada pelo último dia com dado. Lista de
-ferramentas do MCP. Cópia da base: Resumo, Orçamento, alarme e Análises iguais entre `main` e a branch; em Recorrentes, só a `situacao` muda.
+ferramentas do MCP. Descobertos ao implementar: foi para a seguinte (inteira e em parte), crédito descontado do pagamento, duas pernas de
+pagamento, mês passado sem a fatura do banco (com e sem pagamento), fatura de antes do primeiro lançamento, dia do fechamento nos dois tipos de
+banco, fatura fechada só com os ligados, e o que abre na linha. Da revisão: vencimento empurrado para o mês seguinte, cartão sem faturas,
+cartão parado, saldo credor, total nulo, série que trocou de meio de pagamento e a lista de recorrentes pela API com o último dia com dado. Cópia da base: Resumo, Orçamento, alarme e Análises iguais entre `main` e a branch; em Recorrentes, só a `situacao` muda.
 
 ## Fatia 13 (item 80): conta cadastrada à mão
 
@@ -137,7 +168,13 @@ Grade só de leitura: as linhas (recorrente, fatura, conta à mão) × os 12 mes
 ## Limites conhecidos
 
 - O valor esperado da recorrente é o da última cobrança: na água e na luz, antes de pagar, ele pode ficar longe do que vem.
-- A estimativa de fatura não sabe das compras que você ainda vai fazer: depois do fechamento, vale o total do banco.
+- A estimativa de fatura não sabe das compras que você ainda vai fazer: depois do fechamento, vale o total do banco. A média das 3 últimas usa o
+  total do banco, então uma fatura que carregou a anterior puxa a estimativa para cima.
+- Na fatura que foi para a seguinte, o mesmo dinheiro aparece no mês dela (não pago) e no total da seguinte. A aba Ano (fatia 14) precisa somar o
+  passado pelo que foi pago, senão conta duas vezes.
+- A perna do pagamento no cartão pode chegar dias depois do pagamento: até ela chegar, a fatura paga no vencimento aparece atrasada.
+- Sem o total do banco, duas pernas de pagamento dobram o valor pago. Num mês com uma cobrança paga e outra agendada da mesma recorrente, vale
+  só a paga. Os dois casos são raros e ficam como estão.
 - O pagamento de um cartão conectado lançado sem a categoria Pagamento de fatura conta como gasto e pode virar recorrente: é categoria errada,
   e se corrige na categoria.
 - Conta paga no cartão não se cadastra à mão: ela já está na fatura.

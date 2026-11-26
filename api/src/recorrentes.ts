@@ -1,6 +1,9 @@
 /** Detecção de cobranças mensais. Funções puras: recebem os gastos (do mais antigo ao mais novo) e as decisões do usuário. */
 
 export interface Gasto {
+  id: string;
+  conta_id: string;
+  cartao: number; // 1 = a conta é cartão de crédito
   data: string; // AAAA-MM-DD
   descricao: string | null;
   descricao_original: string | null;
@@ -31,12 +34,15 @@ export interface Recorrente {
   categoria: string | null;
   cor: string | null;
   conta: string | null;
+  conta_id: string; // a da última cobrança
+  cartao: boolean; // a última cobrança foi no cartão: está dentro da fatura
   valor: number; // o da última cobrança
   vezes: number;
   ultima: string;
   proxima: string;
   a_lancar: string; // a primeira que ainda não está lançada: `proxima` ou, se já há cobrança com data futura, a seguinte a ela
-  situacao: "prevista" | "atrasada" | "parada";
+  cobrancas: { id: string; data: string; valor: number; cartao: boolean }[]; // a série, com as de data futura quando ainda cobra; cartão = está na fatura
+  situacao: "prevista" | "atrasada" | "parada"; // atrasada = `proxima` antes do último dia com dado do banco
   status: Status | null;
   proposta: Status | "sugerida" | null;
   cobrou_depois: { data: string; valor: number } | null; // cancelada que voltou a cobrar
@@ -139,7 +145,8 @@ const decisaoDe = (s: Serie, decisoes: Decisao[]) =>
     .filter((d) => s.some((c) => (d.valor === 0 ? c.nome === nomeDe(d.chave) : c.chave === d.chave && c.valor === d.valor)))
     .sort((a, b) => Number(b.valor > 0) - Number(a.valor > 0) || (a.decidido_em < b.decidido_em ? 1 : -1))[0];
 
-export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Decisao[] = []): Recorrente[] {
+/** `dadosAte` = último dia com dado do banco: antes dele, cobrança que não veio está atrasada; depois, pode ser só dado que não chegou. */
+export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Decisao[] = [], dadosAte = hoje): Recorrente[] {
   const todas = gastos
     .filter((g) => !/\d{1,2}\/\d{1,2}\s*$/.test(g.descricao_original ?? "")) // parcela escrita no texto (nem todo banco manda o metadado)
     .map((g) => ({ ...g, chave: chaveDe(g.descricao_original ?? "") }))
@@ -160,7 +167,8 @@ export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Dec
     .map((serie) => {
       const decisao = decisaoDe(serie, decisoes), u = serie.at(-1)!, proxima = mesSeguinte(u.data);
       const status = decisao && decisao.status !== "sugerida" ? decisao.status : null;
-      const situacao = dias(u.data, hoje) > DIAS_PARADA ? ("parada" as const) : proxima < hoje ? ("atrasada" as const) : ("prevista" as const);
+      // parada conta de hoje (é o que tira do alarme); atrasada, do último dia com dado
+      const situacao = dias(u.data, hoje) > DIAS_PARADA ? ("parada" as const) : proxima < dadosAte ? ("atrasada" as const) : ("prevista" as const);
       return { serie, decisao, status, situacao, proxima, u };
     })
     .filter((a) => (a.status && a.status !== "ignorada") || predominaMensal(a.serie));
@@ -193,11 +201,14 @@ export function detectarRecorrentes(gastos: Gasto[], hoje: string, decisoes: Dec
         categoria: u.categoria,
         cor: u.cor,
         conta: u.conta,
+        conta_id: u.conta_id,
+        cartao: !!u.cartao,
         valor: u.valor,
         vezes: serie.length,
         ultima: u.data,
         proxima,
         a_lancar: mesSeguinte((seguidas.get(a)?.at(-1) ?? u).data),
+        cobrancas: (seguidas.get(a) ?? serie).map((c) => ({ id: c.id, data: c.data, valor: c.valor, cartao: !!c.cartao })),
         situacao,
         status,
         proposta: decisao?.proposta ?? null,

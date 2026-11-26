@@ -69,8 +69,9 @@ const { sincronizar } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
-const { totalDaFatura } = await import("../src/adaptadores.js");
-const { faturasQueNaoFecham, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
+const { fechamentoAbreOSeguinte, totalDaFatura } = await import("../src/adaptadores.js");
+const { faturasDoCartao, linhasDeRecorrentes } = await import("../src/compromissos.js");
+const { faturasQueNaoFecham, menosDias, naoApareceu, pagamentosSemFatura, parcelasPrevistas } = await import("../src/faltas.js");
 const { faltaParaMetas, inicioDaAnalise, mediana, nivelDo, projetar, somarMes } = await import("../src/ritmo.js");
 const { chegaEm, precisaPorMes } = await import("../src/metas.js");
 const { lerDinheiro, sugerirPadrao } = await import("../../web/src/lib/api.js"); // funções puras do front
@@ -1310,7 +1311,7 @@ test("cofrinho e caixinha: só somam com o sim do usuário; trocar de id, esvazi
 });
 
 const g = (descricao_original: string, data: string, valor: number, status = "POSTED", conta = "c1") =>
-  ({ data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta, status });
+  ({ id: `${descricao_original}|${data}|${valor}`, conta_id: conta, cartao: 0, data, valor, descricao_original, descricao: descricao_original, categoria: null, cor: null, conta, status });
 
 test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o que não se repete, não", () => {
   const netflix = [g("Netflix.com 01", "2026-01-10", 3990), g("NETFLIX.COM", "2026-02-10", 3990), g("Netflix.com", "2026-03-10", 4490), g("Netflix.com", "2026-04-11", 4490)];
@@ -1326,7 +1327,12 @@ test("recorrentes: mensal com aumento é achada; parcela, compra frequente e o q
   assert.deepEqual([n.chave, n.valor, n.vezes, n.ultima, n.proxima, n.situacao], ["netflix com", 4490, 4, "2026-04-11", "2026-05-11", "prevista"]);
   assert.equal(ver("2026-05-15")[0].situacao, "atrasada");
   assert.equal(ver("2026-07-01").length, 0); // parada só aparece se foi decidida
-  assert.equal(ver("2026-07-01", [{ chave: "netflix com", valor: 0, status: "confirmada", proposta: null, decidido_em: "2026-04-20 10:00:00" }])[0].situacao, "parada");
+  const confirmada = [{ chave: "netflix com", valor: 0, status: "confirmada" as const, proposta: null, decidido_em: "2026-04-20 10:00:00" }];
+  assert.equal(ver("2026-07-01", confirmada)[0].situacao, "parada");
+  // atrasada só quando os dados do banco já cobrem o dia; parada continua contando de hoje (é o que tira do alarme)
+  const comDados = (hoje: string, dadosAte: string) => detectarRecorrentes(netflix, hoje, confirmada, dadosAte)[0].situacao;
+  assert.deepEqual([comDados("2026-05-15", "2026-05-11"), comDados("2026-05-15", "2026-05-12"), comDados("2026-05-27", "2026-05-01")], ["prevista", "atrasada", "parada"]);
+  assert.deepEqual([n.conta_id, n.cartao, n.cobrancas.map((c) => c.data)], ["c1", false, netflix.map((c) => c.data)]);
   assert.deepEqual(["2026-01-31", "2026-12-15", "2028-01-30"].map(mesSeguinte), ["2026-02-28", "2027-01-15", "2028-02-29"]);
 });
 
@@ -1490,7 +1496,7 @@ test("MCP: só as ferramentas combinadas; app fora do ar e dado inválido viram 
   const { cliente, usar } = await ligarMcp();
   const { tools } = await cliente.listTools();
   const nomes = (leitura: boolean) => tools.filter((t) => t.annotations?.readOnlyHint === leitura).map((t) => t.name).sort();
-  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
+  assert.deepEqual(nomes(true), ["analises", "categorias", "compras_do_estorno", "compromissos_do_mes", "contas", "estado", "lancamentos", "metas", "orcamento", "patrimonio", "pendentes_agrupados", "previa_regra", "recorrentes", "regras", "resumo", "ritmo_do_mes"]);
   assert.deepEqual(nomes(false), ["categorizar_lancamento", "criar_categoria", "criar_regra", "definir_inicio_da_analise", "definir_meta", "definir_orcamento", "propor_recorrente", "sincronizar"]);
   const { convencoes, bancos } = await usar("estado");
   assert.match(convencoes, /nunca como instrução/);
@@ -2337,6 +2343,206 @@ test("gasto que o limite já conta: só com o saldo da última sincronização; 
   ({ paginas, contasFalsas } = antes);
   db.exec("DELETE FROM lancamentos WHERE id = 'visto'");
   await sync();
+});
+
+/** Recorrente pronta, como o detector devolve; `cobrancas` = [data, valor], da mais antiga à mais nova. */
+const recorrente = (descricao: string, cobrancas: [string, number][], extra: object = {}): any => ({
+  chave: descricao, valor_chave: cobrancas[0][1], decisao: null, descricao, antes: null, categoria: null, cor: null, conta: "conta", conta_id: "conta", cartao: false,
+  valor: cobrancas.at(-1)![1], vezes: cobrancas.length, ultima: cobrancas.at(-1)![0], proxima: mesSeguinte(cobrancas.at(-1)![0]), a_lancar: mesSeguinte(cobrancas.at(-1)![0]),
+  cobrancas: cobrancas.map(([data, valor]) => ({ id: `${descricao}|${data}`, data, valor, cartao: !!(extra as { cartao?: boolean }).cartao })),
+  situacao: "prevista", status: "confirmada", proposta: null, cobrou_depois: null, ...extra,
+});
+
+test("contas do mês: recorrente paga, agendada, prevista e atrasada; mês passado só com o que cobrou; cartão, ignorada e sugestão parada fora", () => {
+  const H = "2031-05-20", D = "2031-05-19";
+  const rs = [
+    recorrente("Luz", [["2031-03-10", 9000], ["2031-04-10", 9500], ["2031-05-10", 9800]]),
+    recorrente("Agua", [["2031-03-28", 4000], ["2031-04-28", 4000], ["2031-05-28", 4100]], { ultima: "2031-04-28", proxima: "2031-05-28", a_lancar: "2031-06-28" }), // a de maio já veio, com data futura
+    recorrente("Net", [["2031-02-25", 9900], ["2031-03-25", 9900], ["2031-04-25", 9900]], { status: null }),
+    recorrente("Gas", [["2031-02-12", 3000], ["2031-03-12", 3000], ["2031-04-12", 3000]], { situacao: "atrasada" }),
+    recorrente("Escola", [["2031-02-19", 50000], ["2031-03-19", 50000], ["2031-04-19", 50000]]),
+    recorrente("Clube", [["2031-01-20", 7000], ["2031-02-20", 7000], ["2031-03-20", 7000]], { situacao: "parada" }),
+    recorrente("Revista", [["2031-01-20", 1500], ["2031-02-20", 1500], ["2031-03-20", 1500]], { situacao: "parada", status: null }),
+    recorrente("Loja", [["2031-03-01", 800], ["2031-04-01", 800], ["2031-05-01", 800]], { status: "ignorada" }),
+    recorrente("Streaming", [["2031-03-05", 2000], ["2031-04-05", 2000], ["2031-05-05", 2000]], { cartao: true }), // está na fatura
+    recorrente("Academia", [["2031-02-15", 12000], ["2031-03-15", 12000], ["2031-04-15", 12000]], { status: "cancelada" }),
+    recorrente("Pulou", [["2031-02-05", 600], ["2031-03-05", 600], ["2031-05-05", 600]]),
+  ];
+  const ver = (mes: string, hoje = H, dados = D, lista = rs) =>
+    linhasDeRecorrentes(lista, mes, hoje, dados).map((l) => [l.nome, l.dia, l.valor, l.situacao, ...(l.sugestao ? ["sugestão"] : []), ...(l.parada ? ["parada"] : [])]);
+  assert.deepEqual(ver("2031-05"), [
+    ["Luz", "2031-05-10", 9800, "paga"],
+    ["Agua", "2031-05-28", 4100, "a_pagar"], // agendada não é paga
+    ["Net", "2031-05-25", 9900, "a_pagar", "sugestão"],
+    ["Gas", "2031-05-12", 3000, "atrasada"],
+    ["Escola", "2031-05-19", 50000, "a_pagar"], // o banco ainda não cobre o dia
+    ["Clube", "2031-04-20", 7000, "atrasada", "parada"], // confirmada que parou não some calada
+    ["Pulou", "2031-05-05", 600, "paga"],
+  ]);
+  assert.deepEqual(ver("2031-05", H, "2031-05-20").find((l) => l[0] === "Escola"), ["Escola", "2031-05-19", 50000, "atrasada"]);
+  // mês que passou: só o que cobrou, também a cancelada; o que deixou de cobrar não aparece
+  assert.deepEqual(ver("2031-04").map((l) => l[0]), ["Luz", "Agua", "Net", "Gas", "Escola", "Academia"]);
+  assert.deepEqual(ver("2031-03").map((l) => l[0]), ["Luz", "Agua", "Net", "Gas", "Escola", "Clube", "Revista", "Academia", "Pulou"]);
+  // futuro: o que ainda cobra, no dia da última cobrança; parada e cancelada não se projetam
+  assert.deepEqual(ver("2031-06").map((l) => [l[0], l[1], l[3]]), [["Luz", "2031-06-10", "a_pagar"], ["Agua", "2031-06-28", "a_pagar"], ["Net", "2031-06-25", "a_pagar"],
+    ["Gas", "2031-06-12", "a_pagar"], ["Escola", "2031-06-19", "a_pagar"], ["Pulou", "2031-06-05", "a_pagar"]]);
+  // a atrasada do mês passado continua no mês atual com a data dela; no futuro, o dia 31 volta quando o mês tem
+  const seguro = [recorrente("Seguro", [["2031-01-31", 5000], ["2031-03-03", 5000], ["2031-03-31", 5000]], { situacao: "atrasada" })];
+  assert.deepEqual([ver("2031-04", "2031-05-03", "2031-05-02", seguro), ver("2031-05", "2031-05-03", "2031-05-02", seguro), ver("2031-06", "2031-05-03", "2031-05-02", seguro), ver("2031-07", "2031-05-03", "2031-05-02", seguro)],
+    [[], [["Seguro", "2031-04-30", 5000, "atrasada"]], [["Seguro", "2031-06-30", 5000, "a_pagar"]], [["Seguro", "2031-07-31", 5000, "a_pagar"]]]);
+  // duas cobranças no mês: soma, com o dia da última
+  assert.deepEqual(ver("2031-05", H, D, [recorrente("Dupla", [["2031-04-02", 100], ["2031-05-02", 100], ["2031-05-09", 150]])]), [["Dupla", "2031-05-09", 250, "paga"]]);
+});
+
+test("contas do mês: fatura paga, parcial, a pagar, atrasada, que foi para a seguinte e estimada pela média ou pelo comprometido", () => {
+  const H = "2031-06-25", D = "2031-06-24";
+  const cartao = { id: "k", nome: "Cartão", vencimento: "2031-07-12", banco: null as string | null };
+  const fatura = (m: number, total: number | null = 10000) => ({ id: `k${m}`, vencimento: `2031-0${m}-12`, fechamento: `2031-0${m}-03`, total });
+  let n = 0;
+  const lanc = (data: string, valor: number, extra: object = {}) =>
+    ({ id: `l${++n}`, data, valor, fatura_id: null as string | null, pagamento: 0, descricao: "compra", parcela: null as number | null, total_parcelas: null as number | null, ...extra });
+  const compras = [2, 3, 4, 5, 6].map((m) => lanc(`2031-0${m - 1}-15`, -10000, { fatura_id: `k${m}` }));
+  const pagou = (data: string, valor: number) => lanc(data, valor, { pagamento: 1, descricao: "Pagamento" });
+  const faturas = [2, 3, 4, 5, 6].map((m) => fatura(m));
+  const ver = (mes: string, mais: ReturnType<typeof lanc>[] = [], o: { fs?: typeof faturas; dados?: string; banco?: string | null; futuras?: any[]; rs?: any[] } = {}) =>
+    faturasDoCartao({ ...cartao, banco: o.banco ?? null }, o.fs ?? faturas, [...compras, ...mais], o.futuras ?? [], o.rs ?? [], mes, H, o.dados ?? D);
+  const estado = (mes: string, mais?: ReturnType<typeof lanc>[], o?: Parameters<typeof ver>[2]) =>
+    ver(mes, mais, o).map((f) => [f.dia, f.valor, f.situacao, f.pago, ...(f.foi_para ? [f.foi_para] : []), ...(f.estimada ? ["estimada"] : []), ...(f.sem_fatura && !f.estimada ? ["sem fatura"] : [])]);
+
+  assert.deepEqual(estado("2031-02", [pagou("2031-02-10", 10000)]), [["2031-02-12", 10000, "paga", 10000]]);
+  // duas pernas para um pagamento: a linha continua com o total do banco
+  assert.deepEqual(estado("2031-02", [pagou("2031-02-10", 10000), pagou("2031-02-11", 10000)]), [["2031-02-12", 10000, "paga", 20000]]);
+  // pagamento de antes do fechamento é da anterior; não paga, ou paga em parte, com a seguinte já fechada: o saldo foi para ela
+  assert.deepEqual(estado("2031-03", [pagou("2031-03-03", 10000), pagou("2031-03-10", 4000)]), [["2031-03-12", 10000, "nao_paga", 4000, "2031-04"]]);
+  assert.deepEqual(estado("2031-05", []), [["2031-05-12", 10000, "nao_paga", 0, "2031-06"]]);
+  // o banco descontou do pagamento um crédito que chegou depois do fechamento (o caso do aviso 70)
+  assert.deepEqual(estado("2031-05", [lanc("2031-05-05", 1000), pagou("2031-05-10", 9000)]), [["2031-05-12", 10000, "paga", 9000]]);
+  assert.deepEqual(estado("2031-05", [lanc("2031-05-05", 900), pagou("2031-05-10", 9000)])[0][2], "nao_paga"); // crédito de outro valor não explica
+  // a do mês: atrasada só quando os dados do banco cobrem o vencimento; parcial vencida continua atrasada
+  assert.deepEqual([estado("2031-06"), estado("2031-06", [], { dados: "2031-06-12" }), estado("2031-06", [pagou("2031-06-10", 3000)])],
+    [[["2031-06-12", 10000, "atrasada", 0]], [["2031-06-12", 10000, "a_pagar", 0]], [["2031-06-12", 10000, "atrasada", 3000]]]);
+
+  // sem a fatura: o maior entre a média das 3 últimas e o já comprometido do ciclo (fatura fechada só tem os ligados)
+  const doCiclo = [lanc("2031-06-20", -2500), lanc("2031-05-20", -7777)]; // a de maio está numa fatura fechada sem ligação: não é deste ciclo
+  assert.deepEqual(estado("2031-07", doCiclo), [["2031-07-12", 10000, "a_pagar", 0, "estimada"]]);
+  assert.equal(ver("2031-07", doCiclo)[0].comprometido, 2500);
+  assert.deepEqual(estado("2031-07", [...doCiclo, lanc("2031-06-21", -15000)]), [["2031-07-12", 17500, "a_pagar", 0, "estimada"]]);
+  assert.equal(ver("2031-06", doCiclo)[0].comprometido, 10000);
+
+  // o dia do fechamento: no padrão é do ciclo; no banco em que ele abre o seguinte, é da próxima fatura
+  const noFechamento = [lanc("2031-06-03", -1100), lanc("2031-07-03", -2200)]; // o fechamento de julho repete a distância da última (9 dias)
+  assert.deepEqual([ver("2031-07", noFechamento)[0].comprometido, ver("2031-07", noFechamento, { banco: "260" })[0].comprometido], [2200, 1100]);
+  assert.deepEqual([fechamentoAbreOSeguinte("260"), fechamentoAbreOSeguinte("380"), fechamentoAbreOSeguinte("323"), fechamentoAbreOSeguinte(null)], [true, true, false, false]);
+
+  // mês que passou sem a fatura do banco: com pagamento, paga pelo que se pagou; sem, não aparece (nunca estimativa)
+  const semAbril = faturas.filter((f) => f.id !== "k4");
+  assert.deepEqual([estado("2031-04", [pagou("2031-04-10", 7000)], { fs: semAbril }), estado("2031-04", [], { fs: semAbril })], [[["2031-04-12", 7000, "paga", 7000, "sem fatura"]], []]);
+  // fatura de antes do primeiro lançamento: só aparece se achou o pagamento
+  const comJaneiro = [fatura(1), ...faturas];
+  assert.deepEqual([estado("2031-01", [], { fs: comJaneiro }), estado("2031-01", [pagou("2031-01-10", 10000)], { fs: comJaneiro })], [[], [["2031-01-12", 10000, "paga", 10000]]]);
+
+  // ao abrir a linha: recorrentes do cartão (lançada e a vir), parcelas (lançadas e previstas) e as outras compras
+  const parcela = lanc("2031-06-15", -3000, { parcela: 2, total_parcelas: 3, descricao: "Sofá" });
+  const stream = lanc("2031-06-20", -2000, { descricao: "Streaming" });
+  const rs = [recorrente("Streaming", [["2031-04-20", 2000], ["2031-05-20", 2000], ["2031-06-20", 2000]], { cartao: true, conta_id: "k" })];
+  rs[0].cobrancas[2].id = stream.id;
+  const extra = { rs, futuras: [{ conta_id: "k", ultima: parcela.id, mes: "2031-07", valor: 3000 }] };
+  const [jul] = ver("2031-07", [parcela, stream, lanc("2031-06-22", -500), lanc("2031-06-23", 200)], extra);
+  assert.deepEqual([jul.recorrentes, jul.parcelas, jul.outras, jul.comprometido],
+    [[{ nome: "Streaming", valor: 2000, prevista: false }], [{ descricao: "Sofá", parcela: 2, total: 3, valor: 3000, prevista: false }], { valor: 300, qtd: 2 }, 5300]);
+  const [ago] = ver("2031-08", [parcela, stream], extra);
+  assert.deepEqual([ago.recorrentes, ago.parcelas, ago.comprometido, ago.estimada],
+    [[{ nome: "Streaming", valor: 2000, prevista: true }], [{ descricao: "Sofá", parcela: 3, total: 3, valor: 3000, prevista: true }], 5000, true]);
+  assert.deepEqual(ver("2031-06", [], extra)[0].recorrentes, []); // fatura fechada não recebe o que ainda vem
+
+  // parcial que ainda não venceu; pagamento no dia do fechamento é da fatura seguinte no banco em que ele abre o ciclo
+  assert.deepEqual(estado("2031-06", [pagou("2031-06-10", 3000)], { dados: "2031-06-11" }), [["2031-06-12", 10000, "a_pagar", 3000]]);
+  assert.deepEqual([estado("2031-02", [pagou("2031-03-03", 10000)]), estado("2031-02", [pagou("2031-03-03", 10000)], { banco: "260" })],
+    [[["2031-02-12", 10000, "paga", 10000]], [["2031-02-12", 10000, "nao_paga", 0, "2031-03"]]]);
+  // saldo credor é nada a pagar, sem abater as outras contas; total nulo vale como sem fatura, e o que não tem ligação entra nela
+  assert.deepEqual(estado("2031-06", [], { fs: faturas.map((f) => (f.id === "k6" ? { ...f, total: -2500 } : f)) }), [["2031-06-12", 0, "paga", 0]]);
+  const semTotal = faturas.map((f) => (f.id === "k6" ? { ...f, total: null } : f));
+  assert.deepEqual([estado("2031-06", [lanc("2031-05-20", -3000)], { fs: semTotal }), ver("2031-06", [lanc("2031-05-20", -3000)], { fs: semTotal })[0].comprometido],
+    [[["2031-06-12", 13000, "atrasada", 0, "estimada"]], 13000]);
+  // o banco empurrou o vencimento para o começo do mês seguinte: o ciclo é o dela, sem outro inventado ao lado
+  const dia30 = [["k3", "2031-03-30"], ["k4", "2031-04-30"], ["k5", "2031-06-02"], ["k6", "2031-06-30"]].map(([id, vencimento]) => ({ id, vencimento, fechamento: menosDias(vencimento, 9), total: 10000 }));
+  const empurrou = (mes: string) => faturasDoCartao({ ...cartao, vencimento: "2031-06-30" }, dia30, compras, [], [], mes, "2031-05-25", "2031-05-24").map((f) => f.dia);
+  assert.deepEqual([empurrou("2031-05"), empurrou("2031-06")], [[], ["2031-06-02", "2031-06-30"]]);
+  // cartão parado: a média das faturas antigas não vira estimativa, e nada no ciclo não vira linha
+  assert.deepEqual([estado("2031-07", [], { fs: faturas.slice(0, 2) }), estado("2031-07", [lanc("2031-06-20", -800)], { fs: faturas.slice(0, 2) })], [[], [["2031-07-12", 800, "a_pagar", 0, "estimada"]]]);
+  // cartão sem nenhuma fatura do banco: o mês que passou aparece se foi pago
+  const sem = (mes: string, mais: ReturnType<typeof lanc>[]) => faturasDoCartao(cartao, [], [lanc("2031-03-20", -5000), ...mais], [], [], mes, H, D).map((f) => [f.dia, f.valor, f.situacao]);
+  assert.deepEqual([sem("2031-04", [pagou("2031-04-10", 5000)]), sem("2031-04", [])], [[["2031-04-12", 5000, "paga"]], []]);
+});
+
+test("contas do mês: série que trocou de meio de pagamento não conta duas vezes", () => {
+  const H = "2031-05-20", D = "2031-05-19";
+  const serie = recorrente("Filme", [["2031-01-10", 3990], ["2031-02-10", 3990], ["2031-03-10", 3990], ["2031-04-10", 3990], ["2031-05-10", 3990]]);
+  const noCartao = (ate: string) => serie.cobrancas.forEach((c: any) => (c.cartao = c.data <= ate));
+  const meses = (r: any) => ["2031-02", "2031-03", "2031-04", "2031-05", "2031-06"].map((m) => linhasDeRecorrentes([r], m, H, D).map((l) => l.situacao)[0] ?? "-");
+  noCartao("2031-03-10"); // do cartão para a conta: o que foi no cartão está nas faturas
+  assert.deepEqual(meses(serie), ["-", "-", "paga", "paga", "a_pagar"]);
+  serie.cobrancas.forEach((c: any) => (c.cartao = c.data > "2031-03-10")); // da conta para o cartão: o passado na conta fica; o que vem, na fatura
+  assert.deepEqual(meses({ ...serie, cartao: true }), ["paga", "paga", "-", "-", "-"]);
+});
+
+test("contas do mês na API e no MCP: só PF e conta visível; o topo usa a régua do alarme e as metas", async () => {
+  const PAGAMENTO = 20;
+  const banco = novaConta("BANK"), pj = novaConta("BANK", { pessoa: "PJ" }), oculta = novaConta("BANK", { oculta: 1 });
+  const serie = (conta: string, nome: string) => [95, 65, 35, 5].forEach((d) => novoLanc(conta, dia(-d), -8000, MERCADO, { descricao_original: nome, descricao: nome }));
+  serie(banco, "Condominio Teste");
+  serie(pj, "Aluguel Empresa");
+  serie(oculta, "Conta Escondida");
+  const cartoes = [novaConta("CREDIT"), novaConta("CREDIT", { pessoa: "PJ" }), novaConta("CREDIT", { oculta: 1 })];
+  for (const c of cartoes) {
+    db.prepare("INSERT INTO faturas (id, conta_id, vencimento, total_centavos, bruto) VALUES (?,?,?,?,?)")
+      .run(`fat-${c}`, c, dia(-3), 5000, JSON.stringify({ billClosingDate: `${dia(-10)}T00:00:00.000Z` }));
+    novoLanc(c, dia(-20), -5000, MERCADO, { fatura_id: `fat-${c}` });
+    novoLanc(c, dia(-2), 5000, PAGAMENTO);
+  }
+  const doMes = async (mes: string) => (await chamar("GET", `/api/compromissos?mes=${mes}`)).d;
+  const mesRec = dia(-5).slice(0, 7), mesFat = dia(-3).slice(0, 7);
+  const rec = (await doMes(mesRec)).linhas.filter((l: any) => l.tipo === "recorrente" && /Condominio|Aluguel|Escondida/.test(l.nome));
+  assert.deepEqual(rec.map((l: any) => [l.nome, l.dia, l.valor, l.situacao, l.sugestao]), [["Condominio Teste", dia(-5), 8000, "paga", true]]);
+  const fat = (await doMes(mesFat)).linhas.filter((l: any) => cartoes.includes(l.conta_id));
+  assert.deepEqual(fat.map((l: any) => [l.conta_id, l.valor, l.situacao, l.pago_em]), [[cartoes[0], 5000, "paga", dia(-2)]]);
+
+  for (const mes of [...new Set([mesRec, mesFat, dia(0).slice(0, 7), somarMes(dia(0).slice(0, 7), 1)])]) {
+    const c = await doMes(mes), r = (await chamar("GET", `/api/ritmo?mes=${mes}`)).d, resumo = (await chamar("GET", `/api/resumo?mes=${mes}`)).d;
+    assert.deepEqual([c.renda.esperada, c.renda.entrou, c.metas, c.dados_ate], [r.renda.esperada, resumo.entradas, r.metas, r.dados_ate]);
+    assert.equal(c.total, c.linhas.reduce((s: number, l: any) => s + l.valor, 0));
+    assert.equal(c.falta, c.total - c.pago);
+    assert.equal(c.livre, c.renda.esperada === null ? null : c.renda.esperada - c.total - c.metas);
+    const resolvida = c.linhas.map((l: any) => l.situacao === "paga" || l.situacao === "nao_paga");
+    assert.deepEqual(resolvida, [...resolvida].sort()); // as pagas no fim
+  }
+  assert.equal((await chamar("GET", "/api/compromissos?mes=2031-13")).status, 400);
+
+  // a lista de recorrentes usa o último dia com dado dos bancos: o que venceu depois dele ainda não está atrasado
+  [100, 70, 40].forEach((d) => novoLanc(banco, dia(-d), -2500, MERCADO, { descricao_original: "Revista Teste", descricao: "Revista Teste" }));
+  const situacao = async () => (await chamar("GET", "/api/recorrentes")).d.find((r: any) => r.descricao === "Revista Teste").situacao;
+  const antigas = db.prepare("SELECT item_id, atualizado_pluggy FROM conexoes").all() as { item_id: string; atualizado_pluggy: string | null }[];
+  const lido = (data: string | null) => antigas.forEach((c) => db.prepare("UPDATE conexoes SET atualizado_pluggy = ? WHERE item_id = ?").run(data, c.item_id));
+  lido(null);
+  assert.equal(await situacao(), "atrasada");
+  lido(new Date(`${dia(-20)}T12:00:00`).toISOString());
+  assert.equal(await situacao(), "prevista");
+  antigas.forEach((c) => db.prepare("UPDATE conexoes SET atualizado_pluggy = ? WHERE item_id = ?").run(c.atualizado_pluggy, c.item_id));
+
+  const { cliente, usar } = await ligarMcp();
+  const m = await usar("compromissos_do_mes", { mes: mesRec });
+  assert.deepEqual(m.compromissos.find((l: any) => l.nome === "Condominio Teste"), {
+    tipo: "recorrente", nome: "Condominio Teste", dia: dia(-5), valor: 80, situacao: "paga", sugestao: true, conta: `conta ${nConta - 5}`, categoria: "Mercado", chave: "condominio teste", valor_chave: 80,
+  });
+  const f = (await usar("compromissos_do_mes", { mes: mesFat })).compromissos.find((l: any) => l.tipo === "fatura" && l.valor === 50 && l.pago_em === dia(-2));
+  assert.ok(f && !("conta_id" in f) && f.ja_comprometido === 50, JSON.stringify(f));
+  await cliente.close();
+
+  for (const c of [banco, pj, oculta, ...cartoes]) {
+    db.prepare("DELETE FROM lancamentos WHERE conta_id = ?").run(c);
+    db.prepare("DELETE FROM faturas WHERE conta_id = ?").run(c);
+    db.prepare("DELETE FROM contas WHERE id = ?").run(c);
+  }
 });
 
 test("dinheiro digitado no jeito brasileiro vira centavos", () => {

@@ -46,13 +46,17 @@ interface Adaptador {
   trocas?: (linhas: Linha[], contexto: Contexto) => Map<string, number | null>;
   /** Total da fatura sem o que ela carrega da anterior. `pagamentos` = soma, com sinal, dos lançamentos de Pagamento de fatura dela. */
   totalDaFatura?: (total: number, pagamentos: number) => number;
+  /** O dia de `billClosingDate` já é do ciclo seguinte: o que tem essa data (compra, parcela futura, pagamento) é da próxima fatura. */
+  fechamentoAbreOSeguinte?: true;
 }
 
 /** Chave: código COMPE. */
 const ADAPTADORES: Record<string, Adaptador> = {
   // "total da fatura anterior" (−) e o pagamento dele (+) vêm como lançamentos da própria fatura: o que não foi pago está dentro do total
   "104": { nome: "Caixa", totalDaFatura: (total, pagamentos) => total + pagamentos },
-  "260": { nome: "Nubank", trocas: pixNoCredito },
+  // os dois datam as parcelas futuras no dia do fechamento, e elas são da fatura seguinte
+  "260": { nome: "Nubank", trocas: pixNoCredito, fechamentoAbreOSeguinte: true },
+  "380": { nome: "PicPay", fechamentoAbreOSeguinte: true },
   "323": {
     nome: "Mercado Pago",
     internos: [
@@ -86,6 +90,9 @@ export const trocasDe = (linhas: Linha[], contexto: Contexto) =>
 /** Banco sem a peça, ou que ainda não se sabe: o total como veio. */
 export const totalDaFatura = (banco: string | null, total: number, pagamentos: number) =>
   ADAPTADORES[banco ?? ""]?.totalDaFatura?.(total, pagamentos) ?? total;
+
+/** Banco sem a peça, ou que ainda não se sabe: o dia do fechamento é do próprio ciclo. */
+export const fechamentoAbreOSeguinte = (banco: string | null) => !!ADAPTADORES[banco ?? ""]?.fechamentoAbreOSeguinte;
 
 /**
  * Pix no crédito do Nubank: (1) +X entra na conta, (2) o Pix de −X sai dela e (3) o cartão cobra X mais a tarifa. O gasto é a (3), então

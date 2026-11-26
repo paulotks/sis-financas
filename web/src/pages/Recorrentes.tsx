@@ -9,7 +9,7 @@ export default function Recorrentes() {
   const q = useQuery({ queryKey: ["recorrentes", pessoa], queryFn: () => api.recorrentes(pessoa) });
   const decidir = useMutation({
     mutationFn: api.decidirRecorrente,
-    onSettled: () => Promise.all([["recorrentes"], ["ritmo"], ["analises"]].map((queryKey) => qc.invalidateQueries({ queryKey }))), // ignorar muda o "pode gastar por dia"
+    onSettled: () => Promise.all([["recorrentes"], ["ritmo"], ["analises"], ["compromissos"]].map((queryKey) => qc.invalidateQueries({ queryKey }))), // ignorar muda o "pode gastar por dia"
   });
   const lista = q.data ?? [];
   const confirmadas = lista.filter((r) => r.status === "confirmada");

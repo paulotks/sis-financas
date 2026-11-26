@@ -252,6 +252,53 @@ export interface Analises {
   comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
 }
 
+/**
+ * Contas do mês (só PF): uma linha por compromisso que sai da conta, no mês em que sai. Lente de caixa: não soma em total nenhum, e a fatura já
+ * contém as compras do cartão. atrasada = venceu e os dados do banco já cobrem o dia; nao_paga = não foi paga e o saldo foi para a fatura seguinte.
+ */
+interface CompromissoBase {
+  nome: string;
+  dia: string; // quando sai: a cobrança, o dia esperado ou o vencimento
+  valor: number; // o esperado; paga: o real (na fatura, o total do banco)
+  pago: number; // quanto já saiu para ela; numa fatura, menos que o valor sem estar paga = parcial
+  pago_em: string | null; // o último pagamento
+  situacao: "paga" | "a_pagar" | "atrasada" | "nao_paga";
+}
+export interface CompromissoRecorrente extends CompromissoBase {
+  tipo: "recorrente";
+  conta: string | null; // de onde sai
+  categoria: string | null;
+  cor: string | null;
+  chave: string; // com valor_chave, a decisão de Recorrentes (Confirmar / Ignorar)
+  valor_chave: number;
+  sugestao: boolean;
+  parada: boolean; // confirmada que parou de cobrar: atrasada no mês atual, até o Paulo marcar Cancelei
+}
+export interface CompromissoFatura extends CompromissoBase {
+  tipo: "fatura";
+  conta_id: string;
+  fechamento: string;
+  estimada: boolean; // sem o total do banco: o maior entre a média das 3 últimas e o já comprometido
+  sem_fatura: boolean; // o banco não mandou o total (não fechou, ou não veio): paga = pelo valor pago
+  foi_para: string | null; // nao_paga: o mês da fatura que levou o saldo
+  comprometido: number; // o que já está nela: lançamentos do ciclo + parcelas previstas + recorrentes do cartão que ainda vêm
+  recorrentes: { nome: string; valor: number; prevista: boolean }[];
+  parcelas: { descricao: string; parcela: number; total: number; valor: number; prevista: boolean }[];
+  outras: { valor: number; qtd: number }; // o resto das compras do ciclo, com créditos abatidos
+}
+export type Compromisso = CompromissoRecorrente | CompromissoFatura;
+export interface Compromissos {
+  mes: string;
+  dados_ate: string; // último dia com dado de todos os bancos: atrasada é o que venceu antes dele
+  renda: { esperada: number | null; entrou: number }; // esperada = a régua do alarme
+  total: number;
+  pago: number;
+  falta: number;
+  metas: number; // o que as metas pedem no mês
+  livre: number | null; // renda esperada − contas − metas: não é o guardado do Resumo nem a sobra do Orçamento; nulo sem renda esperada
+  linhas: Compromisso[]; // pelo dia; as pagas (e as que foram para a fatura seguinte) no fim
+}
+
 /** O que pode medir uma meta, com dívida negativa. `serve` = que tipo de meta pode medir: bem zerado (quitado) e cartão sem dívida, nenhum. */
 export interface Posicao {
   origem: "conta" | "investimento" | "bem";

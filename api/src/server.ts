@@ -2,6 +2,7 @@ import fs from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { z, ZodError } from "zod";
+import { compromissosDoMes } from "./compromissos.js";
 import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
@@ -18,7 +19,7 @@ import {
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
 import type {
-  Analises, Bem, Categoria, CategoriaComUsos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
+  Analises, Bem, Categoria, CategoriaComUsos, Compromissos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
   MetaLinha, Metas, Ok, Orcamento, Patrimonio, PreviaRegra, Recorrente, Regra, RegraCriada, RegraLinha, ResultadoSync, Resumo, Ritmo, Sincronizacao,
   TotaisLancamentos,
 } from "./tipos.js";
@@ -317,6 +318,14 @@ app.put("/api/orcamento", async (req): Promise<Ok> => {
      ON CONFLICT(categoria_id, mes) DO UPDATE SET valor_centavos = excluded.valor_centavos`,
   ).run(d.categoria_id, d.mes, d.valor_centavos);
   return { ok: true };
+});
+
+// ---------------- contas do mês: o que sai da conta, pelo vencimento (só PF, só leitura; as contas ficam em compromissos.ts) ----------------
+
+app.get("/api/compromissos", async (req): Promise<Compromissos> => {
+  const hoje = diaDeHoje();
+  const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
+  return compromissosDoMes(mes, hoje);
 });
 
 // ---------------- ritmo: a renda aguenta o mês? (só PF) ----------------

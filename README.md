@@ -168,6 +168,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 | Resumo | Ignora transferências entre contas, pagamento de fatura e investimentos, que não são gasto nem renda. Estorno no cartão e reembolso em conta abatem a categoria. |
 | Orçamento | Só PF. O planejado é digitado na linha e vale daquele mês em diante, até mudar. A renda esperada também; sem digitar, é a mediana dos 3 últimos meses fechados. |
 | Metas | Só PF. Guardar por mês, juntar um valor ou quitar uma dívida. O valor por mês é digitado, vale daquele mês em diante e sai do teto do alarme; o app sugere quanto seria pelo prazo. O progresso vem do saldo de uma conta, cofrinho, investimento, bem ou dívida. Na dívida, deixe o valor por mês em branco se a parcela já é gasto. |
+| Contas do mês | Só PF, só leitura. O que sai da conta no mês, pelo vencimento: cada recorrente que cobra na conta e a fatura de cada cartão (que já tem as compras dele), com o que já foi pago (pelos lançamentos do banco) e o que sobra da renda esperada depois das contas e das metas. Não soma em nenhum outro número. |
 | Recorrentes | Cobranças mensais de valor parecido, detectadas nos lançamentos, uma linha para cada. Você confirma, ignora ou marca que cancelou (e é avisado se cobrarem de novo). |
 | Dado que falta | O app avisa, sem somar em nada: gasto que o limite do cartão já conta e ainda não apareceu, fatura que não bate com os lançamentos ou que não veio, e parcelas que o cartão ainda não mandou (previstas). |
 | Patrimônio | Contas + investimentos + cofrinhos + bens manuais − cartões (limite usado) e dívidas. Cada sincronização guarda uma foto para a evolução. |
@@ -176,7 +177,7 @@ Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
 ### Rotas principais
 
 `POST /api/pluggy/connect-token` · `GET|POST /api/conexoes` · `POST /api/sync` · `GET /api/contas` · `PATCH /api/contas/:id` ·
-`GET /api/lancamentos?mes=&conta=&categoria=&busca=&pendentes=1&pessoa=` · `PATCH /api/lancamentos/:id` · `GET /api/resumo?mes=&pessoa=` · `GET /api/ritmo?mes=` · `GET /api/analises?mes=` · `PUT /api/analises/inicio` ·
+`GET /api/lancamentos?mes=&conta=&categoria=&busca=&pendentes=1&pessoa=` · `PATCH /api/lancamentos/:id` · `GET /api/resumo?mes=&pessoa=` · `GET /api/ritmo?mes=` · `GET /api/compromissos?mes=` · `GET /api/analises?mes=` · `PUT /api/analises/inicio` ·
 `GET|POST /api/categorias` · `GET|POST|DELETE /api/regras` · `GET /api/regras/previa` · `GET|PUT /api/orcamento` ·
 `GET|PUT /api/recorrentes` · `POST /api/recorrentes/propostas` · `GET /api/patrimonio` · `POST|PATCH|DELETE /api/bens` ·
 `GET|POST /api/metas` · `PATCH|DELETE /api/metas/:id`
