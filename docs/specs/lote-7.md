@@ -202,6 +202,9 @@ Grade só de leitura: as linhas (recorrente, fatura, conta à mão) × os 12 mes
 - O pagamento de um cartão fora do Open Finance que veio com a categoria Pagamento de fatura é transferência e não é candidato: troque a
   categoria (Cartões não conectados) ou marque à mão.
 - O texto casa por "contém", com 3 letras ou mais, sem limite de diferença de valor: texto curto pode pegar o pagamento de outro recebedor.
+- Lançamento cujo nome é só a forma de pagamento (Pix com o recebedor só em números) vira `pixenviado` ao vincular, e esse texto casa com
+  todos os Pix assim no mês; o valor mais próximo decide. A marca que fica escondida quando um lançamento casa volta a valer se ele deixar de
+  casar.
 
 ## Depois (fora deste lote)
 
