@@ -3,8 +3,9 @@
  * Contas e decisões em docs/specs/lote-6.md; as rotas ficam em server.ts.
  */
 import { db } from "./db.js";
-import { posicoes, type Posicao } from "./patrimonio.js";
+import { posicoes } from "./patrimonio.js";
 import { somarMes } from "./ritmo.js";
+import type { Meta, MetaLinha, Posicao } from "./tipos.js";
 
 const DIAS_DO_RITMO = 90, DIAS_MINIMOS = 28;
 const MESES_MAXIMO = 1200; // além de 100 anos é o mesmo que não chegar
@@ -31,12 +32,9 @@ const PEDE = "(SELECT valor_centavos FROM metas_mensais WHERE meta_id = m.id AND
 /** Soma do que as metas pedem no mês. */
 export const metasDoMes = (mes: string) => (db.prepare(`SELECT COALESCE(SUM(${PEDE}), 0) AS total FROM metas m`).get(mes) as { total: number }).total;
 
-type Ligacao = { origem: Posicao["origem"] | null; ref_id: string | null };
-export interface Meta extends Ligacao {
-  id: number; nome: string; tipo: "guardar" | "juntar" | "quitar"; alvo: number | null; prazo: string | null; por_mes: number | null; encerrada_em: string | null;
-}
+type Ligacao = Pick<MetaLinha, "origem" | "ref_id">;
 export const lerMetas = (mes: string) =>
-  db.prepare(`SELECT id, nome, tipo, alvo_centavos AS alvo, prazo, ${PEDE} AS por_mes, origem, ref_id, encerrada_em FROM metas m ORDER BY id`).all(mes) as unknown as Meta[];
+  db.prepare(`SELECT id, nome, tipo, alvo_centavos AS alvo, prazo, ${PEDE} AS por_mes, origem, ref_id, encerrada_em FROM metas m ORDER BY id`).all(mes) as unknown as MetaLinha[];
 
 export const mesmaPosicao = (a: Ligacao, b: Ligacao) => a.origem !== null && a.origem === b.origem && a.ref_id === b.ref_id;
 
@@ -50,7 +48,7 @@ function andou(p: Posicao, hoje: string) {
 }
 
 /** As metas como estão em `mes`, com o progresso de hoje. Progresso nulo = nada ligado, ou a posição saiu do patrimônio. */
-export function listarMetas(mes: string, hoje: string, todas = posicoes("PF")) {
+export function listarMetas(mes: string, hoje: string, todas = posicoes("PF")): Meta[] {
   const mesAtual = hoje.slice(0, 7);
   const base = mes > mesAtual ? somarMes(mes, -1) : mesAtual; // no mês futuro, o primeiro aporte é o dele
   return lerMetas(mes).map((m) => {

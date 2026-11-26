@@ -4,16 +4,7 @@ import { codigoDoBanco } from "./adaptadores.js";
 import { carregarRegras, reaplicarRegras, sugerirCategoria } from "./categorizar.js";
 import { registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy, type PConta, type PInvestimento, type PItem, type PReserva, type PTransacao } from "./pluggy.js";
-
-export interface ResultadoSync {
-  item_id: string;
-  conector: string | null;
-  contas: number;
-  novos: number;
-  atualizados: number;
-  investimentos: number;
-  erro?: string;
-}
+import type { ResultadoSync } from "./tipos.js";
 
 /** Janela em que lançamentos que sumiram da Pluggy são removidos daqui (menor que a da busca: o que sumir por engano volta). */
 const DIAS_CONFERENCIA = 60;

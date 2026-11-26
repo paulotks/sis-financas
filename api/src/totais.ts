@@ -7,6 +7,7 @@ import { faltasDosCartoes, previstas } from "./faltas.js";
 import { metasDoMes } from "./metas.js";
 import { detectarRecorrentes, type Decisao, type Gasto } from "./recorrentes.js";
 import { diasDoMes, fechadosAntes, inicioDaAnalise, mediana, MESES_MEDIANA, somarMes, type TotalMes } from "./ritmo.js";
+import type { GastoCategoria, Grupo } from "./tipos.js";
 
 export const fimDoMes = (mes: string) => `${mes}-${diasDoMes(mes)}`;
 
@@ -30,7 +31,6 @@ export const GASTO = `CASE WHEN l.valor_centavos < 0 OR cat.grupo <> 'renda' THE
 export const ENTRADA = `CASE WHEN ${GASTO} IS NULL THEN l.valor_centavos END`;
 export const periodo = (mes: string, pessoa: string) => [`${mes}-01`, fimDoMes(mes), pessoa];
 
-interface GastoCategoria { categoria_id: number | null; categoria: string; cor: string | null; grupo: string | null; total: number; qtd: number }
 export const gastosPorCategoria = (mes: string, pessoa: string) =>
   db.prepare(
     `SELECT l.categoria_id, COALESCE(cat.nome,'Sem categoria') AS categoria, cat.cor, cat.grupo, SUM(${GASTO}) AS total, COUNT(${GASTO}) AS qtd
@@ -67,7 +67,7 @@ const planejadoPorCategoria = (mes: string) =>
     `SELECT c.id AS categoria_id, c.nome AS categoria, c.cor, c.grupo,
             (SELECT valor_centavos FROM orcamentos WHERE categoria_id = c.id AND mes <= ? ORDER BY mes DESC LIMIT 1) AS planejado
      FROM categorias c WHERE c.grupo <> 'transferencia' ORDER BY c.nome`,
-  ).all(mes) as { categoria_id: number; categoria: string; cor: string | null; grupo: string; planejado: number | null }[];
+  ).all(mes) as { categoria_id: number; categoria: string; cor: string | null; grupo: Grupo; planejado: number | null }[];
 export const somar = (ns: (number | null)[]) => ns.reduce<number>((s, n) => s + (n ?? 0), 0);
 
 export const totaisPorMes = (ate: string) =>

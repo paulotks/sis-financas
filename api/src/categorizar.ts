@@ -1,5 +1,6 @@
 import { internosDe, trocasDe, type Linha, type Movimento } from "./adaptadores.js";
 import { db } from "./db.js";
+import type { PreviaRegra } from "./tipos.js";
 
 /** Onde a regra vale. Sentido nulo = entrada e saída; conta nula = todas. */
 interface Alcance {
@@ -175,7 +176,7 @@ function calcular(regras: Regra[]) {
  * crédito puxa junto. Depende da categoria (uma de transferência desfaz o Pix no crédito); sem ela, supõe uma de gasto que ninguém tem.
  * `parecidos` = os que têm o texto, mudem ou não. Nos exemplos, o que já tem categoria vem primeiro, e `vai_para` é o que não vai para a da regra.
  */
-export function previaDaRegra(alcance: Alcance, categoria_id = -1) {
+export function previaDaRegra(alcance: Alcance, categoria_id = -1): PreviaRegra {
   const regras = carregarRegras();
   const igual = regraIgual(regras, alcance);
   const nova: Regra = { ...(igual ?? { ...alcance, id: Infinity, prioridade: PRIORIDADE_PADRAO, descricao: null }), categoria_id };

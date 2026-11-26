@@ -44,8 +44,9 @@ api/src/
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
+  tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
 web/src/
-  lib/api.ts            tipos + chamadas + formatação (BRL, datas, meses)
+  lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
   components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
   pages/                Resumo, Lancamentos, Orcamento, Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes

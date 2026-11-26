@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import type { Bem, Patrimonio, Pessoa, Posicao } from "./tipos.js";
 
 /**
  * Investimentos com o dono e se somam hoje. O do banco não tem pessoa: é PJ só se todas as contas do mesmo banco forem PJ; resgatado
@@ -36,9 +37,8 @@ export function registrarSaldos() {
     DELETE FROM saldos_diarios WHERE data = date('now','localtime') AND (origem, ref_id) NOT IN (SELECT origem, ref_id FROM (${POSICOES}) WHERE ativo)`);
 }
 
-export interface Posicao { origem: "conta" | "investimento" | "bem"; ref_id: string; nome: string | null; conta: string | null; sinal: 1 | -1; valor: number; serve: "juntar" | "quitar" | null }
-/** O que soma hoje, um por um, com dívida negativa. `serve` = que tipo de meta pode medir: bem zerado (quitado) e cartão sem dívida, nenhum. */
-export const posicoes = (pessoa: string) =>
+/** O que soma hoje, um por um, com dívida negativa. */
+export const posicoes = (pessoa: Pessoa) =>
   db.prepare(
     `SELECT p.origem, p.ref_id, COALESCE(ct.apelido, ct.nome, i.nome, b.nome) AS nome, i.conta, p.sinal, p.sinal * p.saldo AS valor,
             CASE WHEN p.sinal * p.saldo < 0 THEN 'quitar' WHEN p.sinal = 1 AND NOT (p.origem = 'bem' AND p.saldo = 0) THEN 'juntar' END AS serve
@@ -49,7 +49,7 @@ export const posicoes = (pessoa: string) =>
      WHERE p.ativo AND NOT p.oculta AND p.pessoa = ? ORDER BY p.origem = 'conta', nome`,
   ).all(pessoa) as unknown as Posicao[];
 
-export function patrimonio(pessoa: string) {
+export function patrimonio(pessoa: Pessoa): Patrimonio {
   const atual = db.prepare(
     `SELECT COALESCE(SUM(CASE WHEN origem = 'conta' AND sinal = 1 THEN saldo END), 0) AS contas,
             COALESCE(SUM(CASE WHEN origem = 'investimento' THEN saldo END), 0) AS investimentos,
@@ -68,6 +68,6 @@ export function patrimonio(pessoa: string) {
     pessoa,
     ...atual,
     historico: [...passado, { data: hoje, total: atual.total }], // o ponto de hoje é sempre ao vivo
-    lista_bens: db.prepare("SELECT id, nome, valor_centavos FROM bens WHERE pessoa = ? ORDER BY valor_centavos DESC, nome").all(pessoa),
+    lista_bens: db.prepare("SELECT id, nome, valor_centavos FROM bens WHERE pessoa = ? ORDER BY valor_centavos DESC, nome").all(pessoa) as unknown as Bem[],
   };
 }

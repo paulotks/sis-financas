@@ -8,6 +8,10 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { GRUPOS } from "./grupos.js";
 import { chaveDe } from "./recorrentes.js"; // função pura, sem base
+import type {
+  Analises, Categoria, CategoriaComUsos, Conexao, Contas, Lancamento, LancamentoEditado, ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio,
+  PreviaRegra, Recorrente, Regra, RegraCriada, Resumo, Ritmo, Sincronizacao, TotaisLancamentos,
+} from "./tipos.js"; // o formato das respostas da API; só tipo, some na compilação
 
 /** Vai em `instructions` e também na ferramenta `estado`, porque nem todo cliente mostra `instructions` ao modelo. */
 export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele no Open Finance. Responda em português simples.
@@ -74,7 +78,7 @@ const mes = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).describe("AAAA-MM");
 const categoriaId = z.number().int().describe("id vindo da ferramenta categorias");
 
 /** Só o que serve para analisar: o lançamento inteiro de um mês passa de 200 KB. */
-const enxugar = (l: any) => ({
+const enxugar = (l: Lancamento) => ({
   id: l.id,
   data: l.data,
   descricao: l.descricao,
@@ -83,7 +87,7 @@ const enxugar = (l: any) => ({
   conta: l.conta,
   categoria: l.categoria,
   ...(l.categoria_manual && { editado_a_mao: true }),
-  ...(l.total_parcelas > 1 && { parcela: `${l.parcela}/${l.total_parcelas}` }),
+  ...((l.total_parcelas ?? 0) > 1 && { parcela: `${l.parcela}/${l.total_parcelas}` }),
   ...(l.status !== "POSTED" && { status: l.status }),
   ...(l.ignorado && { ignorado: true }),
   ...(l.notas && { notas: l.notas }),
@@ -91,14 +95,14 @@ const enxugar = (l: any) => ({
 });
 
 /** Pendentes juntos por descrição parecida e sinal, para decidir uma regra por grupo em vez de um por um. */
-function agrupar(itens: any[]) {
-  const grupos = new Map<string, any[]>();
+function agrupar(itens: Lancamento[]) {
+  const grupos = new Map<string, Lancamento[]>();
   for (const l of itens) {
     const original = l.descricao_original ?? "";
     const chave = `${chaveDe(original) || original}|${l.valor_centavos < 0 ? "saida" : "entrada"}`;
     grupos.set(chave, [...(grupos.get(chave) ?? []), l]);
   }
-  const unicos = (ls: any[], campo: string) => [...new Set(ls.map((l) => l[campo]).filter(Boolean))];
+  const unicos = (ls: Lancamento[], campo: "descricao_original" | "categoria_pluggy" | "conta") => [...new Set(ls.map((l) => l[campo]).filter(Boolean))];
   return [...grupos.values()].map((ls) => ({
     tipo: ls[0].valor_centavos < 0 ? "saida" : "entrada",
     qtd: ls.length,
@@ -106,14 +110,14 @@ function agrupar(itens: any[]) {
     descricoes_originais: unicos(ls, "descricao_original").slice(0, 3),
     categoria_do_banco: unicos(ls, "categoria_pluggy").slice(0, 3),
     contas: unicos(ls, "conta"),
-    de: ls.at(-1).data, // a API devolve do mais novo ao mais antigo
+    de: ls.at(-1)!.data, // a API devolve do mais novo ao mais antigo
     ate: ls[0].data,
     ids: ls.slice(0, 3).map((l) => l.id),
   }));
 }
 
 export function criarServidor(base: string) {
-  async function chamar<T = any>(metodo: string, caminho: string, corpo?: unknown): Promise<T> {
+  async function chamar<T>(metodo: string, caminho: string, corpo?: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(base + caminho, {
@@ -130,11 +134,12 @@ export function criarServidor(base: string) {
         `O app não está rodando (tentei ${base}: ${causa?.code ?? causa?.message ?? (e as Error).message}). Peça ao Paulo para rodar \`npm run app:iniciar\` em D:\\sis-financas.`,
       );
     }
-    const d = (await res.json().catch(() => null)) as any;
-    if (!res.ok) throw new Error(`HTTP ${res.status}${d?.erro ? `: ${d.erro}` : ""}${d?.detalhes ? `: ${JSON.stringify(d.detalhes)}` : ""}`);
+    const d: unknown = await res.json().catch(() => null);
+    const e = d as { erro?: string; detalhes?: unknown } | null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}${e?.erro ? `: ${e.erro}` : ""}${e?.detalhes ? `: ${JSON.stringify(e.detalhes)}` : ""}`);
     return d as T;
   }
-  const ler = <T = any>(caminho: string, filtros: Record<string, string | number | undefined> = {}) => {
+  const ler = <T>(caminho: string, filtros: Record<string, string | number | undefined> = {}) => {
     const q = new URLSearchParams(Object.entries(filtros).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])));
     return chamar<T>("GET", `${caminho}?${q}`);
   };
@@ -154,11 +159,11 @@ export function criarServidor(base: string) {
     () =>
       tentar(async () => {
         const [conexoes, meses, pf, pj, ritmo] = await Promise.all([
-          ler<any[]>("/api/conexoes"),
+          ler<Conexao[]>("/api/conexoes"),
           ler<string[]>("/api/meses"),
-          ler("/api/lancamentos", { pendentes: 1, pessoa: "PF" }),
-          ler("/api/lancamentos", { pendentes: 1, pessoa: "PJ" }),
-          ler("/api/ritmo"),
+          ler<ListaLancamentos>("/api/lancamentos", { pendentes: 1, pessoa: "PF" }),
+          ler<ListaLancamentos>("/api/lancamentos", { pendentes: 1, pessoa: "PJ" }),
+          ler<Ritmo>("/api/ritmo"),
         ]);
         return {
           agora: new Date().toISOString(),
@@ -182,14 +187,14 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const resumos = await Promise.all(a.meses.map((m) => ler("/api/resumo", { mes: m, pessoa: a.pessoa })));
+        const resumos = await Promise.all(a.meses.map((m) => ler<Resumo>("/api/resumo", { mes: m, pessoa: a.pessoa })));
         return resumos.map((r) => ({
           mes: r.mes,
           entradas: reais(r.entradas),
           saidas: reais(r.saidas),
           sobra: reais(r.entradas - r.saidas),
           lancamentos_sem_categoria: r.pendentes,
-          por_categoria: r.porCategoria.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, grupo: c.grupo, total: reais(c.total), qtd: c.qtd })),
+          por_categoria: r.porCategoria.map((c) => ({ categoria_id: c.categoria_id, categoria: c.categoria, grupo: c.grupo, total: reais(c.total), qtd: c.qtd })),
         }));
       }),
   );
@@ -203,7 +208,7 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const r = await ler("/api/ritmo", { mes: a.mes });
+        const r = await ler<Ritmo>("/api/ritmo", { mes: a.mes });
         return {
           mes: r.mes, situacao: r.situacao, hoje: r.hoje, ...(r.situacao === "aberto" && { dados_do_banco_ate: r.dados_ate }), nivel: r.nivel, analisado: r.analisado, analise_desde: r.inicio, ...(r.inicio_antes && { analise_desde_mudou_era: r.inicio_antes }),
           renda_esperada: reais(r.renda.esperada), renda_esperada_vem_de: r.renda.esperada === null ? null : r.renda.origem,
@@ -219,9 +224,9 @@ export function criarServidor(base: string) {
             de: r.acumulado.de, ate: r.acumulado.ate, meses: r.acumulado.meses,
             entrou: reais(r.acumulado.entradas), gasto: reais(r.acumulado.gasto), sobra: reais(r.acumulado.sobra),
           },
-          cobradas_depois_de_canceladas: r.canceladas_cobradas.map((c: any) => ({ descricao: c.descricao, data: c.data, valor: reais(c.valor) })),
-          ...(r.situacao === "aberto" && { ainda_nao_apareceu_ate: r.nao_apareceu.map((c: any) => ({ cartao: c.conta, valor: reais(c.valor) })) }),
-          acima_do_normal: r.acima.map((c: any) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
+          cobradas_depois_de_canceladas: r.canceladas_cobradas.map((c) => ({ descricao: c.descricao, data: c.data, valor: reais(c.valor) })),
+          ...(r.situacao === "aberto" && { ainda_nao_apareceu_ate: r.nao_apareceu.map((c) => ({ cartao: c.conta, valor: reais(c.valor) })) }),
+          acima_do_normal: r.acima.map((c) => ({ categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), acima: reais(c.acima) })),
         };
       }),
   );
@@ -235,10 +240,10 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const d = await ler("/api/analises", { mes: a.mes });
+        const d = await ler<Analises>("/api/analises", { mes: a.mes });
         return {
           mes: d.mes, analise_desde: d.inicio, analise_desde_definida_pelo_paulo: d.inicio_definido, ...(d.inicio_antes && { analise_desde_mudou_era: d.inicio_antes }), orcado_hoje: reais(d.orcado_hoje),
-          mes_a_mes: d.meses.map((m: any) => ({
+          mes_a_mes: d.meses.map((m) => ({
             mes: m.mes, ...(m.aberto && { em_andamento: true }), entrou: reais(m.entradas), gasto: reais(m.gasto), orcado: reais(m.orcado),
             sobra: reais(m.sobra), metas: reais(m.metas), guardado_acumulado: reais(m.acumulado),
           })),
@@ -246,10 +251,10 @@ export function criarServidor(base: string) {
             ...(d.mes === d.mes_atual && { dados_do_banco_ate: d.dia_a_dia.dados_ate }), dias: d.dia_a_dia.dias.map(reais), com_o_ja_lancado_ate_o_fim_do_mes: reais(d.dia_a_dia.ja_lancado), mes_anterior: d.dia_a_dia.mes_anterior, dias_do_mes_anterior: d.dia_a_dia.anterior?.map(reais) ?? null,
             orcado: reais(d.dia_a_dia.orcado), renda_esperada: reais(d.dia_a_dia.esperada), metas: reais(d.dia_a_dia.metas),
           },
-          categorias: d.categorias.map((c: any) => ({
+          categorias: d.categorias.map((c) => ({
             categoria_id: c.categoria_id, categoria: c.categoria, gasto: reais(c.gasto), normal: reais(c.normal), mes_passado: reais(c.mes_passado), orcado: reais(c.orcado),
           })),
-          comprometido: d.comprometido.map((m: any) => ({ mes: m.mes, parcelas: reais(m.parcelas), parcelas_previstas: reais(m.previstas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
+          comprometido: d.comprometido.map((m) => ({ mes: m.mes, parcelas: reais(m.parcelas), parcelas_previstas: reais(m.previstas), recorrentes: reais(m.recorrentes), renda_esperada: reais(m.esperada) })),
         };
       }),
   );
@@ -263,16 +268,16 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const o = await ler("/api/orcamento", { mes: a.mes });
+        const o = await ler<Orcamento>("/api/orcamento", { mes: a.mes });
         return {
           mes: o.mes,
           renda_esperada: reais(o.renda_esperada), renda_esperada_vem_de: o.renda_esperada === null ? null : o.renda_origem,
           planejado_total: reais(o.planejado), sobra_planejada: o.renda_esperada === null ? null : reais(o.renda_esperada - o.planejado), metas_por_mes: reais(o.metas),
           gasto_total: reais(o.gasto),
           gasto_sem_categoria: reais(o.sem_categoria),
-          renda: o.renda.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, esperada: reais(l.planejado), sugerida: reais(l.sugerido), entrou: reais(l.recebido) })),
+          renda: o.renda.map((l) => ({ categoria_id: l.categoria_id, categoria: l.categoria, esperada: reais(l.planejado), sugerida: reais(l.sugerido), entrou: reais(l.recebido) })),
           entrou_sem_categoria: reais(o.entradas_sem_categoria),
-          linhas: o.linhas.map((l: any) => ({ categoria_id: l.categoria_id, categoria: l.categoria, grupo: l.grupo, planejado: reais(l.planejado), gasto: reais(l.realizado) })),
+          linhas: o.linhas.map((l) => ({ categoria_id: l.categoria_id, categoria: l.categoria, grupo: l.grupo, planejado: reais(l.planejado), gasto: reais(l.realizado) })),
         };
       }),
   );
@@ -301,7 +306,7 @@ export function criarServidor(base: string) {
           mes: a.mes, categoria: a.categoria_id, conta: a.conta_id ?? a.tipo_conta, busca: a.busca,
           pendentes: a.pendentes ? 1 : undefined, estornos: a.estornos ? 1 : undefined, pessoa: a.pessoa,
         };
-        const [{ itens, total }, t] = await Promise.all([ler("/api/lancamentos", filtro), ler("/api/lancamentos/totais", filtro)]);
+        const [{ itens, total }, t] = await Promise.all([ler<ListaLancamentos>("/api/lancamentos", filtro), ler<TotaisLancamentos>("/api/lancamentos/totais", filtro)]);
         return {
           total,
           soma: { entradas: reais(t.entradas), gastos: reais(t.gastos), fora_do_resumo: { entrou: reais(t.fora_entrou), saiu: reais(t.fora_saiu) } },
@@ -319,7 +324,7 @@ export function criarServidor(base: string) {
       inputSchema: { id: z.string().min(1).max(100).describe("id do crédito, de lancamentos com estornos: true") },
       annotations: LEITURA,
     },
-    (a) => tentar(async () => (await ler<any[]>(`/api/lancamentos/${encodeURIComponent(a.id)}/compras`)).map(enxugar)),
+    (a) => tentar(async () => (await ler<Lancamento[]>(`/api/lancamentos/${encodeURIComponent(a.id)}/compras`)).map(enxugar)),
   );
 
   servidor.registerTool(
@@ -337,7 +342,7 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const { itens, total } = await ler("/api/lancamentos", { mes: a.mes, pendentes: 1, pessoa: a.pessoa });
+        const { itens, total } = await ler<ListaLancamentos>("/api/lancamentos", { mes: a.mes, pendentes: 1, pessoa: a.pessoa });
         const grupos = agrupar(itens).sort((x, y) => (a.ordem === "valor" ? Math.abs(y.total) - Math.abs(x.total) : y.qtd - x.qtd));
         return {
           lancamentos_pendentes: total,
@@ -349,12 +354,12 @@ export function criarServidor(base: string) {
   );
 
   servidor.registerTool("categorias", { description: "Categorias com id, nome e grupo.", annotations: LEITURA }, () =>
-    tentar(async () => (await ler<any[]>("/api/categorias")).map(({ id, nome, grupo }) => ({ id, nome, grupo }))),
+    tentar(async () => (await ler<CategoriaComUsos[]>("/api/categorias")).map(({ id, nome, grupo }) => ({ id, nome, grupo }))),
   );
 
   servidor.registerTool("regras", { description: "Regras de categorização e quantos lançamentos cada uma pega.", annotations: LEITURA }, () =>
     tentar(async () =>
-      (await ler<any[]>("/api/regras")).map(({ id, padrao, sentido, conta, categoria_id, categoria, prioridade, usos }) => ({
+      (await ler<Regra[]>("/api/regras")).map(({ id, padrao, sentido, conta, categoria_id, categoria, prioridade, usos }) => ({
         id, padrao, ...(sentido && { sentido }), ...(conta && { conta }), categoria_id, categoria, prioridade, usos,
       })),
     ),
@@ -377,7 +382,7 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const p = await ler("/api/regras/previa", a);
+        const p = await ler<PreviaRegra>("/api/regras/previa", a);
         return { total: p.total, parecidos: p.parecidos, sem_categoria: p.pendentes, ja_categorizados: p.total - p.pendentes, descricoes_distintas: p.descricoes, exemplos: p.exemplos };
       }),
   );
@@ -387,7 +392,7 @@ export function criarServidor(base: string) {
     { description: "Cobranças mensais detectadas (assinaturas, contas fixas), uma linha por cobrança, com valor, próxima data e a decisão do Paulo (null = sugestão).", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () =>
-        (await ler<any[]>("/api/recorrentes", { pessoa: a.pessoa })).map((r) => ({
+        (await ler<Recorrente[]>("/api/recorrentes", { pessoa: a.pessoa })).map((r) => ({
           chave: r.chave, valor_chave: reais(r.valor_chave), descricao: r.descricao, ...(r.antes && { antes: r.antes }),
           categoria: r.categoria, conta: r.conta, valor: reais(r.valor), vezes: r.vezes, ultima: r.ultima, proxima: r.proxima,
           situacao: r.situacao, status: r.status, ...(r.proposta && { proposta_esperando_o_paulo: r.proposta }),
@@ -401,18 +406,18 @@ export function criarServidor(base: string) {
     { description: "Patrimônio líquido: contas + investimentos + bens − dívidas (cartões inclusos), com a evolução. É a posição nos bancos conectados mais o lançado à mão: o que está fora do app não entra, diga isso ao usar o número. Bem com valor 0 = quitado ou vendido.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
-        const p = await ler("/api/patrimonio", { pessoa: a.pessoa });
+        const p = await ler<Patrimonio>("/api/patrimonio", { pessoa: a.pessoa });
         return {
           pessoa: p.pessoa,
           total: reais(p.total), contas: reais(p.contas), investimentos: reais(p.investimentos), bens: reais(p.bens), dividas: reais(p.dividas),
-          historico: p.historico.map((h: any) => ({ data: h.data, total: reais(h.total) })),
-          lista_bens: p.lista_bens.map((b: any) => ({ nome: b.nome, valor: reais(b.valor_centavos) })),
+          historico: p.historico.map((h) => ({ data: h.data, total: reais(h.total) })),
+          lista_bens: p.lista_bens.map((b) => ({ nome: b.nome, valor: reais(b.valor_centavos) })),
         };
       }),
   );
 
   /** Campo a campo: o identificador da posição ligada não sai. */
-  const enxugarMeta = (m: any) => ({
+  const enxugarMeta = (m: Meta) => ({
     id: m.id, nome: m.nome, tipo: m.tipo, por_mes: reais(m.por_mes), alvo: reais(m.alvo), prazo: m.prazo,
     ...(m.encerrada_em && { encerrada_em: m.encerrada_em }),
     ...(m.tipo !== "guardar" && {
@@ -431,7 +436,7 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const d = await ler("/api/metas", { mes: a.mes });
+        const d = await ler<Metas>("/api/metas", { mes: a.mes });
         return { mes: d.mes, por_mes_no_total: reais(d.total), metas: d.metas.map(enxugarMeta) };
       }),
   );
@@ -441,7 +446,7 @@ export function criarServidor(base: string) {
     { description: "Contas, cartões, investimentos e cofrinhos com saldo, limite e vencimento. Em cartão, saldo = limite usado, e vêm também o que o limite já conta e ainda não apareceu e as faturas com lançamento faltando.", inputSchema: { pessoa }, annotations: LEITURA },
     (a) =>
       tentar(async () => {
-        const { contas, investimentos } = await ler<{ contas: any[]; investimentos: any[] }>("/api/contas");
+        const { contas, investimentos } = await ler<Contas>("/api/contas");
         // lista o que sai, campo a campo: número da conta e o retorno bruto do banco ficam de fora
         return {
           contas: contas.filter((c) => c.pessoa === a.pessoa).map((c) => ({
@@ -451,8 +456,8 @@ export function criarServidor(base: string) {
             usa_cofrinho: c.usa_reservas === null ? null : !!c.usa_reservas,
             ...(c.faltas && {
               ainda_nao_apareceu_ate: reais(c.faltas.nao_apareceu),
-              faturas_que_nao_fecham: c.faltas.faturas.map((f: any) => ({ vencimento_de: f.de, vencimento_ate: f.ate, faturas: f.qtd, falta_em_cada: reais(f.diferenca) })),
-              faturas_que_nao_vieram: c.faltas.sem_fatura.map((p: any) => ({ pagamento_em: p.data, valor_pago: reais(p.valor) })),
+              faturas_que_nao_fecham: c.faltas.faturas.map((f) => ({ vencimento_de: f.de, vencimento_ate: f.ate, faturas: f.qtd, falta_em_cada: reais(f.diferenca) })),
+              faturas_que_nao_vieram: c.faltas.sem_fatura.map((p) => ({ pagamento_em: p.data, valor_pago: reais(p.valor) })),
             }),
           })),
           investimentos: investimentos.filter((i) => i.pessoa === a.pessoa && !(i.tipo === "RESERVA" && !i.saldo_centavos)).map((i) => ({
@@ -482,11 +487,11 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        const previa = await ler("/api/regras/previa", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
+        const previa = await ler<PreviaRegra>("/api/regras/previa", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
         if (previa.total !== a.total_previsto) {
           throw new Error(`Nada foi gravado: a regra mudaria ${previa.total} lançamento(s), não ${a.total_previsto}. Rode previa_regra e confirme com o Paulo.`);
         }
-        const mesmoTexto = (await ler<any[]>("/api/regras")).filter((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase());
+        const mesmoTexto = (await ler<Regra[]>("/api/regras")).filter((r) => r.padrao.toLowerCase() === a.padrao.toLowerCase());
         const existente = mesmoTexto.find((r) => r.sentido === (a.sentido ?? null) && r.conta_id === (a.conta_id ?? null));
         // regra de outro sentido ou conta que pega parte dos mesmos lançamentos também pede confirmação
         const cruza = existente ?? mesmoTexto.find((r) => [[r.sentido, a.sentido], [r.conta_id, a.conta_id]].every(([x, y]) => !x || !y || x === y));
@@ -494,7 +499,7 @@ export function criarServidor(base: string) {
           const onde = [cruza.sentido && `só ${cruza.sentido}`, cruza.conta && `só ${cruza.conta}`].filter(Boolean).join(", ");
           throw new Error(`Nada foi gravado: já existe a regra "${cruza.padrao}"${onde && ` (${onde})`} → ${cruza.categoria}. Confirme com o Paulo e use substituir: true.`);
         }
-        const r = await chamar("POST", "/api/regras", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
+        const r = await chamar<RegraCriada>("POST", "/api/regras", { padrao: a.padrao, sentido: a.sentido, conta_id: a.conta_id, categoria_id: a.categoria_id });
         return { regra_id: r.regra.id, padrao: r.regra.padrao, ...(a.sentido && { sentido: a.sentido }), recategorizados: r.recategorizados, ...(existente && { categoria_anterior: existente.categoria }) };
       }),
   );
@@ -515,7 +520,7 @@ export function criarServidor(base: string) {
     ({ id, ...mudancas }) =>
       tentar(async () => {
         if (!Object.values(mudancas).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
-        const l = await chamar("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, mudancas);
+        const l = await chamar<LancamentoEditado>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, mudancas);
         return { ...enxugar(l), ...(l.tambem_mudaram.length > 0 && { tambem_mudaram: l.tambem_mudaram.map(enxugar) }) };
       }),
   );
@@ -527,7 +532,7 @@ export function criarServidor(base: string) {
       inputSchema: { nome: z.string().trim().min(1).max(40), grupo: z.enum(GRUPOS) },
       annotations: ESCRITA,
     },
-    (a) => tentar(() => chamar("POST", "/api/categorias", a)),
+    (a) => tentar(() => chamar<Categoria>("POST", "/api/categorias", a)),
   );
 
   servidor.registerTool(
@@ -539,11 +544,11 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        await chamar("PUT", "/api/orcamento", { mes: a.mes, categoria_id: a.categoria_id, valor_centavos: Math.round(a.valor * 100) });
-        const o = await ler("/api/orcamento", { mes: a.mes });
-        const r = o.renda.find((x: any) => x.categoria_id === a.categoria_id);
+        await chamar<Ok>("PUT", "/api/orcamento", { mes: a.mes, categoria_id: a.categoria_id, valor_centavos: Math.round(a.valor * 100) });
+        const o = await ler<Orcamento>("/api/orcamento", { mes: a.mes });
+        const r = o.renda.find((x) => x.categoria_id === a.categoria_id);
         if (r) return { ok: true, mes: a.mes, categoria: r.categoria, renda_esperada: reais(r.planejado), entrou: reais(r.recebido) };
-        const l = o.linhas.find((x: any) => x.categoria_id === a.categoria_id);
+        const l = o.linhas.find((x) => x.categoria_id === a.categoria_id);
         return { ok: true, mes: a.mes, ...(l && { categoria: l.categoria, planejado: reais(l.planejado), gasto: reais(l.realizado) }) };
       }),
   );
@@ -567,9 +572,9 @@ export function criarServidor(base: string) {
       tentar(async () => {
         const centavos = (v: number | undefined) => (v === undefined ? undefined : Math.round(v * 100));
         const corpo = { ...d, alvo: centavos(alvo), por_mes: centavos(por_mes) };
-        if (id === undefined) return enxugarMeta(await chamar("POST", "/api/metas", { ...corpo, tipo }));
+        if (id === undefined) return enxugarMeta(await chamar<Meta>("POST", "/api/metas", { ...corpo, tipo }));
         if (!Object.values(corpo).some((v) => v !== undefined)) throw new Error("Nada para mudar.");
-        return enxugarMeta(await chamar("PATCH", `/api/metas/${id}`, corpo));
+        return enxugarMeta(await chamar<Meta>("PATCH", `/api/metas/${id}`, corpo));
       }),
   );
 
@@ -582,8 +587,8 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        await chamar("PUT", "/api/analises/inicio", { mes: a.mes });
-        return { ok: true, analise_desde: (await ler("/api/analises")).inicio };
+        await chamar<Ok>("PUT", "/api/analises/inicio", { mes: a.mes });
+        return { ok: true, analise_desde: (await ler<Analises>("/api/analises")).inicio };
       }),
   );
 
@@ -600,7 +605,7 @@ export function criarServidor(base: string) {
     },
     (a) =>
       tentar(async () => {
-        await chamar("POST", "/api/recorrentes/propostas", { chave: a.chave, valor: Math.round(a.valor_chave * 100), status: a.status });
+        await chamar<Ok>("POST", "/api/recorrentes/propostas", { chave: a.chave, valor: Math.round(a.valor_chave * 100), status: a.status });
         return { proposta: a.status ?? "sugerida", falta: "o Paulo aceitar na tela Recorrentes; até lá nada muda" };
       }),
   );
@@ -611,7 +616,7 @@ export function criarServidor(base: string) {
       description: "Busca os dados novos de todos os bancos na Pluggy. Só se o Paulo pedir ou se a última sincronização tiver mais de 24 h.",
       annotations: { ...ESCRITA, openWorldHint: true },
     },
-    () => tentar(() => chamar("POST", "/api/sync", {})),
+    () => tentar(() => chamar<Sincronizacao>("POST", "/api/sync", {})),
   );
 
   return servidor;

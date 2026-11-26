@@ -6,7 +6,7 @@ import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
 import { GRUPOS } from "./grupos.js";
-import { lerMetas, listarMetas, mesmaPosicao, metasDoMes, type Meta } from "./metas.js";
+import { lerMetas, listarMetas, mesmaPosicao, metasDoMes } from "./metas.js";
 import { INVESTIMENTOS, patrimonio, posicoes, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, deveCobrar } from "./recorrentes.js";
@@ -17,6 +17,11 @@ import {
   NO_RESUMO, normalPorCategoria, periodo, previstasPF, reguaDoMes, SOMA, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
 } from "./totais.js";
 import { carregarRegras, limparCacheCategorias, NOMES_FIXOS, previaDaRegra, PRIORIDADE_PADRAO, reaplicarRegras, regraIgual } from "./categorizar.js";
+import type {
+  Analises, Bem, Categoria, CategoriaComUsos, Conexao, Conta, ContaLinha, Contas, Grupo, Investimento, Lancamento, LancamentoEditado, ListaLancamentos, Meta,
+  MetaLinha, Metas, Ok, Orcamento, Patrimonio, PreviaRegra, Recorrente, Regra, RegraCriada, RegraLinha, ResultadoSync, Resumo, Ritmo, Sincronizacao,
+  TotaisLancamentos,
+} from "./tipos.js";
 
 migrar();
 copiaDoDia();
@@ -66,28 +71,28 @@ function ouNaoEncontrado<T>(registro: T | undefined, oQue: string): T {
 
 // ---------------- Pluggy / conexões ----------------
 
-app.post("/api/pluggy/connect-token", async (req) => {
+app.post("/api/pluggy/connect-token", async (req): Promise<{ accessToken: string }> => {
   const { itemId } = z.object({ itemId: uuid.optional() }).parse(req.body ?? {});
   return { accessToken: await pluggy.connectToken("paulo", itemId) };
 });
 
-app.get("/api/conexoes", async () =>
+app.get("/api/conexoes", async (): Promise<Conexao[]> =>
   db.prepare(
     `SELECT c.*, (SELECT COUNT(*) FROM contas WHERE item_id = c.item_id) AS contas,
        (SELECT group_concat(COALESCE(apelido, nome), ' · ') FROM contas WHERE item_id = c.item_id) AS nomes_contas
      FROM conexoes c ORDER BY c.criado_em`,
-  ).all(),
+  ).all() as unknown as Conexao[],
 );
 
 /** Recebe o itemId do onSuccess do widget, confirma na Pluggy, grava e já sincroniza. */
-app.post("/api/conexoes", async (req) => {
+app.post("/api/conexoes", async (req): Promise<ResultadoSync> => {
   const { itemId } = z.object({ itemId: uuid }).parse(req.body);
   salvarConexao(await pluggy.item(itemId));
   const [resultado] = await sincronizar(itemId);
   return resultado;
 });
 
-app.post("/api/sync", async (req) => {
+app.post("/api/sync", async (req): Promise<Sincronizacao> => {
   const { itemId, desde } = z
     .object({ itemId: uuid.optional(), desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() })
     .parse(req.body ?? {});
@@ -100,21 +105,21 @@ app.get("/api/sync/historico", async () =>
 
 // ---------------- contas ----------------
 
-app.get("/api/contas", async () => {
+app.get("/api/contas", async (): Promise<Contas> => {
   const faltas = faltasDosCartoes(diaDeHoje());
   return {
     contas: (db.prepare(
       `SELECT ct.*, cx.conector, cx.imagem_url, cx.ultimo_sync
        FROM contas ct JOIN conexoes cx ON cx.item_id = ct.item_id
        ORDER BY ct.pessoa, ct.tipo, COALESCE(ct.apelido, ct.nome)`,
-    ).all() as { id: string }[]).map((c) => ({ ...c, faltas: faltas.get(c.id) ?? null })),
+    ).all() as unknown as Omit<Conta, "faltas">[]).map((c) => ({ ...c, faltas: faltas.get(c.id) ?? null })),
     investimentos: db.prepare(
       `SELECT i.*, cx.conector FROM (${INVESTIMENTOS}) i JOIN conexoes cx ON cx.item_id = i.item_id ORDER BY i.nome`,
-    ).all(),
+    ).all() as unknown as Investimento[],
   };
 });
 
-app.patch("/api/contas/:id", async (req) => {
+app.patch("/api/contas/:id", async (req): Promise<ContaLinha> => {
   const { id } = z.object({ id: uuid }).parse(req.params);
   const d = z
     .object({ apelido: z.string().max(60).nullable().optional(), pessoa: z.enum(["PF", "PJ"]).optional(), oculta: z.boolean().optional(), usa_reservas: z.boolean().optional() })
@@ -125,13 +130,13 @@ app.patch("/api/contas/:id", async (req) => {
   if (d.pessoa) (sets.push("pessoa = ?"), vals.push(d.pessoa));
   if (d.oculta !== undefined) (sets.push("oculta = ?"), vals.push(d.oculta ? 1 : 0));
   if (d.usa_reservas !== undefined) (sets.push("usa_reservas = ?"), vals.push(d.usa_reservas ? 1 : 0));
-  if (!sets.length) return { ok: true };
-  transacao(() => {
-    db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
-    if (d.pessoa || d.oculta !== undefined) reaplicarRegras(); // o Pix no crédito só vale com o cartão visível e da mesma pessoa
-  });
+  if (sets.length)
+    transacao(() => {
+      db.prepare(`UPDATE contas SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+      if (d.pessoa || d.oculta !== undefined) reaplicarRegras(); // o Pix no crédito só vale com o cartão visível e da mesma pessoa
+    });
   if (d.usa_reservas !== undefined) registrarSaldos();
-  return ouNaoEncontrado(db.prepare("SELECT * FROM contas WHERE id = ?").get(id), "conta");
+  return ouNaoEncontrado(db.prepare("SELECT * FROM contas WHERE id = ?").get(id) as unknown as ContaLinha | undefined, "conta");
 });
 
 // ---------------- lançamentos ----------------
@@ -145,14 +150,14 @@ const SELECT_LANC = `
          ${SOMA} AS soma, ${ESTORNO} AS estorno
   ${LANCAMENTOS}`;
 
-const formatarLanc = (r: Record<string, unknown>) => ({
+const formatarLanc = (r: Record<string, unknown>): Lancamento => ({
   ...r,
   tags: JSON.parse(String(r.tags ?? "[]")),
   ignorado: !!r.ignorado,
   soma: !!r.soma,
   estorno: !!r.estorno,
   categoria_manual: !!r.categoria_manual,
-});
+}) as unknown as Lancamento;
 
 /** Os filtros da tela Lançamentos: a lista e os totais dela usam o mesmo trecho. */
 function filtroDeLancamentos(query: unknown) {
@@ -186,7 +191,7 @@ function filtroDeLancamentos(query: unknown) {
   return { onde: onde.join(" AND "), vals };
 }
 
-app.get("/api/lancamentos", async (req) => {
+app.get("/api/lancamentos", async (req): Promise<ListaLancamentos> => {
   const { onde, vals } = filtroDeLancamentos(req.query);
   const itens = (db.prepare(`${SELECT_LANC} WHERE ${onde} ORDER BY l.data DESC, l.rowid DESC LIMIT 2000`).all(...vals) as Record<string, unknown>[]).map(formatarLanc);
   // total de verdade: a lista para em 2000 e a tela precisa saber que foi cortada
@@ -198,7 +203,7 @@ app.get("/api/lancamentos", async (req) => {
  * Soma da lista inteira (sem o corte), pela regra do Resumo: o mês sem outro filtro dá os mesmos números de lá. O que é transferência vem à
  * parte, para não parecer que sumiu.
  */
-app.get("/api/lancamentos/totais", async (req) => {
+app.get("/api/lancamentos/totais", async (req): Promise<TotaisLancamentos> => {
   const { onde, vals } = filtroDeLancamentos(req.query);
   const soma = (valor: string, se: string) => `COALESCE(SUM(${valor}) FILTER (WHERE ${se}), 0)`;
   const fora = `${SOMA} AND cat.grupo = 'transferencia'`;
@@ -206,14 +211,14 @@ app.get("/api/lancamentos/totais", async (req) => {
     `SELECT ${soma(ENTRADA, NO_RESUMO)} AS entradas, ${soma(GASTO, NO_RESUMO)} AS gastos,
        ${soma("l.valor_centavos", `${fora} AND l.valor_centavos > 0`)} AS fora_entrou, ${soma("-l.valor_centavos", `${fora} AND l.valor_centavos < 0`)} AS fora_saiu
      ${LANCAMENTOS} WHERE ${onde}`,
-  ).get(...vals);
+  ).get(...vals) as unknown as TotaisLancamentos;
 });
 
 /**
  * Categoria e "ignorar" reaplicam as regras na hora: o Pix no crédito depende das três pernas, e desfazer a edição à mão volta ao automático.
  * `tambem_mudaram` = os outros que isso mudou.
  */
-app.patch("/api/lancamentos/:id", async (req) => {
+app.patch("/api/lancamentos/:id", async (req): Promise<LancamentoEditado> => {
   const { id } = z.object({ id: z.string().min(1).max(100) }).parse(req.params);
   const d = z
     .object({
@@ -245,7 +250,7 @@ app.patch("/api/lancamentos/:id", async (req) => {
 });
 
 /** De qual compra veio um crédito no cartão: até 5 candidatas do mesmo cartão. Só mostra; quem escolhe é o Paulo. */
-app.get("/api/lancamentos/:id/compras", async (req) => {
+app.get("/api/lancamentos/:id/compras", async (req): Promise<Lancamento[]> => {
   const { id } = z.object({ id: z.string().min(1).max(100) }).parse(req.params);
   type L = { conta_id: string; conta_tipo: string; data: string; descricao_original: string | null; valor_centavos: number };
   const credito = ouNaoEncontrado(db.prepare(`${SELECT_LANC} WHERE l.id = ?`).get(id), "lançamento") as unknown as L;
@@ -263,13 +268,13 @@ app.get("/api/lancamentos/:id/compras", async (req) => {
   return compras.sort((a, b) => igual(b) - igual(a) || emComum(b) - emComum(a)).slice(0, 5).map((l) => formatarLanc(l as unknown as Record<string, unknown>));
 });
 
-app.get("/api/meses", async () =>
+app.get("/api/meses", async (): Promise<string[]> =>
   (db.prepare("SELECT DISTINCT substr(data,1,7) AS mes FROM lancamentos ORDER BY mes DESC").all() as { mes: string }[]).map((r) => r.mes),
 );
 
 // ---------------- resumo do mês ----------------
 
-app.get("/api/resumo", async (req) => {
+app.get("/api/resumo", async (req): Promise<Resumo> => {
   const { mes, pessoa } = z
     .object({ mes: z.string().regex(mesRe), pessoa: z.enum(["PF", "PJ"]).default("PF") })
     .parse(req.query);
@@ -278,7 +283,7 @@ app.get("/api/resumo", async (req) => {
 
 // ---------------- orçamento (só PF: a empresa não entra no orçamento da casa) ----------------
 
-app.get("/api/orcamento", async (req) => {
+app.get("/api/orcamento", async (req): Promise<Orcamento> => {
   const { mes } = z.object({ mes: z.string().regex(mesRe) }).parse(req.query);
   const gastos = gastosPorCategoria(mes, "PF");
   const { cats, anteriores, orcado, esperada, origem, metas } = reguaDoMes(mes, diaDeHoje().slice(0, 7));
@@ -303,7 +308,7 @@ app.get("/api/orcamento", async (req) => {
   };
 });
 
-app.put("/api/orcamento", async (req) => {
+app.put("/api/orcamento", async (req): Promise<Ok> => {
   const d = z
     .object({ mes: z.string().regex(mesRe), categoria_id: z.number().int(), valor_centavos: z.number().int().min(0).max(1e11) })
     .parse(req.body);
@@ -316,7 +321,7 @@ app.put("/api/orcamento", async (req) => {
 
 // ---------------- ritmo: a renda aguenta o mês? (só PF) ----------------
 
-app.get("/api/ritmo", async (req) => {
+app.get("/api/ritmo", async (req): Promise<Ritmo> => {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
   const situacao = mes === mesAtual ? "aberto" : mes < mesAtual ? "fechado" : "futuro";
@@ -376,7 +381,7 @@ app.get("/api/ritmo", async (req) => {
 
 const MESES_A_FRENTE = 12;
 
-app.get("/api/analises", async (req) => {
+app.get("/api/analises", async (req): Promise<Analises> => {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(mesAtual) }).parse(req.query);
   const historico = historicoPF(mesAtual), { inicio } = historico;
@@ -437,7 +442,7 @@ app.get("/api/analises", async (req) => {
 });
 
 /** Primeiro mês da análise (alarme e gráficos). null = volta ao automático. */
-app.put("/api/analises/inicio", async (req) => {
+app.put("/api/analises/inicio", async (req): Promise<Ok> => {
   const { mes } = z.object({ mes: z.string().regex(mesRe).nullable() }).parse(req.body);
   if (mes === null) db.prepare("DELETE FROM config WHERE chave = 'inicio_analise'").run();
   else if (mes > diaDeHoje().slice(0, 7)) throw Object.assign(new Error("o mês inicial não pode ser no futuro"), { statusCode: 400 });
@@ -461,12 +466,12 @@ function acharRecorrente(d: { chave: string; valor: number }) {
   return { r, linha: r.decisao ?? { chave: r.chave, valor: r.valor_chave } };
 }
 
-app.get("/api/recorrentes", async (req) => {
+app.get("/api/recorrentes", async (req): Promise<Recorrente[]> => {
   const { pessoa } = z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query);
   return listarRecorrentes(pessoa, diaDeHoje());
 });
 
-app.put("/api/recorrentes", async (req) => {
+app.put("/api/recorrentes", async (req): Promise<Ok> => {
   const d = decisaoRecorrente.parse(req.body), { linha } = acharRecorrente(d);
   // a data só muda se a decisão mudou: é dela que conta o "cobrou depois de cancelada"
   db.prepare(
@@ -477,7 +482,7 @@ app.put("/api/recorrentes", async (req) => {
 });
 
 /** O MCP só propõe: nada muda nos números até alguém aceitar (ou recusar) na tela, pelo PUT acima. */
-app.post("/api/recorrentes/propostas", async (req) => {
+app.post("/api/recorrentes/propostas", async (req): Promise<Ok> => {
   const d = decisaoRecorrente.parse(req.body), { r, linha } = acharRecorrente(d);
   if (r.status === d.status) throw Object.assign(new Error("a recorrente já está assim"), { statusCode: 409 });
   db.prepare(
@@ -489,24 +494,24 @@ app.post("/api/recorrentes/propostas", async (req) => {
 
 // ---------------- patrimônio ----------------
 
-app.get("/api/patrimonio", async (req) => patrimonio(z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query).pessoa));
+app.get("/api/patrimonio", async (req): Promise<Patrimonio> => patrimonio(z.object({ pessoa: pessoaPFPJ.default("PF") }).parse(req.query).pessoa));
 
 const bem = z.object({ nome: z.string().trim().min(1).max(60), valor_centavos: z.number().int().min(-1e12).max(1e12) });
-app.post("/api/bens", async (req) => {
+app.post("/api/bens", async (req): Promise<Bem> => {
   const d = bem.extend({ pessoa: pessoaPFPJ }).parse(req.body);
-  const r = db.prepare("INSERT INTO bens (nome, valor_centavos, pessoa) VALUES (?,?,?) RETURNING *").get(d.nome, d.valor_centavos, d.pessoa);
+  const r = db.prepare("INSERT INTO bens (nome, valor_centavos, pessoa) VALUES (?,?,?) RETURNING *").get(d.nome, d.valor_centavos, d.pessoa) as unknown as Bem;
   registrarSaldos();
   return r;
 });
-app.patch("/api/bens/:id", async (req) => {
+app.patch("/api/bens/:id", async (req): Promise<Bem> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const d = bem.partial().parse(req.body);
   const r = db.prepare("UPDATE bens SET nome = COALESCE(?, nome), valor_centavos = COALESCE(?, valor_centavos) WHERE id = ? RETURNING *")
-    .get(d.nome ?? null, d.valor_centavos ?? null, id);
+    .get(d.nome ?? null, d.valor_centavos ?? null, id) as unknown as Bem | undefined;
   registrarSaldos();
   return ouNaoEncontrado(r, "bem");
 });
-app.delete("/api/bens/:id", async (req) => {
+app.delete("/api/bens/:id", async (req): Promise<Ok> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   return transacao(() => {
     // o id pode ser reaproveitado: nem a evolução nem a meta podem passar para outra linha
@@ -529,7 +534,7 @@ const camposDaMeta = z.object({
 }).partial();
 
 /** Confere a meta como ela vai ficar e grava. Meta encerrada não volta a pedir nada sem ser reaberta. */
-function gravarMeta(atual: Meta | undefined, tipo: Meta["tipo"], d: z.infer<typeof camposDaMeta> & { encerrada?: boolean }) {
+function gravarMeta(atual: MetaLinha | undefined, tipo: MetaLinha["tipo"], d: z.infer<typeof camposDaMeta> & { encerrada?: boolean }): Meta {
   const hoje = diaDeHoje(), mesAtual = hoje.slice(0, 7);
   const m = {
     nome: d.nome ?? atual?.nome ?? "", alvo: d.alvo !== undefined ? d.alvo : (atual?.alvo ?? null), prazo: d.prazo !== undefined ? d.prazo : (atual?.prazo ?? null),
@@ -558,27 +563,27 @@ function gravarMeta(atual: Meta | undefined, tipo: Meta["tipo"], d: z.infer<type
       db.prepare("DELETE FROM metas_mensais WHERE meta_id = ? AND mes > ?").run(id, mesAtual);
       pedir(mesAtual, 0);
     }
-    return listarMetas(d.mes ?? mesAtual, hoje).find((x) => x.id === id);
+    return listarMetas(d.mes ?? mesAtual, hoje).find((x) => x.id === id)!; // acabou de gravar
   });
 }
 
-app.get("/api/metas", async (req) => {
+app.get("/api/metas", async (req): Promise<Metas> => {
   const hoje = diaDeHoje(), todas = posicoes("PF");
   const { mes } = z.object({ mes: z.string().regex(mesRe).default(hoje.slice(0, 7)) }).parse(req.query);
   return { mes, total: metasDoMes(mes), metas: listarMetas(mes, hoje, todas), posicoes: todas.filter((p) => p.serve) };
 });
-app.post("/api/metas", async (req) => {
+app.post("/api/metas", async (req): Promise<Meta> => {
   const { tipo, ...d } = camposDaMeta.required({ nome: true }).extend({ tipo: z.enum(["guardar", "juntar", "quitar"]) }).parse(req.body);
   return gravarMeta(undefined, tipo, d);
 });
 const metaOu404 = (id: number) => ouNaoEncontrado(lerMetas(diaDeHoje().slice(0, 7)).find((m) => m.id === id), "meta");
-app.patch("/api/metas/:id", async (req) => {
+app.patch("/api/metas/:id", async (req): Promise<Meta> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const d = camposDaMeta.extend({ encerrada: z.boolean().optional() }).parse(req.body), atual = metaOu404(id);
   return gravarMeta(atual, atual.tipo, d);
 });
 /** Muda o veredito dos meses em que ela pedia algo: a tela só oferece para as encerradas. */
-app.delete("/api/metas/:id", async (req) => {
+app.delete("/api/metas/:id", async (req): Promise<Ok> => {
   const { id } = metaOu404(z.object({ id: z.coerce.number().int() }).parse(req.params).id);
   db.prepare("DELETE FROM metas WHERE id = ?").run(id);
   return { ok: true };
@@ -587,32 +592,32 @@ app.delete("/api/metas/:id", async (req) => {
 // ---------------- categorias e regras ----------------
 
 /** Gasto, renda ou transferência: é o que decide como a categoria entra no resumo (os três grupos de gasto contam igual). */
-const tipoDoGrupo = (grupo: string) => (grupo === "renda" || grupo === "transferencia" ? grupo : "gasto");
+const tipoDoGrupo = (grupo: Grupo) => (grupo === "renda" || grupo === "transferencia" ? grupo : "gasto");
 
 /** Com a contagem de tudo que aponta para a categoria, inclusive lançamento ignorado ou REMOVIDO. */
-const listarCategorias = () =>
+const listarCategorias = (): CategoriaComUsos[] =>
   (db.prepare(
     `SELECT c.*, (SELECT COUNT(*) FROM lancamentos WHERE categoria_id = c.id) AS lancamentos,
        (SELECT COUNT(*) FROM regras WHERE categoria_id = c.id) AS regras,
        (SELECT COUNT(*) FROM orcamentos WHERE categoria_id = c.id) AS orcamentos
      FROM categorias c ORDER BY grupo, nome`,
-  ).all() as { id: number; nome: string; grupo: string; cor: string | null; lancamentos: number; regras: number; orcamentos: number }[])
+  ).all() as unknown as Omit<CategoriaComUsos, "tipo" | "usos" | "fixa">[])
     .map((c) => ({ ...c, tipo: tipoDoGrupo(c.grupo), usos: c.lancamentos + c.regras + c.orcamentos, fixa: NOMES_FIXOS.has(c.nome) }));
 const categoriaOu404 = (id: number) => ouNaoEncontrado(listarCategorias().find((c) => c.id === id), "categoria");
 const recusarNomeFixo = (nome: string) => {
   if (NOMES_FIXOS.has(nome)) throw conflito(`"${nome}" é usada pela categorização automática: não dá para apagar, renomear nem mudar de grupo`);
 };
 
-app.get("/api/categorias", async () => listarCategorias());
+app.get("/api/categorias", async (): Promise<CategoriaComUsos[]> => listarCategorias());
 
 const grupos = z.enum(GRUPOS);
-app.post("/api/categorias", async (req) => {
+app.post("/api/categorias", async (req): Promise<Categoria> => {
   const d = z.object({ nome: z.string().trim().min(1).max(40), grupo: grupos, cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }).parse(req.body);
-  const r = db.prepare("INSERT INTO categorias (nome, grupo, cor) VALUES (?,?,?) RETURNING *").get(d.nome, d.grupo, d.cor ?? "#95a5a6");
+  const r = db.prepare("INSERT INTO categorias (nome, grupo, cor) VALUES (?,?,?) RETURNING *").get(d.nome, d.grupo, d.cor ?? "#95a5a6") as unknown as Categoria;
   limparCacheCategorias();
   return r;
 });
-app.patch("/api/categorias/:id", async (req) => {
+app.patch("/api/categorias/:id", async (req): Promise<Categoria> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const d = z.object({ nome: z.string().trim().min(1).max(40).optional(), grupo: grupos.optional(), cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }).parse(req.body);
   const atual = categoriaOu404(id);
@@ -620,10 +625,10 @@ app.patch("/api/categorias/:id", async (req) => {
   db.prepare("UPDATE categorias SET nome = COALESCE(?, nome), grupo = COALESCE(?, grupo), cor = COALESCE(?, cor) WHERE id = ?")
     .run(d.nome ?? null, d.grupo ?? null, d.cor ?? null, id);
   limparCacheCategorias();
-  return db.prepare("SELECT * FROM categorias WHERE id = ?").get(id);
+  return db.prepare("SELECT * FROM categorias WHERE id = ?").get(id) as unknown as Categoria;
 });
 /** Só apaga categoria sem uso: regras e orçamentos têm ON DELETE CASCADE e sumiriam junto, em silêncio. */
-app.delete("/api/categorias/:id", async (req) => {
+app.delete("/api/categorias/:id", async (req): Promise<Ok> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   return transacao(() => {
     const c = categoriaOu404(id);
@@ -638,7 +643,7 @@ app.delete("/api/categorias/:id", async (req) => {
  * Leva lançamentos (a edição manual continua manual) e regras para o destino e apaga a origem. Só entre categorias do mesmo
  * tipo, para o total do mês não mudar. O orçamento da origem é perdido (cascade): fica o do destino.
  */
-app.post("/api/categorias/:id/mesclar", async (req) => {
+app.post("/api/categorias/:id/mesclar", async (req): Promise<Ok & { lancamentos: number; regras: number }> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   const { destino } = z.object({ destino: z.number().int() }).parse(req.body);
   return transacao(() => {
@@ -654,23 +659,23 @@ app.post("/api/categorias/:id/mesclar", async (req) => {
   });
 });
 
-app.get("/api/regras", async () =>
+app.get("/api/regras", async (): Promise<Regra[]> =>
   db.prepare(
     `SELECT r.*, c.nome AS categoria, COALESCE(ct.apelido, ct.nome) AS conta, (SELECT COUNT(*) FROM lancamentos WHERE regra_id = r.id) AS usos
      FROM regras r JOIN categorias c ON c.id = r.categoria_id LEFT JOIN contas ct ON ct.id = r.conta_id ORDER BY r.prioridade DESC, r.padrao`,
-  ).all(),
+  ).all() as unknown as Regra[],
 );
 const alcanceRegra = z.object({
   padrao: z.string().trim().min(3).max(120), // texto curto demais pegaria quase tudo
   sentido: z.enum(["saida", "entrada"]).nullable().default(null), // nulo = os dois
   conta_id: uuid.nullable().default(null), // nulo = todas
 });
-app.get("/api/regras/previa", async (req) => {
+app.get("/api/regras/previa", async (req): Promise<PreviaRegra> => {
   const { categoria_id, ...alcance } = alcanceRegra.extend({ categoria_id: z.coerce.number().int().optional() }).parse(req.query);
   return previaDaRegra(alcance, categoria_id);
 });
 /** Cria a regra; se já existe uma com o mesmo texto (maiúsculas não contam), sentido e conta, troca a categoria dela: é o Paulo corrigindo. */
-app.post("/api/regras", async (req) => {
+app.post("/api/regras", async (req): Promise<RegraCriada> => {
   const d = alcanceRegra.extend({ categoria_id: z.number().int(), descricao: z.string().trim().max(200).optional(), prioridade: z.number().int().min(0).max(100).optional() }).parse(req.body);
   return transacao(() => {
     const atual = regraIgual(carregarRegras(), d); // em JS: o NOCASE do SQLite não vale para letra com acento
@@ -679,10 +684,10 @@ app.post("/api/regras", async (req) => {
         .get(d.categoria_id, d.descricao ?? null, d.prioridade ?? null, atual.id)
       : db.prepare("INSERT INTO regras (padrao, sentido, conta_id, categoria_id, descricao, prioridade) VALUES (?,?,?,?,?,?) RETURNING *")
         .get(d.padrao, d.sentido, d.conta_id, d.categoria_id, d.descricao ?? null, d.prioridade ?? PRIORIDADE_PADRAO);
-    return { regra: r, recategorizados: reaplicarRegras().length };
+    return { regra: r as unknown as RegraLinha, recategorizados: reaplicarRegras().length };
   });
 });
-app.delete("/api/regras/:id", async (req) => {
+app.delete("/api/regras/:id", async (req): Promise<Ok & { recategorizados: number }> => {
   const { id } = z.object({ id: z.coerce.number().int() }).parse(req.params);
   return transacao(() => {
     db.prepare("DELETE FROM regras WHERE id = ?").run(id);

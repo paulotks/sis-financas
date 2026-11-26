@@ -4,6 +4,7 @@
 import { totalDaFatura } from "./adaptadores.js";
 import { db } from "./db.js";
 import { somarMes } from "./ritmo.js";
+import type { Faltas } from "./tipos.js";
 
 /** Compra sem parcela há mais tempo que isto: o banco parou de mandar, ou ela foi antecipada ou cancelada. */
 const MESES_PARADA = 3;
@@ -148,7 +149,7 @@ export function naoApareceu(limiteUsado: number, faturas: Fatura[], lancados: La
 }
 
 /** Por cartão. Lançamento ignorado conta: continua na fatura e no limite. `nao_apareceu` nulo = o saldo não é da última sincronização. */
-export function faltasDosCartoes(hoje: string) {
+export function faltasDosCartoes(hoje: string): Map<string, Faltas> {
   type DaConta<T> = T & { conta_id: string };
   const cartoes = db.prepare(
     `SELECT ct.id, cx.banco, ct.saldo_centavos AS saldo, ct.atualizado_em >= (SELECT MAX(inicio) FROM sincronizacoes WHERE item_id = ct.item_id) AS saldo_novo

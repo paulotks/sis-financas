@@ -1,275 +1,16 @@
-// Tipos e chamadas da API local. Valores sempre em centavos (saída negativa).
-
-export interface Categoria {
-  id: number;
-  nome: string;
-  grupo: keyof typeof GRUPOS;
-  cor: string | null;
-}
-
-/** tipo = como entra no resumo; usos = lançamentos + regras + orçamentos; fixa = o código acha pelo nome, não dá para apagar, renomear nem mudar de grupo. */
-export type CategoriaComUsos = Categoria & { tipo: "gasto" | "renda" | "transferencia"; lancamentos: number; regras: number; orcamentos: number; usos: number; fixa: boolean };
-
-export interface Lancamento {
-  id: string;
-  conta_id: string;
-  data: string;
-  descricao: string;
-  descricao_original: string;
-  valor_centavos: number;
-  status: string | null;
-  categoria_id: number | null;
-  categoria: string | null;
-  categoria_cor: string | null;
-  categoria_grupo: Categoria["grupo"] | null;
-  categoria_manual: boolean;
-  categoria_pluggy: string | null;
-  comerciante: string | null;
-  parcela: number | null;
-  total_parcelas: number | null;
-  notas: string | null;
-  tags: string[];
-  ignorado: boolean;
-  soma: boolean; // falso = ignorado ou removido pelo banco: fora de todos os totais
-  estorno: boolean; // crédito em cartão que não é pagamento de fatura nem transferência
-  conta: string;
-  conta_tipo: "BANK" | "CREDIT";
-  pessoa: "PF" | "PJ";
-}
-
-export interface Conta {
-  id: string;
-  item_id: string;
-  tipo: "BANK" | "CREDIT";
-  subtipo: string | null;
-  nome: string | null;
-  apelido: string | null;
-  numero: string | null;
-  saldo_centavos: number | null;
-  limite_centavos: number | null;
-  limite_disponivel_centavos: number | null;
-  vencimento: string | null;
-  pessoa: "PF" | "PJ";
-  oculta: number;
-  usa_reservas: 0 | 1 | null; // resposta de "usa cofrinho ou caixinha aqui?"; nulo = ainda não respondeu
-  conector: string | null;
-  imagem_url: string | null;
-  ultimo_sync: string | null;
-  faltas: Faltas | null; // só cartão
-}
-
-/** O que o banco não mandou de um cartão. É aviso: não soma em nada. */
-export interface Faltas {
-  nao_apareceu: number | null; // teto do gasto que o limite já conta e os lançamentos não; nulo = saldo velho, não dá para saber
-  faturas: { de: string; ate: string; qtd: number; diferenca: number }[]; // vencimentos seguidos com a mesma diferença; positiva = falta lançamento
-  sem_fatura: { data: string; valor: number }[]; // pagamento cuja fatura não veio
-}
+// Chamadas da API local. Valores sempre em centavos (saída negativa).
+// O formato das respostas é o da própria API (api/src/tipos.ts): campo renomeado lá vira erro de tipo aqui.
+import type { Analises, Bem, Categoria, CategoriaComUsos, Conexao, Conta, ContaLinha, Contas, Grupo, Lancamento, LancamentoEditado } from "../../../api/src/tipos";
+import type { ListaLancamentos, Meta, Metas, Ok, Orcamento, Patrimonio, Posicao, PreviaRegra, Recorrente, Regra, RegraCriada } from "../../../api/src/tipos";
+import type { ResultadoSync, Resumo, Ritmo, Sentido, Sincronizacao, TotaisLancamentos } from "../../../api/src/tipos";
+export type * from "../../../api/src/tipos";
 
 /** Contas e cartões separados, sem grupo vazio. */
 export const porTipo = (cs: Conta[]) =>
   ([["Contas", cs.filter((c) => c.tipo !== "CREDIT")], ["Cartões de crédito", cs.filter((c) => c.tipo === "CREDIT")]] as const).filter(([, l]) => l.length);
 
-export interface Investimento {
-  id: string;
-  nome: string | null;
-  tipo: string | null; // RESERVA = cofrinho ou caixinha de uma conta
-  saldo_centavos: number | null;
-  conector: string | null;
-  conta_id: string | null; // só reserva
-  conta: string | null;
-  oculta: number;
-}
-
-export interface Conexao {
-  item_id: string;
-  conector: string | null;
-  imagem_url: string | null;
-  status: string | null;
-  status_execucao: string | null;
-  atualizado_pluggy: string | null; // até quando vão os dados que o banco entregou (ultimo_sync = quando nós lemos)
-  ultimo_sync: string | null;
-  erro: string | null;
-  contas: number;
-  nomes_contas: string | null;
-}
-
-export interface ResultadoSync {
-  item_id: string;
-  conector: string | null;
-  contas: number;
-  novos: number;
-  atualizados: number;
-  erro?: string;
-}
-
-export interface Resumo {
-  mes: string;
-  entradas: number;
-  saidas: number;
-  pendentes: number;
-  porCategoria: { categoria_id: number | null; categoria: string; cor: string | null; total: number; qtd: number }[];
-}
-
-export interface Recorrente {
-  chave: string; // com valor_chave, diz qual é a cobrança
-  valor_chave: number;
-  descricao: string;
-  antes: string | null; // nome anterior, se o lojista trocou
-  categoria: string | null;
-  cor: string | null;
-  conta: string | null;
-  valor: number; // positivo: o da última cobrança
-  vezes: number;
-  ultima: string;
-  proxima: string;
-  situacao: "prevista" | "atrasada" | "parada";
-  status: "confirmada" | "ignorada" | "cancelada" | null;
-  proposta: "confirmada" | "ignorada" | "cancelada" | "sugerida" | null; // do Claude, esperando aceitar
-  cobrou_depois: { data: string; valor: number } | null; // cancelada que voltou a cobrar
-}
-
-export interface Bem {
-  id: number;
-  nome: string;
-  valor_centavos: number;
-}
-export interface Patrimonio {
-  contas: number;
-  investimentos: number;
-  bens: number;
-  dividas: number;
-  total: number;
-  historico: { data: string; total: number }[];
-  lista_bens: Bem[];
-}
-
-export interface LinhaOrcamento {
-  categoria_id: number;
-  categoria: string;
-  cor: string | null;
-  grupo: Categoria["grupo"];
-  planejado: number | null;
-  realizado: number;
-}
-export interface LinhaRenda {
-  categoria_id: number;
-  categoria: string;
-  cor: string | null;
-  planejado: number | null; // renda esperada digitada
-  sugerido: number | null; // mediana dos 3 últimos meses fechados
-  recebido: number;
-}
-export interface Orcamento {
-  mes: string;
-  planejado: number; // total, sem a renda
-  gasto: number; // total, igual às saídas do Resumo
-  linhas: LinhaOrcamento[]; // em categoria de renda (só aparece se teve saída), planejado é sempre nulo
-  sem_categoria: number;
-  renda: LinhaRenda[];
-  renda_esperada: number | null;
-  renda_origem: "definida" | "mediana";
-  metas: number; // o que as metas pedem no mês
-  entradas_sem_categoria: number;
-}
-
-/** A renda aguenta o mês? Só PF. nivel nulo = sem contra o que comparar, mês futuro ou mês com renda incompleta. */
-export interface Ritmo {
-  mes: string;
-  situacao: "aberto" | "fechado" | "futuro";
-  hoje: string;
-  dados_ate: string; // último dia com dado de todos os bancos: a projeção não conta os dias depois dele
-  inicio_antes: string | null; // o mês inicial automático mudou na virada do mês: era este
-  analisado: boolean; // falso = antes do primeiro mês com a renda completa
-  renda: { esperada: number | null; origem: "definida" | "mediana"; recebida: number; extra: number };
-  orcado: number;
-  gasto: number;
-  nao_apareceu: { conta_id: string; conta: string | null; valor: number }[]; // só no mês aberto: teto por cartão, fora de gasto
-  parcelas_previstas: number; // só em mês futuro; fora de gasto
-  sobra: number;
-  metas: number; // o que elas pedem no mês
-  falta_metas: number; // quanto falta para sobrar isso (mês aberto: pela projeção)
-  teto: number | null; // renda esperada menos as metas; sem renda, o orçado
-  projecao: { min: number; max: number; media: number } | null;
-  nivel: "verde" | "amarelo" | "vermelho" | null;
-  por_dia: { valor: number; no_ritmo: number | null; livre: number; dias: number; recorrentes: number } | null; // no_ritmo = o que a projeção supõe
-  acumulado: { de: string; ate: string; meses: number; entradas: number; gasto: number; sobra: number } | null;
-  acima: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number; acima: number }[];
-  canceladas_cobradas: { descricao: string; data: string; valor: number }[]; // só no mês aberto
-}
-
-/** O que uma regra mudaria (`total`); nos exemplos, o que já tem categoria vem primeiro. `parecidos` = os que têm o texto, mudem ou não. */
-export interface PreviaRegra {
-  parecidos: number;
-  total: number;
-  pendentes: number;
-  descricoes: number;
-  exemplos: { descricao: string | null; categoria: string | null; vai_para?: string | null; qtd: number }[]; // vai_para: não vai para a da regra
-}
-
-export type Sentido = "saida" | "entrada";
 export const SENTIDOS: Record<Sentido, string> = { saida: "só saída", entrada: "só entrada" };
 
-/** sentido nulo = entrada e saída; conta nula = todas. */
-export interface Regra {
-  id: number;
-  padrao: string;
-  sentido: Sentido | null;
-  conta_id: string | null;
-  conta: string | null;
-  categoria_id: number;
-  categoria: string;
-  descricao: string | null;
-  usos: number;
-}
-
-/** Página Análises: só PF, mesmos totais do Resumo. Nulo = não há o que comparar. */
-export interface Analises {
-  mes: string;
-  mes_atual: string;
-  inicio: string | null;
-  inicio_automatico: string | null;
-  inicio_definido: boolean;
-  inicio_antes: string | null; // o automático mudou na virada do mês: era este
-  orcado_hoje: number | null;
-  meses: { mes: string; aberto: boolean; entradas: number; gasto: number; orcado: number | null; metas: number | null; sobra: number; acumulado: number | null }[];
-  dia_a_dia: { dados_ate: string; dias: number[]; anterior: number[] | null; mes_anterior: string; ja_lancado: number; orcado: number | null; esperada: number | null; metas: number };
-  categorias: { categoria_id: number; categoria: string; cor: string | null; gasto: number; normal: number | null; mes_passado: number | null; orcado: number | null }[];
-  comprometido: { mes: string; parcelas: number; previstas: number; recorrentes: number; esperada: number | null }[];
-}
-
-/** Só PF. Progresso nulo = nada ligado, ou a posição saiu do patrimônio. */
-export interface Meta {
-  id: number;
-  nome: string;
-  tipo: "guardar" | "juntar" | "quitar";
-  alvo: number | null; // juntar = quanto; quitar = quanto a dívida era
-  prazo: string | null;
-  por_mes: number | null; // o que pede no mês escolhido
-  origem: Posicao["origem"] | null;
-  ref_id: string | null;
-  encerrada_em: string | null;
-  medida: { nome: string | null; conta: string | null; valor: number } | null;
-  falta: number | null;
-  feito: number | null; // quitar: negativo = a dívida cresceu
-  chega: string | null; // com o por_mes digitado
-  precisa: number | null; // por mês, para chegar no prazo
-  andou: { dias: number; por_mes: number; chega: string | null } | null; // de verdade, pelas fotos do saldo
-}
-/** O que pode medir uma meta: dívida só serve para quitar, o resto para juntar. */
-export interface Posicao {
-  origem: "conta" | "investimento" | "bem";
-  ref_id: string;
-  nome: string | null;
-  conta: string | null; // só cofrinho
-  valor: number;
-  serve: "juntar" | "quitar";
-}
-export interface Metas {
-  mes: string;
-  total: number;
-  metas: Meta[];
-  posicoes: Posicao[];
-}
 export interface EdicaoMeta {
   nome?: string;
   alvo?: number;
@@ -277,14 +18,6 @@ export interface EdicaoMeta {
   por_mes?: number;
   mes?: string; // o por_mes vale deste mês em diante
   medida?: Pick<Posicao, "origem" | "ref_id"> | null;
-}
-
-/** Rodapé de Lançamentos: a regra do Resumo sobre a lista inteira. Gastos positivos, já com estornos abatidos; fora = transferências. */
-export interface TotaisLancamentos {
-  entradas: number;
-  gastos: number;
-  fora_entrou: number;
-  fora_saiu: number;
 }
 
 export interface FiltroLancamentos {
@@ -321,55 +54,55 @@ export const api = {
   connectToken: (itemId?: string) => req<{ accessToken: string }>("POST", "/api/pluggy/connect-token", { itemId }),
   conexoes: () => req<Conexao[]>("GET", "/api/conexoes"),
   salvarConexao: (itemId: string) => req<ResultadoSync>("POST", "/api/conexoes", { itemId }),
-  sincronizar: (itemId?: string) => req<{ resultados: ResultadoSync[] }>("POST", "/api/sync", { itemId }),
+  sincronizar: (itemId?: string) => req<Sincronizacao>("POST", "/api/sync", { itemId }),
 
-  contas: () => req<{ contas: Conta[]; investimentos: Investimento[] }>("GET", "/api/contas"),
+  contas: () => req<Contas>("GET", "/api/contas"),
   editarConta: (id: string, d: { apelido?: string | null; pessoa?: "PF" | "PJ"; oculta?: boolean; usa_reservas?: boolean }) =>
-    req<Conta>("PATCH", `/api/contas/${id}`, d),
+    req<ContaLinha>("PATCH", `/api/contas/${id}`, d),
 
   meses: () => req<string[]>("GET", "/api/meses"),
-  lancamentos: (f: FiltroLancamentos) => req<{ itens: Lancamento[]; total: number }>("GET", `/api/lancamentos${qsLancamentos(f)}`),
+  lancamentos: (f: FiltroLancamentos) => req<ListaLancamentos>("GET", `/api/lancamentos${qsLancamentos(f)}`),
   totaisLancamentos: (f: FiltroLancamentos) => req<TotaisLancamentos>("GET", `/api/lancamentos/totais${qsLancamentos(f)}`),
   editarLancamento: (
     id: string,
     d: { descricao?: string; categoria_id?: number | null; notas?: string | null; tags?: string[]; ignorado?: boolean },
-  ) => req<Lancamento & { tambem_mudaram: Lancamento[] }>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
+  ) => req<LancamentoEditado>("PATCH", `/api/lancamentos/${encodeURIComponent(id)}`, d),
 
   comprasDoEstorno: (id: string) => req<Lancamento[]>("GET", `/api/lancamentos/${encodeURIComponent(id)}/compras`),
 
   resumo: (mes: string, pessoa = "PF") => req<Resumo>("GET", `/api/resumo${qs({ mes, pessoa })}`),
 
   recorrentes: (pessoa: string) => req<Recorrente[]>("GET", `/api/recorrentes${qs({ pessoa })}`),
-  decidirRecorrente: (d: { chave: string; valor: number; status: Recorrente["status"] }) => req<{ ok: true }>("PUT", "/api/recorrentes", d),
+  decidirRecorrente: (d: { chave: string; valor: number; status: Recorrente["status"] }) => req<Ok>("PUT", "/api/recorrentes", d),
 
   patrimonio: (pessoa: string) => req<Patrimonio>("GET", `/api/patrimonio${qs({ pessoa })}`),
   criarBem: (d: { nome: string; valor_centavos: number; pessoa: "PF" | "PJ" }) => req<Bem>("POST", "/api/bens", d),
   editarBem: (id: number, d: { nome?: string; valor_centavos?: number }) => req<Bem>("PATCH", `/api/bens/${id}`, d),
-  apagarBem: (id: number) => req<{ ok: true }>("DELETE", `/api/bens/${id}`),
+  apagarBem: (id: number) => req<Ok>("DELETE", `/api/bens/${id}`),
 
   metas: (mes: string) => req<Metas>("GET", `/api/metas${qs({ mes })}`),
   criarMeta: (d: EdicaoMeta & { nome: string; tipo: Meta["tipo"] }) => req<Meta>("POST", "/api/metas", d),
   editarMeta: (id: number, d: EdicaoMeta & { encerrada?: boolean }) => req<Meta>("PATCH", `/api/metas/${id}`, d),
-  apagarMeta: (id: number) => req<{ ok: true }>("DELETE", `/api/metas/${id}`),
+  apagarMeta: (id: number) => req<Ok>("DELETE", `/api/metas/${id}`),
 
   ritmo: (mes: string) => req<Ritmo>("GET", `/api/ritmo${qs({ mes })}`),
 
   analises: (mes: string) => req<Analises>("GET", `/api/analises${qs({ mes })}`),
-  definirInicio: (mes: string | null) => req<{ ok: true }>("PUT", "/api/analises/inicio", { mes }),
+  definirInicio: (mes: string | null) => req<Ok>("PUT", "/api/analises/inicio", { mes }),
 
   orcamento: (mes: string) => req<Orcamento>("GET", `/api/orcamento${qs({ mes })}`),
-  salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<{ ok: true }>("PUT", "/api/orcamento", d),
+  salvarOrcamento: (d: { mes: string; categoria_id: number; valor_centavos: number }) => req<Ok>("PUT", "/api/orcamento", d),
 
   categorias: () => req<CategoriaComUsos[]>("GET", "/api/categorias"),
   criarCategoria: (d: { nome: string; grupo: Categoria["grupo"]; cor?: string }) => req<Categoria>("POST", "/api/categorias", d),
-  apagarCategoria: (id: number) => req<{ ok: true }>("DELETE", `/api/categorias/${id}`),
+  apagarCategoria: (id: number) => req<Ok>("DELETE", `/api/categorias/${id}`),
   mesclarCategoria: (id: number, destino: number) =>
-    req<{ ok: true; lancamentos: number; regras: number }>("POST", `/api/categorias/${id}/mesclar`, { destino }),
+    req<Ok & { lancamentos: number; regras: number }>("POST", `/api/categorias/${id}/mesclar`, { destino }),
   regras: () => req<Regra[]>("GET", "/api/regras"),
   previaRegra: (padrao: string, sentido: Sentido | null, categoria: number | null) =>
     req<PreviaRegra>("GET", `/api/regras/previa${qs({ padrao, sentido: sentido ?? undefined, categoria_id: categoria ?? undefined })}`),
-  criarRegra: (d: { padrao: string; sentido: Sentido | null; categoria_id: number }) => req<{ regra: Regra; recategorizados: number }>("POST", "/api/regras", d),
-  apagarRegra: (id: number) => req<{ ok: boolean; recategorizados: number }>("DELETE", `/api/regras/${id}`),
+  criarRegra: (d: { padrao: string; sentido: Sentido | null; categoria_id: number }) => req<RegraCriada>("POST", "/api/regras", d),
+  apagarRegra: (id: number) => req<Ok & { recategorizados: number }>("DELETE", `/api/regras/${id}`),
 };
 
 /** Texto inicial de uma regra: a descrição sem a parcela nem os números do fim. Precisa ser um trecho contínuo do original. */
@@ -438,7 +171,7 @@ const PLUGGY_PT: Record<string, string> = {
   "Entrepreneurial activities": "Atividades empreendedoras",
 };
 export const nomePluggy = (categoria: string) => PLUGGY_PT[categoria] ?? categoria;
-export const GRUPOS = {
+export const GRUPOS: Record<Grupo, string> = {
   essencial: "Essencial",
   estilo_de_vida: "Estilo de vida",
   financeiro: "Financeiro",
