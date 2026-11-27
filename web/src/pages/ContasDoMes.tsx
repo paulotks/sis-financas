@@ -347,6 +347,7 @@ function Situacao({ l }: { l: Compromisso }) {
 
 function Detalhe({ f }: { f: CompromissoFatura }) {
   const prevista = (p: boolean) => p && <span className="selo">prevista</span>;
+  const total = (l: { valor: number }[]) => <span className="num">{dinheiro(l.reduce((s, x) => s + x.valor, 0))}</span>;
   return (
     <div className="fatura-aberta">
       <p className="mudo pequeno">
@@ -357,13 +358,13 @@ function Detalhe({ f }: { f: CompromissoFatura }) {
       </p>
       {f.recorrentes.length > 0 && (
         <>
-          <h3>Recorrentes do cartão</h3>
+          <h3>Recorrentes do cartão {total(f.recorrentes)}</h3>
           <ul>{f.recorrentes.map((r, i) => <li key={i}><span>{r.nome} {prevista(r.prevista)}</span><span className="num">{dinheiro(r.valor)}</span></li>)}</ul>
         </>
       )}
       {f.parcelas.length > 0 && (
         <>
-          <h3>Parcelas</h3>
+          <h3>Parcelas {total(f.parcelas)}</h3>
           <ul>{f.parcelas.map((p, i) => <li key={i}><span>{p.descricao} <span className="mudo">{p.parcela}/{p.total}</span> {prevista(p.prevista)}</span><span className="num">{dinheiro(p.valor)}</span></li>)}</ul>
         </>
       )}
