@@ -276,6 +276,10 @@ export const MIGRACOES: string[] = [
     PRIMARY KEY (compromisso_id, mes)
   );
   `,
+  // Carro separado de Transporte (manutenção, pneu, estacionamento, pedágio, multa): o mapa da Pluggy acha pelo nome
+  `
+  INSERT OR IGNORE INTO categorias (nome, grupo, cor) VALUES ('Carro','essencial','#e58e26');
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo
