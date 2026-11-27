@@ -21,7 +21,16 @@ export const env = {
   pluggyUrl: process.env.PLUGGY_API_URL || "https://api.pluggy.ai",
   syncDiasIniciais: Number(process.env.SYNC_DIAS_INICIAIS) || 365,
   webDist: path.join(RAIZ, "web", "dist"),
+  // site público (túnel com login na frente) que pode gravar; só https. O Host continua só os locais: o túnel reescreve.
+  origemExterna: origemHttps(process.env.ORIGEM_EXTERNA),
 };
+
+function origemHttps(valor?: string) {
+  if (!valor) return null;
+  const url = new URL(valor);
+  if (url.protocol !== "https:") throw new Error("ORIGEM_EXTERNA precisa ser https://");
+  return url.origin;
+}
 
 export function credenciaisPluggy() {
   const clientId = process.env.PLUGGY_CLIENT_ID ?? process.env.CLIENT_ID;

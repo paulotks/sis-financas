@@ -38,6 +38,8 @@ const ORIGENS = new Set(
   [5173, env.porta].flatMap((p) => NOMES.map((n) => new URL(`http://${n}:${p}`).origin)), // .origin tira o ":80", como o navegador
 );
 const HOSTS = new Set([...ORIGENS].map((o) => new URL(o).host));
+// Túnel (ORIGEM_EXTERNA no .env): só a origem, depois de montar HOSTS. O login da Cloudflare Access é a tranca.
+if (env.origemExterna) ORIGENS.add(env.origemExterna);
 app.addHook("onRequest", async (req, reply) => {
   // Host de fora = DNS rebinding: um site qualquer apontando o próprio domínio para 127.0.0.1 leria os dados via GET
   if (!HOSTS.has(req.headers.host ?? "")) return reply.code(403).send({ erro: "host não permitido" });

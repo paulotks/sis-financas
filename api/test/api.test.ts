@@ -61,6 +61,7 @@ Object.assign(process.env, {
   COPIAS_DIR: path.join(dir, "copias"), // sem isto, um .env com a pasta real faria o teste girar as cópias de verdade
   PORT: String(PORTA),
   SYNC_DIAS_INICIAIS: "365",
+  ORIGEM_EXTERNA: "https://app.exemplo.com", // .env não sobrescreve o que já está no ambiente
 });
 const { app } = await import("../src/server.js");
 const { copiaDoDia, db, migrar, MIGRACOES, transacao } = await import("../src/db.js");
@@ -508,6 +509,10 @@ test("API: host e origem de fora são recusados; erro de dados não vira 500", a
     assert.equal((await chamar("POST", "/api/regras", {}, { origin: `http://${host}` })).status, 403, host);
   }
   assert.equal((await chamar("POST", "/api/regras", {}, { origin: `https://${nome}` })).status, 403);
+  // túnel: a origem externa grava; como Host, não vale (o túnel reescreve para o nome local)
+  assert.equal((await chamar("POST", "/api/regras", {}, { origin: "https://app.exemplo.com" })).status, 400);
+  assert.equal((await chamar("POST", "/api/regras", {}, { origin: "http://app.exemplo.com" })).status, 403);
+  assert.equal((await chamar("GET", "/api/saude", undefined, { host: "app.exemplo.com" })).status, 403);
   assert.equal((await chamar("POST", "/api/categorias", { nome: "Pet", grupo: "essencial" })).status, 409);
   assert.equal((await chamar("PATCH", "/api/lancamentos/a2", { categoria_id: 9999 })).status, 400);
   assert.equal((await chamar("PATCH", `/api/contas/${ITEM2}`, { pessoa: "PJ" })).status, 404);

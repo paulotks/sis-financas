@@ -58,7 +58,7 @@ web/src/
 
 - `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` ficam **só** no `.env` da raiz (no `.gitignore`). Nunca no front, em log, em commit ou no chat. Não leia nem exiba os valores.
 - O navegador só recebe o Connect Token (vale 30 min), criado em `POST /api/pluggy/connect-token`.
-- A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem que não seja `localhost`, `127.0.0.1` ou `meu-financeiro.localhost`, na 5173 ou na porta da API. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe: nome novo aqui só se terminar em `.localhost` (reservado, ninguém registra).
+- A API escuta **só em 127.0.0.1**. O hook `onRequest` recusa POST/PATCH/DELETE de origem que não seja `localhost`, `127.0.0.1` ou `meu-financeiro.localhost`, na 5173 ou na porta da API. Também recusa qualquer pedido com `Host` de fora (DNS rebinding). Não afrouxe: nome novo aqui só se terminar em `.localhost` (reservado, ninguém registra). Única exceção: `ORIGEM_EXTERNA` (`.env`, só https) entra como **origem** de escrita, nunca como `Host`; é o túnel com login da Cloudflare Access na frente, que reescreve o `Host` para `meu-financeiro.localhost`.
 - `data/` (a base), `.env` e `CLAUDE.local.md` nunca vão para o Git. Antes de commitar, confira o `git status`.
 - O repositório é público: nada de nome de pessoa, saldo, valor, extrato, contagem ou data de lançamento real, em arquivo nenhum nem em mensagem de commit.
 - Validar toda entrada com zod; SQL sempre com parâmetros (`?`), nunca concatenando valor.
