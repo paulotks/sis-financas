@@ -19,9 +19,9 @@ npm run app:parar | app:iniciar | app:reiniciar   # o app de uso diário (tarefa
 ```
 
 **O app de uso diário roda sempre**, em http://meu-financeiro.localhost (porta 80; tarefa agendada `sis-financas`, `app-windows.ps1`), usando `dist`:
-- Para usar `npm run dev` (3333/5173): `npm run app:parar` antes e `npm run app:iniciar` no fim. As portas não brigam, mas os dois gravam na mesma base. Com o app parado, o MCP do Claude Desktop fica fora do ar (ele fala com a porta 80).
+- Para usar `npm run dev` (3333/5173): `npm run app:parar` antes e `npm run app:iniciar` no fim. As portas não brigam, mas os dois gravam na mesma base. Com o app parado, o MCP (`/mcp` na porta 80) fica fora do ar.
 - `dist` é o que está em uso e `migrar()` roda a cada início na base real: **build na pasta principal só a partir do `main`**; branch com migração, só em worktree (ver Fluxo de trabalho).
-- Depois de um build: `npm run app:reiniciar`. Mudou `mcp.ts`: reiniciar também o Claude Desktop.
+- Depois de um build: `npm run app:reiniciar`. Mudou `mcp.ts`: o `app:reiniciar` já basta (o conector relê as ferramentas).
 
 Node **22.13+** (usa `node:sqlite`, sem dependência nativa).
 
@@ -44,7 +44,7 @@ api/src/
   faltas.ts       avisos do que o banco não mandou: parcelas previstas, fatura que não fecha, gasto que o limite já conta
   compromissos.ts Contas do mês: contas à mão, recorrentes que saem de conta e a fatura de cada cartão, pelo vencimento, com o pago (funções puras + a leitura do mês; o ano chama a do mês 12 vezes)
   server.ts       rotas Fastify + zod; serve web/dist se existir
-  mcp.ts          MCP para o Claude Desktop: ferramentas sobre a API (mcp-stdio.ts é só a entrada)
+  mcp.ts          MCP: ferramentas sobre a API (servido em POST /mcp pelo server.ts)
   tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
 web/src/
   lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
@@ -67,13 +67,14 @@ web/src/
 
 ## MCP do app (`api/src/mcp.ts`)
 
-- Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: o processo não pode ter as credenciais da Pluggy nem abrir a base. Nada de `console.log` (a saída padrão é o protocolo).
+- Só repassa pedidos para a API em 127.0.0.1. **Não importe `env.ts` nem `db.ts` nele**: tudo passa pelas rotas, com as mesmas validações da tela.
+- Entrada única: `POST /mcp` em `server.ts` (Streamable HTTP sem sessão, um servidor por pedido; conector remoto pelo túnel). O `/mcp` não tem login próprio: a tranca é a Cloudflare Access (Managed OAuth) na frente do túnel, e o hook de Host/origem vale igual.
 - Saída campo a campo, nunca a linha inteira: número da conta e `bruto` não saem. Dinheiro em **reais** só nessa borda.
 - Sem conectar banco, apagar, trocar PF/PJ, bens, responder se a conta usa cofrinho, encerrar meta, ligá-la a uma posição ou marcar lançamento como ignorado: muda os totais e fica só na tela (o teste confere a lista de ferramentas). PF é o padrão.
 - Recorrente: o MCP só **propõe** (`propor_recorrente`, coluna `proposta`); nada muda até o Paulo aceitar na tela. Nunca ligue o MCP ao `PUT /api/recorrentes`.
 - Conta à mão (Contas do mês): o MCP cria e edita (`definir_compromisso`) e marca ou desfaz o pago (`marcar_compromisso_pago`); **não apaga** (o teste confere).
 - `criar_regra` exige o `total_previsto` da prévia (quantos mudam de categoria: depende da categoria, e sai do mesmo `calcular` da gravação) e não troca regra existente sem `substituir`. Não afrouxe: uma regra recategoriza o histórico inteiro, e o Cowork gravou sem pedir confirmação (não conte com ela como trava).
-- **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do Desktop sabe).
+- **O MCP acompanha o sistema sempre**: tela ou dado novo entra no MCP no mesmo lote (menos o que está proibido acima). Mudou uma convenção de dados? Atualize também `CONVENCOES` em `mcp.ts` (é o que o Claude do conector sabe).
 - SDK `@modelcontextprotocol/sdk` 1.x; a v2 exige zod 4 (migrar os dois juntos).
 
 ## Convenções de dados

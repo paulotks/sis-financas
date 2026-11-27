@@ -127,25 +127,19 @@ npm test           # Pluggy falsa e base temporária; não usa credenciais nem a
 
 O `npm run dev` usa a mesma base de `data/`. Convenções do projeto: [`CLAUDE.md`](CLAUDE.md).
 
-## Assistente no Claude Desktop (MCP local)
+## Assistente no Claude (MCP)
 
-O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API da tela. Precisa do app rodando (ele sobe com o Windows; ver "Uso diário").
+O app tem um MCP que deixa o Claude ler e organizar as finanças pela mesma API da tela. Ele é servido pelo próprio app em `POST /mcp` (Streamable HTTP), então precisa do app rodando (ele sobe com o Windows; ver "Uso diário").
 
-1. `npm run build`.
-2. Feche o Claude Desktop por completo e acrescente em `mcpServers`, no `claude_desktop_config.json`:
-   ```json
-   "financas": { "command": "C:/nvm4w/nodejs/node.exe", "args": ["C:/sis-financas/api/dist/mcp-stdio.js"] }
-   ```
-   Troque pelos seus caminhos: o do Node (`(Get-Command node).Source`) e o da pasta do projeto, com barras `/`.
-   O MCP procura o app na porta 80. Se você usa `npm start`, some `"env": { "PORT": "3333" }`.
-3. Abra o Claude Desktop e peça: "use o financas e chame estado".
+- **Neste PC (Claude Code):** `claude mcp add --transport http financas http://127.0.0.1/mcp`.
+- **De fora (claude.ai, outros PCs):** publique o app por um túnel com login na frente (ex.: Cloudflare Access com Managed OAuth) e adicione `https://<seu-dominio>/mcp` como conector personalizado. O `/mcp` não tem login próprio: sem a tranca do túnel, não exponha.
 
-Depois de mudar o MCP, rode o build e reinicie o Claude Desktop.
+Depois de mudar o MCP: `npm run build` e `npm run app:reiniciar`.
 
 - **Lê:** estado, resumo, ritmo do mês, análises, orçamento com a renda esperada, lançamentos, compras de um estorno, pendentes agrupados, categorias, regras, prévia de regra, recorrentes, metas, patrimônio e contas.
 - **Grava:** regra (só com a prévia conferida), lançamento, categoria, orçamento, meta, mês inicial da análise e sincronização. Em recorrentes ele só propõe: você aceita ou recusa na tela. **O Cowork pode gravar sem pedir confirmação** (aconteceu em 24/11/2026): use o modo Manual no seletor da conversa ou marque essas ferramentas como "Sempre perguntar", se elas aparecerem em Customize > Connectors. O pedido de "ok" nas convenções é só uma instrução ao modelo, não uma trava.
 - **Não faz:** conectar banco, apagar, trocar PF/PJ, mexer em bens, dizer se a conta usa cofrinho, encerrar meta ou ligá-la a uma conta.
-- O que ele lê passa pela conversa do Claude, na conta em que o Desktop está logado.
+- O que ele lê passa pela conversa do Claude, na conta em que você está logado.
 
 ## Segurança
 

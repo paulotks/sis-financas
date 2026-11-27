@@ -4,7 +4,7 @@
 param([Parameter(Mandatory)][ValidateSet('instalar', 'iniciar', 'parar', 'reiniciar', 'remover')][string]$acao)
 $ErrorActionPreference = 'Stop'
 $tarefa = 'sis-financas'
-$porta = 80 # sem numero no endereco; a 3333 fica para o npm run dev. Se mudar, mude tambem em api/src/mcp-stdio.ts
+$porta = 80 # sem numero no endereco; a 3333 fica para o npm run dev
 $endereco = 'http://meu-financeiro.localhost' # o nome e aceito em api/src/server.ts
 
 function Install-App {

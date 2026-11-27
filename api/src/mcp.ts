@@ -1,7 +1,7 @@
 /**
  * MCP do sis-financas: deixa o Claude ler e organizar as finanças pela mesma API da tela.
- * Só repassa pedidos HTTP. Não importa env.ts nem db.ts de propósito: este processo nunca tem as credenciais da Pluggy
- * nem abre a base. O transporte fica em mcp-stdio.ts.
+ * Só repassa pedidos HTTP para a API, mesmo rodando dentro dela: não importa env.ts nem db.ts, e não grava nem lê a base direto.
+ * O transporte fica no POST /mcp de server.ts.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";

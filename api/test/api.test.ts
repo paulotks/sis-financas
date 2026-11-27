@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const ITEM = "11111111-1111-4111-8111-111111111111";
 const ITEM2 = "22222222-2222-4222-8222-222222222222";
@@ -1483,6 +1484,20 @@ test("recorrentes: usa os filtros do resumo, ignora futuro e parcela, e guarda a
   assert.deepEqual(linhaDe().map((l) => [l.valor_centavos, l.status]), [[1990, "confirmada"]]);
   await chamar("PUT", "/api/recorrentes", { chave: "spotify", valor: 2490, status: null });
   assert.equal((await chamar("GET", "/api/recorrentes?pessoa=PJ")).d.length, 0);
+});
+
+test("MCP por HTTP: initialize e tools/list no /mcp, como chega pelo túnel", async () => {
+  const cliente = new Client({ name: "teste", version: "0" });
+  // o túnel reescreve o Host para meu-financeiro.localhost; cliente MCP não manda Origin
+  await cliente.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORTA}/mcp`), {
+    requestInit: { headers: { host: `meu-financeiro.localhost:${PORTA}` } },
+  }));
+  const { tools } = await cliente.listTools();
+  assert.ok(tools.length > 20);
+  assert.ok(tools.some((t) => t.name === "ritmo_do_mes"));
+  await cliente.close();
+  assert.equal((await chamar("GET", "/mcp")).status, 405);
+  assert.equal((await chamar("POST", "/mcp", {}, { host: `evil.com:${PORTA}` })).status, 403);
 });
 
 async function ligarMcp(base = `http://127.0.0.1:${PORTA}`) {

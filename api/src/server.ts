@@ -1,6 +1,8 @@
 import fs from "node:fs";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { criarServidor } from "./mcp.js";
 import { z, ZodError } from "zod";
 import { candidatosPara, compromissosDoAno, compromissosDoMes, lerCadastros, MINIMO_LETRAS_DO_TEXTO, normalizarTexto } from "./compromissos.js";
 import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
@@ -767,6 +769,26 @@ app.delete("/api/regras/:id", async (req): Promise<Ok & { recategorizados: numbe
 });
 
 app.get("/api/saude", async () => ({ ok: true }));
+
+// ---------------- MCP por HTTP (conector remoto pelo túnel; o login é da Cloudflare Access) ----------------
+
+// Sem sessão: um servidor e um transporte por pedido (mcp.ts fala com esta API por HTTP).
+app.post("/mcp", async (req, reply) => {
+  const servidor = criarServidor(`http://127.0.0.1:${env.porta}`);
+  const transporte = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  reply.raw.on("close", () => {
+    void transporte.close();
+    void servidor.close();
+  });
+  reply.hijack();
+  await servidor.connect(transporte);
+  await transporte.handleRequest(req.raw, reply.raw, req.body);
+});
+// sem sessão não há fluxo GET nem sessão para encerrar (como no exemplo stateless do SDK)
+const semSessao = async (_req: unknown, reply: FastifyReply) =>
+  reply.code(405).header("allow", "POST").send({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
+app.get("/mcp", semSessao);
+app.delete("/mcp", semSessao);
 
 // ---------------- front compilado (npm run build && npm start) ----------------
 
