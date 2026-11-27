@@ -75,7 +75,7 @@ export default function App() {
             </NavLink>
           ))}
           {/* só no celular: o que não cabe na barra de baixo */}
-          <button className={`botao-mais ${MENU.some((m) => !("fixo" in m) && pathname.startsWith(m.to)) ? "ativo" : ""}`} popoverTarget="menu-mais">
+          <button className={`botao-mais ${MENU.some((m) => !("fixo" in m) && pathname === m.to) ? "ativo" : ""}`} popoverTarget="menu-mais">
             <span className="icone" aria-hidden="true">⋯</span>
             Mais
           </button>

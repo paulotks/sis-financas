@@ -105,14 +105,14 @@ function Mes() {
       {nova && <Nova mes={mes} salvando={criar.isPending} onCriar={(k, depois) => criar.mutate(k, { onSuccess: () => (depois(), setNova(false)) })} />}
 
       <div className="tabela-wrap">
-        <table className="tabela compacta contas-do-mes">
+        <table className="tabela compacta cartoes contas-do-mes">
           <thead>
             <tr>
-              <th style={{ width: 70 }}>Dia</th>
-              <th>Conta</th>
-              <th className="num" style={{ width: 130 }}>Valor</th>
-              <th style={{ width: 280 }}>Situação</th>
-              <th style={{ width: 330 }}><span className="so-leitor">Ações</span></th>
+              <th className="c-dia">Dia</th>
+              <th className="c-conta">Conta</th>
+              <th className="c-valor num">Valor</th>
+              <th className="c-sit">Situação</th>
+              <th className="c-acoes"><span className="so-leitor">Ações</span></th>
             </tr>
           </thead>
           <tbody>
@@ -126,8 +126,8 @@ function Mes() {
                 return (
                   <Fragment key={id}>
                     <tr className={resolvida ? "resolvida" : ""}>
-                      <td>{dataCurta(l.dia)}</td>
-                      <td>
+                      <td className="c-dia">{dataCurta(l.dia)}</td>
+                      <td className="c-conta">
                         <div className="linha-nome">
                           <CampoTexto nome="nome" valor={k.nome} rotulo={`Nome de ${k.nome}`} maximo={60} obrigatorio onSalvar={(nome) => salvar({ nome })} />
                           <span className="selo">à mão</span>
@@ -144,12 +144,12 @@ function Mes() {
                           </label>
                         </div>
                       </td>
-                      <td className="num">
+                      <td className="c-valor num">
                         <CampoDinheiro valor={k.valor} obrigatorio rotulo={`Valor esperado de ${k.nome}`} onSalvar={(valor) => salvar({ valor })} />
                         {l.situacao === "paga" && l.valor !== k.valor && <div className="sub">pago {dinheiro(l.valor)}</div>}
                       </td>
-                      <td><Situacao l={l} /></td>
-                      <td>
+                      <td className="c-sit"><Situacao l={l} /></td>
+                      <td className="c-acoes">
                         <div className="acoes-linha">
                           {!l.pago_por && (
                             <button className="botao secundario" disabled={marcar.isPending} aria-label={`${l.marcada ? "Desfazer a marca de pago" : "Marcar como pago"}: ${k.nome}`}
@@ -178,8 +178,8 @@ function Mes() {
               return (
                 <Fragment key={id}>
                   <tr className={resolvida ? "resolvida" : ""}>
-                    <td>{dataCurta(l.dia)}</td>
-                    <td>
+                    <td className="c-dia">{dataCurta(l.dia)}</td>
+                    <td className="c-conta">
                       {l.tipo === "recorrente" ? (
                         <>
                           <span className="ponto" style={{ background: l.cor ?? "var(--mudo)" }} />{l.nome}
@@ -195,9 +195,9 @@ function Mes() {
                         </>
                       )}
                     </td>
-                    <td className="num">{l.tipo === "fatura" && l.estimada && "≈ "}{dinheiro(l.valor)}</td>
-                    <td><Situacao l={l} /></td>
-                    <td>
+                    <td className="c-valor num">{l.tipo === "fatura" && l.estimada && "≈ "}{dinheiro(l.valor)}</td>
+                    <td className="c-sit"><Situacao l={l} /></td>
+                    <td className="c-acoes">
                       <div className="acoes-linha">
                         {l.tipo === "recorrente" && l.sugestao && <>{acao(l, "confirmada", "Confirmar")}{acao(l, "ignorada", "Ignorar")}</>}
                         {l.tipo === "fatura" && (
