@@ -145,7 +145,7 @@ function Cartao({ m, mes, opcoes, onSalvar, onEncerrar }: { m: Meta; mes: string
           }}
         />
         <small className="mudo">{TIPOS[m.tipo]}</small>
-        <button className="icone-botao" title="Encerrar: deixa de descontar do teto e guarda os meses anteriores" aria-label={`Encerrar ${m.nome}`} onClick={onEncerrar}>✓</button>
+        <button className="botao secundario" title="Deixa de descontar do teto e guarda os meses anteriores" aria-label={`Encerrar ${m.nome}`} onClick={onEncerrar}>Encerrar</button>
       </header>
       <div className="campos">
         <label>Por mês<CampoDinheiro valor={m.por_mes} rotulo={`Por mês de ${m.nome}`} onSalvar={(por_mes) => onSalvar({ por_mes, mes })} /></label>

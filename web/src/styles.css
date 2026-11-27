@@ -560,4 +560,7 @@ input.dia { width: 52px; }
   .campo, .editavel, select { font-size: 16px; }
   .campo { min-height: 40px; }
   .contas-do-mes .campos-linha .editavel { font-size: 16px; padding: 6px 8px; }
+  /* sem mouse não há hover: o tracejado avisa que o texto se edita ali mesmo */
+  .editavel:not(:focus) { border-bottom: 1px dashed var(--borda); }
+  .conta .acoes .link, .conta .acoes a { min-height: 40px; display: inline-flex; align-items: center; }
 }

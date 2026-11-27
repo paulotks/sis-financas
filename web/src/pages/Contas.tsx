@@ -142,14 +142,16 @@ function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; 
   return (
     <div className={`conta ${c.oculta ? "oculta" : ""}`}>
       <div className="conta-topo">
-        {c.imagem_url && <img src={c.imagem_url} alt="" onError={(e) => (e.currentTarget.style.display = "none")} />}
+        {c.imagem_url && <img src={c.imagem_url} alt="" width={28} height={28} onError={(e) => (e.currentTarget.style.display = "none")} />}
         <input
           className="editavel titulo"
           value={apelido}
           onChange={(e) => setApelido(e.target.value)}
           onBlur={salvarApelido}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          title="Clique para renomear"
+          aria-label={`Nome de ${c.nome ?? "conta"}`}
+          autoComplete="off"
+          title="Toque para renomear"
         />
       </div>
       <small className="mudo">
@@ -197,11 +199,12 @@ function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; 
         <Link to={`/lancamentos?conta=${c.id}${c.pessoa === "PJ" ? "&pessoa=PJ" : ""}`}>Ver lançamentos</Link>
         <div className="segmentado pequeno">
           {(["PF", "PJ"] as const).map((p) => (
-            <button key={p} className={c.pessoa === p ? "ativo" : ""} aria-pressed={c.pessoa === p} onClick={() => c.pessoa !== p && onEditar({ pessoa: p })}>{p}</button>
+            <button key={p} className={c.pessoa === p ? "ativo" : ""} aria-pressed={c.pessoa === p}
+              onClick={() => c.pessoa !== p && confirm(`Passar ${atual} para ${p === "PJ" ? "a empresa (PJ)? Sai do orçamento da casa e dos totais de PF" : "pessoa física (PF)? Entra no orçamento da casa e nos totais de PF"}, em todos os meses.`) && onEditar({ pessoa: p })}>{p}</button>
           ))}
         </div>
-        <button className="icone-botao" title={c.oculta ? "Mostrar" : "Ocultar"} aria-label={`${c.oculta ? "Mostrar" : "Ocultar"} ${atual}`} onClick={() => onEditar({ oculta: !c.oculta })}>
-          {c.oculta ? "◉" : "◌"}
+        <button className="link mudo" aria-label={`${c.oculta ? "Mostrar" : "Ocultar"} ${atual}`} onClick={() => onEditar({ oculta: !c.oculta })}>
+          {c.oculta ? "Mostrar" : "Ocultar"}
         </button>
       </div>
     </div>

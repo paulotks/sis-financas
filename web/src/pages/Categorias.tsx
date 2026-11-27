@@ -100,7 +100,11 @@ export default function Categorias() {
                   </td>
                   <td>{r.categoria}</td>
                   <td>
-                    <button className="icone-botao" title="Apagar regra" aria-label={`Apagar a regra ${r.padrao}`} onClick={() => apagar.mutate(r.id)}>✕</button>
+                    <button className="icone-botao" title="Apagar regra" aria-label={`Apagar a regra ${r.padrao}`}
+                      onClick={() =>
+                        confirm(`Apagar a regra "${r.padrao}"?${r.usos ? ` Os ${r.usos === 1 ? "1 lançamento que ela pega volta" : `${r.usos} lançamentos que ela pega voltam`} para a categoria automática (o que você editou à mão fica).` : ""}`) &&
+                        apagar.mutate(r.id)
+                      }>✕</button>
                   </td>
                 </tr>
               ))}
