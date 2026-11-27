@@ -62,12 +62,13 @@ Object.assign(process.env, {
   COPIAS_DIR: path.join(dir, "copias"), // sem isto, um .env com a pasta real faria o teste girar as cópias de verdade
   PORT: String(PORTA),
   SYNC_DIAS_INICIAIS: "365",
+  SYNC_AUTO_HORAS: "0", // a automática sincronizaria no meio dos testes
   ORIGEM_EXTERNA: "https://app.exemplo.com", // .env não sobrescreve o que já está no ambiente
 });
 const { app } = await import("../src/server.js");
 const { copiaDoDia, db, migrar, MIGRACOES, transacao } = await import("../src/db.js");
 const { env } = await import("../src/env.js");
-const { sincronizar } = await import("../src/sync.js");
+const { sincronizar, sincronizarAtualizados } = await import("../src/sync.js");
 const { reaplicarRegras, sugerirCategoria } = await import("../src/categorizar.js");
 const { detectarRecorrentes, mesSeguinte, chaveDe } = await import("../src/recorrentes.js");
 const { criarServidor } = await import("../src/mcp.js");
@@ -336,6 +337,25 @@ test("sincronizações simultâneas devolvem cada uma o seu resultado", async ()
   const [r1, r2] = await Promise.all([sincronizar(ITEM), sincronizar(ITEM2)]);
   assert.equal(r1[0].item_id, ITEM);
   assert.equal(r2[0].item_id, ITEM2);
+});
+
+test("a automática só sincroniza o banco que atualizou na Pluggy ou ficou com erro", async () => {
+  await Promise.all([sincronizar(ITEM), sincronizar(ITEM2)]);
+  const erro = (id: string, e: string | null) => db.prepare("UPDATE conexoes SET erro = ? WHERE item_id = ?").run(e, id);
+  erro(ITEM, null);
+  erro(ITEM2, null);
+  assert.deepEqual(await sincronizarAtualizados(), []); // nada mudou
+  erro(ITEM2, "falhou");
+  assert.deepEqual((await sincronizarAtualizados()).map((r) => r.item_id), [ITEM2]);
+  const antes = situacao;
+  situacao = { ...EM_DIA, lastUpdatedAt: "2099-01-01T00:00:00.000Z" };
+  try {
+    assert.deepEqual((await sincronizarAtualizados()).map((r) => r.item_id), [ITEM, ITEM2]);
+    assert.deepEqual(await sincronizarAtualizados(), []); // já leu essa atualização
+  } finally {
+    situacao = antes;
+    await Promise.all([sincronizar(ITEM), sincronizar(ITEM2)]); // volta a data da Pluggy na base
+  }
 });
 
 test("categorias da Pluggy caem no lugar certo", () => {

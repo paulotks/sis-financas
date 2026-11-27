@@ -14,7 +14,7 @@ import { INVESTIMENTOS, patrimonio, posicoes, registrarSaldos } from "./patrimon
 import { ErroPluggy, pluggy } from "./pluggy.js";
 import { chaveDe, deveCobrar } from "./recorrentes.js";
 import { diasDoMes, faltaParaMetas, fechadosAntes, mediana, MESES_ACUMULADO, nivelDo, projetar, somarMes } from "./ritmo.js";
-import { salvarConexao, sincronizar } from "./sync.js";
+import { salvarConexao, sincronizar, sincronizarAtualizados } from "./sync.js";
 import {
   BASE_RESUMO, diasComDado, ENTRADA, ESTORNO, fimDoMes, GASTO, gastosPorCategoria, historicoPF, LANCAMENTOS, listarRecorrentes, naoApareceuPF,
   NO_RESUMO, normalPorCategoria, periodo, previstasPF, reguaDoMes, SOMA, somar, totaisDoMes, totaisPorMes, ultimoDiaComDado,
@@ -800,3 +800,13 @@ if (fs.existsSync(env.webDist)) {
 }
 
 await app.listen({ host: "127.0.0.1", port: env.porta });
+
+if (env.syncAutoHoras > 0) {
+  const automatica = () =>
+    sincronizarAtualizados().then(
+      (r) => r.length && app.log.info({ itens: r.map((x) => x.item_id), erros: r.filter((x) => x.erro).length }, "sincronização automática"),
+      (e) => app.log.error(e, "sincronização automática falhou"), // rede fora ou Pluggy fora: tenta na próxima volta
+    );
+  void automatica(); // cobre o PC que ficou desligado
+  setInterval(automatica, env.syncAutoHoras * 3_600_000).unref();
+}

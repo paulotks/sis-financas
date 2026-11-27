@@ -96,7 +96,7 @@ Conecte sempre por esta tela. O guia da Pluggy usa a página **Demo** do Dashboa
 - **Backup:** automático. Uma cópia por dia e uma antes de cada atualização da base, as 14 últimas de cada. Sem configurar, ficam em `data/copias`; ponha no `.env` uma pasta fora do projeto (`COPIAS_DIR=C:/Users/voce/sis-financas-copias`), de preferência em outro disco. Pasta de nuvem leva seus extratos para lá. Se a cópia do dia falhar, o aviso fica em `data/app.log`.
 - **Voltar uma cópia:** pare o app, tire de `data/` os arquivos `financas.db`, `financas.db-wal` e `financas.db-shm` (guarde-os em outro lugar), copie a cópia escolhida para `data/financas.db` e inicie. Não deixe o `-wal` antigo: ele estraga a base restaurada.
 - **O `.env` não entra nas cópias:** guarde o Client Secret num gerenciador de senhas. A Pluggy o mostra uma vez só.
-- **Dados novos:** a Pluggy atualiza 1x por dia; não dá para forçar pelo app.
+- **Dados novos:** a Pluggy atualiza 1x por dia; não dá para forçar pelo app. O app confere ao subir e a cada 3 h (`SYNC_AUTO_HORAS`; 0 desliga) e sincroniza sozinho o banco que atualizou.
 - **Uma vez por ano** a autorização do MeuPluggy vence e é preciso conectar de novo. Faça backup e leia [Problemas conhecidos](#problemas-conhecidos) antes.
 
 ## Uso diário: inicia com o Windows

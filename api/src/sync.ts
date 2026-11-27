@@ -329,3 +329,19 @@ export function sincronizar(itemId?: string, desde?: string): Promise<ResultadoS
   fila = execucao.catch(() => {});
   return execucao;
 }
+
+/**
+ * Sincronização automática. O MeuPluggy atualiza cada banco 1x/dia e não aceita forçar: só vale buscar o item cuja
+ * data de atualização na Pluggy mudou desde a última leitura, ou que ficou com erro (tenta de novo na próxima volta).
+ */
+export async function sincronizarAtualizados(): Promise<ResultadoSync[]> {
+  const conexoes = db.prepare("SELECT item_id, atualizado_pluggy, erro FROM conexoes ORDER BY criado_em").all() as {
+    item_id: string; atualizado_pluggy: string | null; erro: string | null;
+  }[];
+  const out: ResultadoSync[] = [];
+  for (const c of conexoes) {
+    const item = await pluggy.item(c.item_id);
+    if (c.erro || (item.lastUpdatedAt ?? null) !== c.atualizado_pluggy) out.push(...(await sincronizar(c.item_id)));
+  }
+  return out;
+}

@@ -20,6 +20,8 @@ export const env = {
   copiasDir: path.resolve(RAIZ, process.env.COPIAS_DIR || path.join(path.dirname(DB_PATH), "copias")),
   pluggyUrl: process.env.PLUGGY_API_URL || "https://api.pluggy.ai",
   syncDiasIniciais: Number(process.env.SYNC_DIAS_INICIAIS) || 365,
+  // de quantas em quantas horas confere se algum banco atualizou na Pluggy; 0 desliga
+  syncAutoHoras: Number(process.env.SYNC_AUTO_HORAS ?? 3),
   webDist: path.join(RAIZ, "web", "dist"),
   // site público (túnel com login na frente) que pode gravar; só https. O Host continua só os locais: o túnel reescreve.
   origemExterna: origemHttps(process.env.ORIGEM_EXTERNA),

@@ -90,7 +90,7 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
   categorizando: o mesmo nome costuma aparecer pagando e recebendo. Entre regras que pegam o mesmo lançamento, vence a de texto mais longo.
 - Orçamento é só PF e vale do mês informado em diante, até a próxima mudança. 0 = sem orçamento. Em categoria de renda, o valor é a renda
   esperada (e não entra no planejado de gasto). Compare sempre o planejado com a renda esperada: plano do tamanho da renda não guarda nada.
-- Sincronize só se o Paulo pedir ou se a última sincronização tiver mais de 24 h (o banco atualiza 1x por dia).`;
+- O app sincroniza sozinho (confere a cada 3 h se o banco atualizou; o banco atualiza 1x por dia). Sincronize só se o Paulo pedir.`;
 
 const texto = (dados: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(dados) }] });
 const falha = (mensagem: string): CallToolResult => ({ isError: true, content: [{ type: "text", text: mensagem }] });
@@ -748,7 +748,7 @@ export function criarServidor(base: string) {
   servidor.registerTool(
     "sincronizar",
     {
-      description: "Busca os dados novos de todos os bancos na Pluggy. Só se o Paulo pedir ou se a última sincronização tiver mais de 24 h.",
+      description: "Busca os dados novos de todos os bancos na Pluggy. O app já sincroniza sozinho: só se o Paulo pedir.",
       annotations: { ...ESCRITA, openWorldHint: true },
     },
     () => tentar(() => chamar<Sincronizacao>("POST", "/api/sync", {})),
