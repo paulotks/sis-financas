@@ -41,7 +41,7 @@ export default function Recorrentes() {
         </div>
       </header>
 
-      {erro && <div className="aviso erro">{erro.message}</div>}
+      {erro && <div className="aviso erro flutuante" role="alert">{erro.message}</div>}
 
       <div className="cards">
         <div className="card"><small>Confirmadas por mês</small><strong>{dinheiro(q.data ? porMes(confirmadas) : null)}</strong></div>

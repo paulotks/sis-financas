@@ -34,9 +34,9 @@ export default function Metas() {
         <h1>Metas</h1>
         <SeletorMes mes={mes} onChange={(m) => setParams({ mes: m }, { replace: true })} />
       </header>
-      {erro && <div className="aviso erro">{erro.message}</div>}
+      {erro && <div className="aviso erro flutuante" role="alert">{erro.message}</div>}
 
-      <Topo total={d?.total ?? null} r={ritmo.data} />
+      {q.isLoading ? <p className="mudo">Carregando…</p> : <Topo total={d?.total ?? null} r={ritmo.data} />}
       <p className="mudo pequeno">
         Só pessoa física. O valor por mês vale de {nomeMes(mes).toLowerCase()} em diante, até você mudar, e sai do teto do alarme. Meses anteriores não
         mudam. O progresso é o de hoje.

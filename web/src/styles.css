@@ -112,6 +112,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 
 /* avisos */
 .aviso { background: var(--ok-fundo); border: 1px solid var(--ok-borda); color: var(--ok-texto); padding: 10px 14px; border-radius: var(--raio-m); margin-bottom: 14px; }
+.aviso.flutuante { position: sticky; top: 8px; z-index: 4; box-shadow: 0 8px 24px rgb(0 0 0 / .45); } /* resposta de uma ação: fica à vista ao rolar */
 .aviso.erro { background: var(--erro-fundo); border-color: var(--erro-borda); color: var(--erro-texto); }
 .ok { color: var(--pos) !important; }
 .erro { color: var(--neg) !important; }
@@ -452,6 +453,7 @@ input.dia { width: 52px; }
   .lateral nav .icone { width: auto; font-size: 18px; }
   .lateral nav a.ativo, .botao-mais.ativo { background: none; color: var(--texto); }
   .lateral nav a.ativo .icone, .botao-mais.ativo .icone { color: var(--destaque); }
+  .aviso.flutuante { top: 72px; } /* abaixo do topo fixo */
   .menu-mais { inset: auto 8px calc(70px + env(safe-area-inset-bottom)) auto; }
   .conteudo { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }

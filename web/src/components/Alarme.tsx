@@ -7,7 +7,7 @@ export default function Alarme({ mes }: { mes: string }) {
   const q = useQuery({ queryKey: ["ritmo", mes], queryFn: () => api.ritmo(mes) });
   if (q.error) return <div className="aviso erro">{q.error.message}</div>;
   const r = q.data;
-  if (!r) return <div className="alarme" aria-busy="true" />;
+  if (!r) return <p className="mudo" aria-busy="true">Carregando o mês…</p>;
   const nivel = nivelTexto(r);
   return (
     <>

@@ -21,6 +21,7 @@ export default function Contas() {
   const reservado = (c: Conta) => (q.data?.investimentos ?? []).reduce((s, i) => s + (i.conta_id === c.id ? i.saldo_centavos ?? 0 : 0), 0);
   const perguntar = contas.filter((c) => !c.oculta && c.usa_reservas === null && reservado(c));
 
+  if (q.isLoading) return <section><h1>Contas e cartões</h1><p className="mudo">Carregando…</p></section>;
   if (q.data && q.data.contas.length === 0)
     return (
       <section>
@@ -38,7 +39,7 @@ export default function Contas() {
         </label>
       </header>
 
-      {(q.error ?? editar.error) && <div className="aviso erro">{(q.error ?? editar.error)!.message}</div>}
+      {(q.error ?? editar.error) && <div className="aviso erro flutuante" role="alert">{(q.error ?? editar.error)!.message}</div>}
 
       {perguntar.length > 0 && (
         <div className="aviso">

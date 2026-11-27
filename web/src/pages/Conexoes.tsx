@@ -67,7 +67,7 @@ export default function Conexoes() {
       </p>
       {cheio && <div className="aviso erro">Limite de {LIMITE_CONEXOES} conexões atingido: para trocar um banco, remova-o antes em meu.pluggy.ai.</div>}
 
-      {msg && <div className={`aviso ${msg.tipo === "erro" ? "erro" : ""}`}>{msg.texto}</div>}
+      {msg && <div className={`aviso flutuante ${msg.tipo === "erro" ? "erro" : ""}`} role="status">{msg.texto}</div>}
 
       <div className="tabela-wrap">
       <table className="tabela cartoes conexoes">
@@ -82,6 +82,7 @@ export default function Conexoes() {
           </tr>
         </thead>
         <tbody>
+          {q.isLoading && <tr><td colSpan={6} className="vazio">Carregando…</td></tr>}
           {q.data?.length === 0 && (
             <tr><td colSpan={6} className="vazio">Nenhum banco conectado. Clique em “Conectar banco”.</td></tr>
           )}

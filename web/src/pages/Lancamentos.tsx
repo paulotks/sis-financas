@@ -138,7 +138,7 @@ export default function Lancamentos() {
         </label>
       </div>
 
-      {aviso && <div className="aviso">{aviso}</div>}
+      {aviso && <div className={`aviso flutuante ${aviso.startsWith("Erro") ? "erro" : ""}`} role="status">{aviso}</div>}
       {(lista.error ?? totais.error) && <div className="aviso erro">{(lista.error ?? totais.error)!.message}</div>}
 
       <div className="tabela-wrap">

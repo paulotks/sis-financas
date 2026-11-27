@@ -87,9 +87,10 @@ export default function Categorias() {
             contenha o texto, menos os que você editou à mão.
           </p>
           <NovaRegra categorias={cats.data ?? []} regras={regras.data} />
-          {(regras.error ?? apagar.error) && <div className="aviso erro">{(regras.error ?? apagar.error)!.message}</div>}
+          {(regras.error ?? apagar.error) && <div className="aviso erro flutuante" role="alert">{(regras.error ?? apagar.error)!.message}</div>}
           <table className="tabela compacta regras">
             <tbody>
+              {regras.isLoading && <tr><td className="vazio">Carregando…</td></tr>}
               {regras.data?.length === 0 && <tr><td className="vazio">Nenhuma regra ainda.</td></tr>}
               {regras.data?.map((r) => (
                 <tr key={r.id}>

@@ -71,7 +71,7 @@ export default function Patrimonio() {
 
   return (
     <div className="patrimonio">
-      {erro && <div className="aviso erro">{erro.message}</div>}
+      {erro && <div className="aviso erro flutuante" role="alert">{erro.message}</div>}
       <div className="duas-colunas">
         <div className="painel">
           <div className="painel-topo">

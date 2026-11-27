@@ -142,8 +142,8 @@ function Recentes({ mes, pessoa, verTodos }: { mes: string; pessoa: string; verT
         <h2>Lançamentos recentes</h2>
         <Link className="mudo" to={verTodos}>Ver todos →</Link>
       </div>
-      {erro && <div className="aviso erro">{erro.message}</div>}
-      {aviso && <div className="aviso">{aviso}</div>}
+      {erro && <div className="aviso erro flutuante" role="alert">{erro.message}</div>}
+      {aviso && <div className="aviso flutuante" role="status">{aviso}</div>}
       {lista.data && itens.length === 0 && <p className="mudo">Nenhum lançamento até hoje neste mês.</p>}
       <ul>
         {itens.map((l) => (

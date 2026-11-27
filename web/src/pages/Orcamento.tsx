@@ -29,7 +29,7 @@ export default function Orcamento() {
         <SeletorMes mes={mes} onChange={(m) => setParams({ mes: m }, { replace: true })} />
       </header>
 
-      {(q.error ?? salvar.error) && <div className="aviso erro">{(q.error ?? salvar.error)!.message}</div>}
+      {(q.error ?? salvar.error) && <div className="aviso erro flutuante" role="alert">{(q.error ?? salvar.error)!.message}</div>}
 
       <div className="cards quatro">
         <div className="card">

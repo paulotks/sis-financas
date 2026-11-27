@@ -68,7 +68,7 @@ function Mes() {
         <SeletorMes mes={mes} onChange={(m) => setParams({ mes: m }, { replace: true })} />
       </header>
 
-      {erro && <div className="aviso erro">{erro.message}</div>}
+      {erro && <div className="aviso erro flutuante" role="alert">{erro.message}</div>}
 
       <div className="cards quatro">
         <div className="card">
