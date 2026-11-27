@@ -130,8 +130,8 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .tabela tr.pendente td:first-child { box-shadow: inset 3px 0 var(--alerta); }
 .tabela tr.ignorado { opacity: .4; }
 .tabela .vazio { text-align: center; color: var(--mudo); padding: 28px; }
-.sub { display: flex; gap: 8px; align-items: center; font-size: var(--fs-1); color: var(--mudo); padding: 0 6px; }
-.selo { font-size: var(--fs-1); color: var(--mudo); border: 1px solid var(--borda); border-radius: var(--raio-pilula); padding: 0 7px; }
+.sub { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; font-size: var(--fs-1); color: var(--mudo); padding: 0 6px; }
+.selo { white-space: nowrap; font-size: var(--fs-1); color: var(--mudo); border: 1px solid var(--borda); border-radius: var(--raio-pilula); padding: 0 7px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pos { color: var(--pos); }
 .neg { color: var(--neg); }
@@ -396,6 +396,18 @@ input.dia { width: 52px; }
   .cards.quatro { grid-template-columns: 1fr 1fr; }
   .dois-graficos { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+/* lançamentos: larguras das colunas (no celular vira cartão, ver abaixo) */
+.lancamentos .c-data { width: 70px; }
+.lancamentos .c-conta { width: 170px; }
+.lancamentos .c-cat { width: 210px; }
+.lancamentos .c-valor { width: 130px; }
+.lancamentos .c-acao { width: 44px; }
+.so-estreito, .so-celular { display: none; }
+@media (max-width: 980px) {
+  .so-estreito { display: revert; }
+  .lancamentos .c-conta { display: none; } /* a conta vai para baixo da descrição */
+}
+
 /* celular: topo fino e fixo, menu numa barra embaixo (4 atalhos + Mais) */
 @media (max-width: 768px) {
   .lateral { position: sticky; top: 0; z-index: 5; flex-wrap: nowrap; padding: max(8px, env(safe-area-inset-top)) 12px 8px; border-right: 0; border-bottom: 1px solid var(--borda); }
@@ -428,6 +440,31 @@ input.dia { width: 52px; }
   .conteudo { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 640px) {
+  .so-celular { display: revert; }
+  /* tabela.cartoes: cada linha vira um cartão; a página diz a grade de cada uma */
+  .tabela.cartoes { min-width: 0; }
+  .tabela.cartoes thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .tabela.cartoes tbody tr { display: grid; gap: 6px 12px; align-items: center; padding: 12px; border-bottom: 1px solid var(--linha); }
+  .tabela.cartoes tbody tr:hover { background: none; }
+  .tabela.cartoes tbody td { padding: 0; border: 0; }
+  .tabela.cartoes td[colspan] { grid-column: 1 / -1; }
+  .tabela.cartoes tr.pendente { box-shadow: inset 3px 0 var(--alerta); }
+  .tabela.cartoes tr.pendente td:first-child { box-shadow: none; }
+  .tabela.cartoes tfoot tr { display: flex; flex-direction: column; gap: 4px; padding: 12px; }
+  .tabela.cartoes tfoot td { padding: 0; text-align: left; }
+  /* subgrid: a coluna do valor tem a mesma largura em todos os cartões */
+  .lancamentos tbody { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .lancamentos tbody tr { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-areas: "desc valor" "cat acao"; }
+  .lancamentos .c-data, .lancamentos .c-conta { display: none; }
+  .lancamentos .c-desc { grid-area: desc; }
+  .lancamentos .c-valor { grid-area: valor; align-self: start; padding-top: 5px; width: auto; }
+  .lancamentos .c-cat { grid-area: cat; width: auto; }
+  .lancamentos .c-acao { grid-area: acao; width: auto; }
+  .lancamentos .editavel { padding-inline: 0; font-weight: 500; }
+  .lancamentos .sub { padding: 0; }
+  /* filtros: só a busca à vista; o resto abre no botão */
+  .filtros:not(.aberto) .extra { display: none; }
+  .filtros input[type=search].campo { flex: 1 1 0; }
   .meta .campos { grid-template-columns: 1fr 1fr; }
   .meta .medida { grid-column: 1 / -1; }
   .conteudo { padding: 14px 12px calc(84px + env(safe-area-inset-bottom)); } /* embaixo fica a barra do menu */

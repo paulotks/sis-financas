@@ -1,17 +1,18 @@
 import { GRUPOS, type Categoria } from "../lib/api";
 
-export default function SelectCategoria({ categorias, valor, vazio, rotulo = "Categoria", cor, onChange }: {
+export default function SelectCategoria({ categorias, valor, vazio, rotulo = "Categoria", cor, className = "", onChange }: {
   categorias: Categoria[];
   valor: number | null;
   vazio: string;
   rotulo?: string;
   cor?: string | null;
+  className?: string;
   onChange: (id: number | null) => void;
 }) {
   const grupos = (Object.keys(GRUPOS) as Categoria["grupo"][]).filter((g) => categorias.some((c) => c.grupo === g));
   return (
     <select
-      className="campo categoria"
+      className={`campo categoria ${className}`}
       name="categoria"
       aria-label={rotulo}
       style={cor ? { borderLeftColor: cor } : undefined}

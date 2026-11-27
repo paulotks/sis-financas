@@ -71,6 +71,9 @@ export default function Lancamentos() {
   });
 
   const itens = lista.data?.itens ?? [];
+  // no celular os filtros além da busca ficam recolhidos; o botão diz quantos estão ligados
+  const [verFiltros, setVerFiltros] = useState(false);
+  const ligados = [filtros.conta, filtros.categoria, filtros.pessoa !== "PF" || undefined, filtros.pendentes || undefined, filtros.estornos || undefined, params.get("todos")].filter(Boolean).length;
   const t = totais.data;
 
   return (
@@ -80,16 +83,24 @@ export default function Lancamentos() {
         {!params.get("todos") && <SeletorMes mes={mes} onChange={(m) => set("mes", m)} />}
       </header>
 
-      <div className="filtros">
+      <div className={`filtros ${verFiltros ? "aberto" : ""}`}>
         <input
           ref={campoBusca}
           className="campo"
+          type="search"
+          name="busca"
+          aria-label="Buscar descrição ou nota"
+          autoComplete="off"
+          enterKeyHint="search"
           placeholder="Buscar descrição ou nota…"
           defaultValue={filtros.busca}
           onKeyDown={(e) => e.key === "Enter" && set("busca", (e.target as HTMLInputElement).value)}
           onBlur={(e) => set("busca", e.target.value)}
         />
-        <select className="campo" name="conta" aria-label="Conta ou cartão" value={filtros.conta ?? ""} onChange={(e) => set("conta", e.target.value)}>
+        <button className="botao secundario so-celular" aria-expanded={verFiltros} onClick={() => setVerFiltros(!verFiltros)}>
+          Filtros{ligados > 0 && ` (${ligados})`}
+        </button>
+        <select className="campo extra" name="conta" aria-label="Conta ou cartão" value={filtros.conta ?? ""} onChange={(e) => set("conta", e.target.value)}>
           <option value="">Contas e cartões</option>
           <option value="contas">Só contas</option>
           <option value="cartoes">Só cartões</option>
@@ -102,26 +113,27 @@ export default function Lancamentos() {
           ))}
         </select>
         <SelectCategoria
+          className="extra"
           categorias={categorias.data ?? []}
           valor={filtros.categoria ?? null}
           vazio="Todas as categorias"
           onChange={(id) => set("categoria", id === null ? null : String(id))}
         />
-        <div className="segmentado" role="group" aria-label="Pessoa">
+        <div className="segmentado extra" role="group" aria-label="Pessoa">
           {(["PF", "PJ"] as const).map((p) => (
             <button key={p} className={filtros.pessoa === p ? "ativo" : ""} aria-pressed={filtros.pessoa === p} onClick={() => set("pessoa", p === "PF" ? null : p)}>{p}</button>
           ))}
         </div>
-        <label className="check">
-          <input type="checkbox" checked={filtros.pendentes} onChange={(e) => set("pendentes", e.target.checked ? "1" : null)} />
+        <label className="check extra">
+          <input type="checkbox" name="pendentes" checked={filtros.pendentes} onChange={(e) => set("pendentes", e.target.checked ? "1" : null)} />
           Só sem categoria
         </label>
-        <label className="check" title="Crédito em cartão que não é pagamento de fatura nem transferência">
+        <label className="check extra" title="Crédito em cartão que não é pagamento de fatura nem transferência">
           <input type="checkbox" name="estornos" checked={filtros.estornos} onChange={(e) => set("estornos", e.target.checked ? "1" : null)} />
           Só estornos
         </label>
-        <label className="check">
-          <input type="checkbox" checked={!!params.get("todos")} onChange={(e) => set("todos", e.target.checked ? "1" : null)} />
+        <label className="check extra">
+          <input type="checkbox" name="todos" checked={!!params.get("todos")} onChange={(e) => set("todos", e.target.checked ? "1" : null)} />
           Todos os meses
         </label>
       </div>
@@ -130,15 +142,15 @@ export default function Lancamentos() {
       {(lista.error ?? totais.error) && <div className="aviso erro">{(lista.error ?? totais.error)!.message}</div>}
 
       <div className="tabela-wrap">
-        <table className="tabela">
+        <table className="tabela cartoes lancamentos">
           <thead>
             <tr>
-              <th style={{ width: 70 }}>Data</th>
-              <th>Descrição</th>
-              <th style={{ width: 170 }}>Conta</th>
-              <th style={{ width: 210 }}>Categoria</th>
-              <th style={{ width: 130 }} className="num">Valor</th>
-              <th style={{ width: 40 }} />
+              <th className="c-data">Data</th>
+              <th className="c-desc">Descrição</th>
+              <th className="c-conta">Conta</th>
+              <th className="c-cat">Categoria</th>
+              <th className="c-valor num">Valor</th>
+              <th className="c-acao"><span className="so-leitor">Ignorar</span></th>
             </tr>
           </thead>
           <tbody>
@@ -185,7 +197,7 @@ export default function Lancamentos() {
           <tfoot>
             <tr>
               <td colSpan={2}>
-                {itens.length} lançamento(s)
+                {itens.length === 1 ? "1 lançamento" : `${itens.length} lançamentos`}
                 {lista.data && lista.data.total > itens.length && ` de ${lista.data.total}: lista cortada, use os filtros (os totais contam todos)`}
               </td>
               <td className={`num ${totais.isPlaceholderData ? "recarregando" : ""}`} colSpan={4}>
@@ -227,10 +239,12 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
 
   return (
     <tr className={!l.soma ? "ignorado" : l.categoria_id === null ? "pendente" : ""}>
-      <td className="mudo">{dataCurta(l.data)}</td>
-      <td>
+      <td className="c-data mudo">{dataCurta(l.data)}</td>
+      <td className="c-desc">
         <input
           className="editavel"
+          aria-label={`Descrição de ${l.descricao_original ?? l.descricao}`}
+          autoComplete="off"
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={salvarDesc}
@@ -240,6 +254,8 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
           }}
         />
         <div className="sub">
+          {/* tela estreita: data e conta saem das colunas e vêm para cá */}
+          <span className="so-estreito"><span className="so-celular">{dataCurta(l.data)} · </span>{l.conta}</span>
           {l.descricao_original !== l.descricao && <span title="Descrição original do banco">{l.descricao_original}</span>}
           {l.total_parcelas && l.total_parcelas > 1 && <span className="selo">{l.parcela}/{l.total_parcelas}</span>}
           {l.status === "PENDING" && <span className="selo">pendente no banco</span>}
@@ -247,8 +263,8 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
           {l.estorno && <button className="link" aria-expanded={aberto} onClick={onEstorno}>De qual compra?</button>}
         </div>
       </td>
-      <td className="mudo">{l.conta}</td>
-      <td>
+      <td className="c-conta mudo">{l.conta}</td>
+      <td className="c-cat">
         <SelectCategoria
           categorias={categorias}
           valor={l.categoria_id}
@@ -257,8 +273,8 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
           onChange={(id) => onSalvar({ categoria_id: id })}
         />
       </td>
-      <td className={`num ${l.valor_centavos < 0 ? "neg" : "pos"}`}>{dinheiro(l.valor_centavos)}</td>
-      <td>
+      <td className={`c-valor num ${l.valor_centavos < 0 ? "neg" : "pos"}`}>{dinheiro(l.valor_centavos)}</td>
+      <td className="c-acao">
         <button
           className="icone-botao"
           title={l.ignorado ? "Voltar a considerar" : "Ignorar (não entra no resumo)"}
