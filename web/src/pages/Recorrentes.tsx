@@ -112,37 +112,38 @@ function Tabela({ lista, pessoa, vazio, nota, acoes }: {
 }) {
   return (
     <div className="tabela-wrap">
-      <table className="tabela compacta">
+      <table className="tabela compacta cartoes recorrentes">
         <thead>
           <tr>
-            <th>Descrição</th>
-            <th style={{ width: 150 }}>Próxima</th>
-            <th style={{ width: 90 }}>Última</th>
-            <th className="num" style={{ width: 120 }}>Valor</th>
-            <th style={{ width: 210 }}><span className="so-leitor">Ações</span></th>
+            <th className="c-desc">Descrição</th>
+            <th className="c-prox">Próxima</th>
+            <th className="c-ult">Última</th>
+            <th className="c-valor num">Valor</th>
+            <th className="c-acoes"><span className="so-leitor">Ações</span></th>
           </tr>
         </thead>
         <tbody>
           {lista.length === 0 && <tr><td colSpan={5} className="vazio">{vazio}</td></tr>}
           {lista.map((r) => (
             <tr key={idDe(r)} className={r.situacao === "parada" ? "ignorado" : ""}>
-              <td>
+              <td className="c-desc">
                 <Link className="discreto" to={`/lancamentos?todos=1&busca=${encodeURIComponent(r.descricao)}${pessoa === "PJ" ? "&pessoa=PJ" : ""}`}>
                   <span className="ponto" style={{ background: r.cor ?? "var(--mudo)" }} />{r.descricao}
                 </Link>
                 <div className="sub">{r.categoria ?? "Sem categoria"} · {r.conta} · {r.vezes} vezes{r.antes && <> · antes: {r.antes}</>}</div>
                 {nota && <div className="sub"><b>{nota(r)}</b></div>}
               </td>
-              <td>
+              <td className="c-prox">
+                <span className="so-celular mudo">próxima </span>
                 {r.status === "cancelada"
                   ? <span className="mudo">cancelada {r.cobrou_depois && <span className="selo alerta">cobrou de novo</span>}</span>
                   : r.situacao === "parada"
                   ? <span className="mudo">sem cobrança desde {dataCurta(r.ultima)}</span>
                   : <>{dataCurta(r.proxima)} {r.situacao === "atrasada" && <span className="selo alerta">atrasada</span>}</>}
               </td>
-              <td className="mudo">{dataCurta(r.ultima)}</td>
-              <td className="num">{dinheiro(r.valor)}</td>
-              <td><div className="acoes-linha">{acoes(r)}</div></td>
+              <td className="c-ult mudo">{dataCurta(r.ultima)}</td>
+              <td className="c-valor num">{dinheiro(r.valor)}</td>
+              <td className="c-acoes"><div className="acoes-linha">{acoes(r)}</div></td>
             </tr>
           ))}
         </tbody>

@@ -70,15 +70,15 @@ export default function Conexoes() {
       {msg && <div className={`aviso ${msg.tipo === "erro" ? "erro" : ""}`}>{msg.texto}</div>}
 
       <div className="tabela-wrap">
-      <table className="tabela">
+      <table className="tabela cartoes conexoes">
         <thead>
           <tr>
-            <th>Banco / contas</th>
-            <th>Contas</th>
-            <th>Status</th>
-            <th>Última sincronização</th>
-            <th>Dados do banco de</th>
-            <th style={{ width: 220 }} />
+            <th className="c-banco">Banco / contas</th>
+            <th className="c-contas">Contas</th>
+            <th className="c-status">Status</th>
+            <th className="c-sync">Última sincronização</th>
+            <th className="c-dados">Dados do banco de</th>
+            <th className="c-acoes"><span className="so-leitor">Ações</span></th>
           </tr>
         </thead>
         <tbody>
@@ -87,35 +87,36 @@ export default function Conexoes() {
           )}
           {q.data?.map((c) => (
             <tr key={c.item_id}>
-              <td>
+              <td className="c-banco">
                 <div className="com-logo">
-                  {c.imagem_url && <img src={c.imagem_url} alt="" onError={(e) => (e.currentTarget.style.display = "none")} />}
+                  {c.imagem_url && <img src={c.imagem_url} alt="" width={28} height={28} onError={(e) => (e.currentTarget.style.display = "none")} />}
                   <div>
                     {c.nomes_contas ?? c.conector ?? "—"}
                     <div className="sub">{c.conector} · <code>{c.item_id}</code></div>
                   </div>
                 </div>
               </td>
-              <td>{c.contas}</td>
-              <td>
+              <td className="c-contas">{c.contas}</td>
+              <td className="c-status">
                 {c.erro ? <span className="neg">erro</span> : <span className="selo">{c.status ?? "—"}</span>}
                 {c.erro && <div className="neg sub">{c.erro}</div>}
                 {avisoDoStatus(c) && (
                   <div className="neg sub" title={`status ${c.status} / execução ${c.status_execucao}`}>{avisoDoStatus(c)}</div>
                 )}
               </td>
-              <td className="mudo">{quando(c.ultimo_sync)}</td>
-              <td className={dadosVelhos(c.atualizado_pluggy) ? "alerta" : "mudo"}>
+              <td className="c-sync mudo">{quando(c.ultimo_sync)}</td>
+              <td className={`c-dados ${dadosVelhos(c.atualizado_pluggy) ? "alerta" : "mudo"}`}>
+                <span className="so-celular">dados de </span>
                 {c.atualizado_pluggy ? quando(c.atualizado_pluggy) : "sem data"}
                 {dadosVelhos(c.atualizado_pluggy) && <div className="sub">⚠ mais de 48 h</div>}
               </td>
-              <td className="acoes-linha">
+              <td className="c-acoes"><div className="acoes-linha">
                 <button className="botao secundario" disabled={sync.isPending} onClick={() => sync.mutate(c.item_id)}>Sincronizar</button>
                 <a className="botao secundario" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer"
                   title="O item do Meu Pluggy não se atualiza pelo app: reautorize o banco no site do Meu Pluggy (atualiza sozinho a cada 24h)">
                   Reautorizar
                 </a>
-              </td>
+              </div></td>
             </tr>
           ))}
         </tbody>

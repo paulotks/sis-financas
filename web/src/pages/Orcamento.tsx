@@ -75,10 +75,10 @@ export default function Orcamento() {
           <thead>
             <tr>
               <th>Categoria</th>
-              <th className="num" style={{ width: 150 }}>Planejado</th>
-              <th className="num" style={{ width: 130 }}>Gasto</th>
-              <th className="num" style={{ width: 130 }}>Resta</th>
-              <th style={{ width: "28%" }}><span className="so-leitor">Progresso</span></th>
+              <th className="c-plan num">Planejado</th>
+              <th className="c-gasto num">Gasto</th>
+              <th className="c-resta num">Resta</th>
+              <th className="c-prog"><span className="so-leitor">Progresso</span></th>
             </tr>
           </thead>
           {q.isLoading && <tbody><tr><td colSpan={5} className="vazio">Carregando…</td></tr></tbody>}

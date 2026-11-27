@@ -83,7 +83,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .topo h1 { margin-right: auto; }
 
 /* controles */
-.botao { background: var(--destaque); color: #fff; border: 0; border-radius: var(--raio-m); padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.botao { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; background: var(--destaque); color: #fff; border: 0; border-radius: var(--raio-m); padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
 .botao:disabled { opacity: .5; cursor: default; }
 .botao.secundario { background: var(--painel-2); color: var(--texto); border: 1px solid var(--borda); font-weight: 500; padding: 6px 10px; }
 .icone-botao { background: transparent; border: 0; color: var(--mudo); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: var(--raio-p); }
@@ -342,6 +342,16 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .contas-do-mes .campos-linha .editavel { width: auto; font-size: var(--fs-1); padding: 1px 4px; }
 .contas-do-mes .campos-linha .editavel[aria-label^="Texto"] { width: 130px; }
 input.dia { width: 52px; }
+/* recorrentes, orçamento e conexões: larguras (no celular, ver o bloco de 640px) */
+.recorrentes .c-prox { width: 150px; }
+.recorrentes .c-ult { width: 90px; }
+.recorrentes .c-valor { width: 120px; }
+.recorrentes .c-acoes { width: 210px; }
+.orcamento .c-plan { width: 150px; }
+.orcamento .c-gasto, .orcamento .c-resta { width: 130px; }
+.orcamento .c-prog { width: 28%; }
+.conexoes .c-acoes { width: 220px; }
+.conexoes code { overflow-wrap: anywhere; }
 /* contas do mês: larguras (no celular vira cartão) */
 .contas-do-mes .c-dia { width: 70px; }
 .contas-do-mes .c-valor { width: 130px; }
@@ -483,6 +493,37 @@ input.dia { width: 52px; }
   .contas-do-mes .acoes-linha { justify-content: flex-start; }
   .contas-do-mes .sub { padding: 0; }
   .contas-do-ano th, .contas-do-ano td { padding-inline: 6px; }
+  /* recorrentes: nome + valor, próxima, ações; a última já está no .sub */
+  .recorrentes tbody { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .recorrentes tbody tr { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-areas: "desc valor" "prox prox" "acoes acoes"; }
+  .recorrentes .c-desc { grid-area: desc; }
+  .recorrentes .c-valor { grid-area: valor; align-self: start; width: auto; }
+  .recorrentes .c-prox { grid-area: prox; width: auto; }
+  .recorrentes .c-ult { display: none; }
+  .recorrentes .c-acoes { grid-area: acoes; width: auto; }
+  .recorrentes .acoes-linha { justify-content: flex-start; flex-wrap: wrap; }
+  .recorrentes .sub { padding: 0; }
+  /* orçamento: categoria, planejado (editável), gasto e o %; o "resta" sai */
+  .tabela.orcamento { min-width: 0; }
+  .orcamento .c-resta, .orcamento tr > :nth-child(4) { display: none; }
+  .orcamento .c-plan { width: 108px; }
+  .orcamento .c-gasto { width: auto; }
+  .orcamento .c-prog { width: 44px; }
+  .orcamento th, .orcamento td { padding-inline: 6px; }
+  .orcamento .progresso { display: block; }
+  .orcamento .progresso .barra { display: none; }
+  /* conexões: banco em cima, status e data, ações */
+  .conexoes tbody tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "banco banco" "status dados" "acoes acoes"; }
+  .conexoes .c-banco { grid-area: banco; }
+  .conexoes .c-status { grid-area: status; }
+  .conexoes .c-dados { grid-area: dados; text-align: right; }
+  .conexoes .c-acoes { grid-area: acoes; width: auto; }
+  .conexoes .c-contas, .conexoes .c-sync { display: none; }
+  .conexoes .acoes-linha { justify-content: flex-start; }
+  /* quatro números: dois por linha, para caberem na primeira tela */
+  .cards.quatro { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .cards.quatro .card { padding: 12px 14px; }
+  .cards.quatro .card strong { font-size: 18px; }
   .contas-do-ano .nome { max-width: 132px; white-space: normal; font-size: var(--fs-2); line-height: 1.25; min-width: 110px; }
   /* filtros: só a busca à vista; o resto abre no botão */
   .filtros:not(.aberto) .extra { display: none; }
@@ -490,7 +531,7 @@ input.dia { width: 52px; }
   .meta .campos { grid-template-columns: 1fr 1fr; }
   .meta .medida { grid-column: 1 / -1; }
   .conteudo { padding: 14px 12px calc(84px + env(safe-area-inset-bottom)); } /* embaixo fica a barra do menu */
-  .cards, .cards.quatro, .duas-colunas, .alarme { grid-template-columns: minmax(0, 1fr); }
+  .cards, .duas-colunas, .alarme { grid-template-columns: minmax(0, 1fr); }
   .alarme { grid-template-rows: none; }
   .estouros a { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
   .estouros .trilho-duplo { grid-column: 1 / -1; order: 3; }
