@@ -78,7 +78,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .menu-mais a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: var(--raio-m); text-decoration: none; color: var(--mudo); }
 .menu-mais a.ativo { background: var(--painel); color: var(--texto); }
 .menu-mais .situacao { padding: 10px 12px 6px; margin-top: 4px; border-top: 1px solid var(--borda); }
-.conteudo { padding: 28px 36px 60px; max-width: 1280px; width: 100%; }
+.conteudo { padding: 28px 36px 60px; max-width: 1280px; width: 100%; margin-inline: auto; } /* monitor grande: no meio do espaço ao lado do menu */
 .topo { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .topo h1 { margin-right: auto; }
 
