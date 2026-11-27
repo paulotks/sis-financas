@@ -18,6 +18,7 @@
   --neutro: #a1a1ad;      /* barras e linhas de gráfico sem cor de assunto */
   --neutro-2: #6b6b76;
   --foco: #4b4b57;
+  --anel: #9a9aa8;        /* contorno do foco de teclado */
   --neg-suave: #e3b7b9;
   --ok-fundo: #10261d; --ok-borda: #1f5a43; --ok-texto: #b7f0d6;
   --erro-fundo: #2a1214; --erro-borda: #6b2229; --erro-texto: #ffc9cd;
@@ -40,8 +41,15 @@
   background: var(--fundo);
 }
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; -webkit-tap-highlight-color: transparent; }
 a { color: inherit; }
+button, a, input, select, summary, label { touch-action: manipulation; } /* sem a espera do duplo toque */
+/* foco de teclado igual em tudo; o clique não acende (é :focus-visible) */
+:focus-visible { outline: 2px solid var(--anel); outline-offset: 2px; }
+.campo:focus-visible, .editavel:focus-visible { outline-color: var(--neutro-2); outline-offset: 0; }
+.pular { position: absolute; left: 8px; top: -60px; z-index: 10; padding: 8px 12px; border-radius: var(--raio-m); background: var(--painel-2); }
+.pular:focus { top: 8px; }
+.conteudo:focus { outline: none; } /* alvo do "pular": recebe o foco só para o Tab seguir dali */
 h1 { font-size: 24px; margin: 0; }
 h2 { font-size: 15px; margin: 28px 0 12px; color: var(--mudo); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 h3 { font-size: var(--fs-3); margin: 16px 0 8px; color: var(--mudo); font-weight: 500; }
@@ -72,7 +80,9 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .icone-botao { background: transparent; border: 0; color: var(--mudo); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: var(--raio-p); }
 .icone-botao:hover { background: var(--painel-2); color: var(--texto); }
 .campo { background: var(--painel); border: 1px solid var(--borda); color: var(--texto); border-radius: var(--raio-m); padding: 7px 10px; font: inherit; }
-.campo:focus, .editavel:focus { outline: 1px solid var(--foco); }
+.campo:focus, .editavel:focus { border-color: var(--foco); }
+.botao:active:not(:disabled), .icone-botao:active, .segmentado button:active { transform: translateY(1px); }
+.botao:not(:disabled):hover { filter: brightness(1.1); }
 .campo.categoria { width: 100%; border-left: 3px solid var(--borda); }
 .editavel { width: 100%; background: transparent; border: 1px solid transparent; color: inherit; font: inherit; padding: 4px 6px; border-radius: var(--raio-p); }
 .editavel:hover { border-color: var(--borda); }
@@ -288,7 +298,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .topo.secao { margin: 22px 0 12px; }
 .topo.secao h2 { margin: 0 auto 0 0; }
 .recharts-wrapper :focus { outline: none; }
-.recharts-wrapper :focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; border-radius: var(--raio-p); }
+.recharts-wrapper :focus-visible { outline: 2px solid var(--anel); outline-offset: 2px; border-radius: var(--raio-p); }
 .estouros { list-style: none; margin: 0; padding: 0; }
 .estouros a { display: grid; grid-template-columns: 170px minmax(80px, 1fr) 120px 190px; gap: 14px; align-items: center; padding: 7px 8px; margin: 0 -8px; border-radius: var(--raio-m); text-decoration: none; }
 .estouros a:hover, .estouros a:focus-visible { background: var(--painel-2); }
@@ -393,3 +403,17 @@ input.dia { width: 52px; }
   .seletor-mes span { min-width: 110px; }
 }
 .filtros .campo.categoria { width: auto; min-width: 200px; }
+
+/* toque: alvo de pelo menos 40-44px e campo com 16px (abaixo disso o iPhone dá zoom ao focar) */
+@media (pointer: coarse) {
+  .icone-botao { min-width: 44px; min-height: 44px; }
+  .seletor-mes .icone-botao { min-width: 40px; min-height: 40px; }
+  .chip .icone-botao { min-width: 36px; min-height: 36px; margin: -8px -9px -8px 0; }
+  .segmentado button { min-height: 40px; min-width: 44px; }
+  .segmentado.pequeno button { min-height: 34px; }
+  .botao { min-height: 40px; }
+  .check { min-height: 40px; }
+  .check input { width: 20px; height: 20px; }
+  .campo, .editavel, select { font-size: 16px; }
+  .campo { min-height: 40px; }
+}

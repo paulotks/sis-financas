@@ -99,7 +99,7 @@ export default function Categorias() {
                   </td>
                   <td>{r.categoria}</td>
                   <td>
-                    <button className="icone-botao" title="Apagar regra" onClick={() => apagar.mutate(r.id)}>✕</button>
+                    <button className="icone-botao" title="Apagar regra" aria-label={`Apagar a regra ${r.padrao}`} onClick={() => apagar.mutate(r.id)}>✕</button>
                   </td>
                 </tr>
               ))}

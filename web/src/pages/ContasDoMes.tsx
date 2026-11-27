@@ -244,9 +244,9 @@ function Ano() {
         <h1>Contas do mês</h1>
         <Abas aba="ano" />
         <div className="seletor-mes">
-          <button className="icone-botao" title="Ano anterior" onClick={() => irPara(-1)}>‹</button>
+          <button className="icone-botao" title="Ano anterior" aria-label="Ano anterior" onClick={() => irPara(-1)}>‹</button>
           <span>{ano}</span>
-          <button className="icone-botao" title="Próximo ano" disabled={Number(ano) >= 2100} onClick={() => irPara(1)}>›</button>
+          <button className="icone-botao" title="Próximo ano" aria-label="Próximo ano" disabled={Number(ano) >= 2100} onClick={() => irPara(1)}>›</button>
         </div>
       </header>
 

@@ -107,9 +107,9 @@ export default function Lancamentos() {
           vazio="Todas as categorias"
           onChange={(id) => set("categoria", id === null ? null : String(id))}
         />
-        <div className="segmentado">
+        <div className="segmentado" role="group" aria-label="Pessoa">
           {(["PF", "PJ"] as const).map((p) => (
-            <button key={p} className={filtros.pessoa === p ? "ativo" : ""} onClick={() => set("pessoa", p === "PF" ? null : p)}>{p}</button>
+            <button key={p} className={filtros.pessoa === p ? "ativo" : ""} aria-pressed={filtros.pessoa === p} onClick={() => set("pessoa", p === "PF" ? null : p)}>{p}</button>
           ))}
         </div>
         <label className="check">
@@ -262,6 +262,7 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
         <button
           className="icone-botao"
           title={l.ignorado ? "Voltar a considerar" : "Ignorar (não entra no resumo)"}
+          aria-label={`${l.ignorado ? "Voltar a considerar" : "Ignorar"} ${l.descricao}`}
           onClick={() => onSalvar({ ignorado: !l.ignorado })}
         >
           {l.ignorado ? "↺" : "⊘"}

@@ -41,6 +41,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <a className="pular" href="#conteudo">Pular para o conteúdo</a>
       <aside className="lateral">
         <div className="marca">
           <span className="logo">R$</span> Finanças
@@ -78,7 +79,7 @@ export default function App() {
           )}
         </div>
       </aside>
-      <main className="conteudo">
+      <main className="conteudo" id="conteudo" tabIndex={-1}>
         {conexoes.error && <div className="aviso erro">A API local não respondeu: {conexoes.error.message}</div>}
         <Routes>
           {/* espera as conexões chegarem: sem nenhuma, a primeira tela é a de conectar banco */}

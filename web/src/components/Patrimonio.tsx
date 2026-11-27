@@ -78,7 +78,7 @@ export default function Patrimonio() {
             <small className="mudo">Patrimônio líquido</small>
             <div className="segmentado pequeno">
               {(["PF", "PJ"] as const).map((p) => (
-                <button key={p} className={pessoa === p ? "ativo" : ""} onClick={() => setParams(p === "PJ" ? { pessoa: p } : {}, { replace: true })}>{p}</button>
+                <button key={p} className={pessoa === p ? "ativo" : ""} aria-pressed={pessoa === p} onClick={() => setParams(p === "PJ" ? { pessoa: p } : {}, { replace: true })}>{p}</button>
               ))}
             </div>
           </div>

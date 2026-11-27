@@ -196,10 +196,10 @@ function CartaoConta({ c, reservado, onEditar }: { c: Conta; reservado: number; 
         <Link to={`/lancamentos?conta=${c.id}${c.pessoa === "PJ" ? "&pessoa=PJ" : ""}`}>Ver lançamentos</Link>
         <div className="segmentado pequeno">
           {(["PF", "PJ"] as const).map((p) => (
-            <button key={p} className={c.pessoa === p ? "ativo" : ""} onClick={() => c.pessoa !== p && onEditar({ pessoa: p })}>{p}</button>
+            <button key={p} className={c.pessoa === p ? "ativo" : ""} aria-pressed={c.pessoa === p} onClick={() => c.pessoa !== p && onEditar({ pessoa: p })}>{p}</button>
           ))}
         </div>
-        <button className="icone-botao" title={c.oculta ? "Mostrar" : "Ocultar"} onClick={() => onEditar({ oculta: !c.oculta })}>
+        <button className="icone-botao" title={c.oculta ? "Mostrar" : "Ocultar"} aria-label={`${c.oculta ? "Mostrar" : "Ocultar"} ${atual}`} onClick={() => onEditar({ oculta: !c.oculta })}>
           {c.oculta ? "◉" : "◌"}
         </button>
       </div>

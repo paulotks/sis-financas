@@ -34,9 +34,9 @@ export default function Recorrentes() {
     <section>
       <header className="topo">
         <h1>Recorrentes</h1>
-        <div className="segmentado">
+        <div className="segmentado" role="group" aria-label="Pessoa">
           {(["PF", "PJ"] as const).map((p) => (
-            <button key={p} className={pessoa === p ? "ativo" : ""} onClick={() => setParams(p === "PJ" ? { pessoa: p } : {}, { replace: true })}>{p}</button>
+            <button key={p} className={pessoa === p ? "ativo" : ""} aria-pressed={pessoa === p} onClick={() => setParams(p === "PJ" ? { pessoa: p } : {}, { replace: true })}>{p}</button>
           ))}
         </div>
       </header>

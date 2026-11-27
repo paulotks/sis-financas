@@ -29,9 +29,9 @@ export default function Resumo() {
     <section>
       <header className="topo">
         <h1>Resumo</h1>
-        <div className="segmentado">
+        <div className="segmentado" role="group" aria-label="Pessoa">
           {["PF", "PJ"].map((p) => (
-            <button key={p} className={pessoa === p ? "ativo" : ""} onClick={() => set("pessoa", p)}>{p}</button>
+            <button key={p} className={pessoa === p ? "ativo" : ""} aria-pressed={pessoa === p} onClick={() => set("pessoa", p)}>{p}</button>
           ))}
         </div>
         <SeletorMes mes={mes} onChange={(m) => set("mes", m)} />
