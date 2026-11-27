@@ -69,6 +69,7 @@ export default function Conexoes() {
 
       {msg && <div className={`aviso ${msg.tipo === "erro" ? "erro" : ""}`}>{msg.texto}</div>}
 
+      <div className="tabela-wrap">
       <table className="tabela">
         <thead>
           <tr>
@@ -119,6 +120,7 @@ export default function Conexoes() {
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

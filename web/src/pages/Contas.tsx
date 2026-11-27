@@ -72,7 +72,8 @@ export default function Contas() {
       {investimentos.length > 0 && (
         <>
           <h2>Investimentos e cofrinhos</h2>
-          <table className="tabela compacta">
+          <div className="tabela-wrap">
+          <table className="tabela compacta estreita">
             <tbody>
               {investimentos.map((i) => (
                 <tr key={i.id}>
@@ -85,6 +86,7 @@ export default function Contas() {
               ))}
             </tbody>
           </table>
+          </div>
         </>
       )}
     </section>

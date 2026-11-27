@@ -35,10 +35,12 @@ export function Grafico({ titulo, frase, chaves = [], tabela, children }: {
       {tabela && (
         <details className="pequeno">
           <summary className="mudo">Ver em tabela</summary>
-          <table className="tabela compacta">
-            <thead><tr>{tabela.colunas.map((c, i) => <th key={c} className={i ? "num" : ""}>{c}</th>)}</tr></thead>
-            <tbody>{tabela.linhas.map((l, i) => <tr key={i}>{l.map((v, j) => <td key={j} className={j ? "num" : ""}>{v}</td>)}</tr>)}</tbody>
-          </table>
+          <div className="tabela-wrap">
+            <table className="tabela compacta">
+              <thead><tr>{tabela.colunas.map((c, i) => <th key={c} className={i ? "num" : ""}>{c}</th>)}</tr></thead>
+              <tbody>{tabela.linhas.map((l, i) => <tr key={i}>{l.map((v, j) => <td key={j} className={j ? "num" : ""}>{v}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
         </details>
       )}
     </figure>
