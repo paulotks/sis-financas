@@ -46,11 +46,11 @@ export default function Categorias() {
               if (nome.trim()) criar.mutate();
             }}
           >
-            <input className="campo" placeholder="Nova categoria" value={nome} onChange={(e) => setNome(e.target.value)} />
-            <select className="campo" value={grupo} onChange={(e) => setGrupo(e.target.value as Categoria["grupo"])}>
+            <input className="campo" name="nova-categoria" aria-label="Nome da nova categoria" autoComplete="off" maxLength={40} placeholder="Nova categoria" value={nome} onChange={(e) => setNome(e.target.value)} />
+            <select className="campo" name="grupo" aria-label="Grupo da nova categoria" value={grupo} onChange={(e) => setGrupo(e.target.value as Categoria["grupo"])}>
               {Object.entries(GRUPOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <input type="color" value={cor} onChange={(e) => setCor(e.target.value)} />
+            <input type="color" name="cor" aria-label="Cor da nova categoria" value={cor} onChange={(e) => setCor(e.target.value)} />
             <button className="botao" disabled={criar.isPending}>Adicionar</button>
           </form>
           {erroCategorias && <div className="aviso erro">{erroCategorias.message}</div>}
@@ -102,7 +102,7 @@ export default function Categorias() {
                   <td>
                     <button className="icone-botao" title="Apagar regra" aria-label={`Apagar a regra ${r.padrao}`}
                       onClick={() =>
-                        confirm(`Apagar a regra "${r.padrao}"?${r.usos ? ` Os ${r.usos === 1 ? "1 lançamento que ela pega volta" : `${r.usos} lançamentos que ela pega voltam`} para a categoria automática (o que você editou à mão fica).` : ""}`) &&
+                        confirm(`Apagar a regra "${r.padrao}"?${r.usos ? ` ${r.usos === 1 ? "O lançamento que ela pega passa" : `Os ${r.usos} lançamentos que ela pega passam`} a seguir outra regra ou a categoria automática; o que você editou à mão não muda.` : ""}`) &&
                         apagar.mutate(r.id)
                       }>✕</button>
                   </td>

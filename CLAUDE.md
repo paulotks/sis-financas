@@ -49,9 +49,11 @@ api/src/
 web/src/
   lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
-  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto)
+  components/           SeletorMes, SelectCategoria, CampoDinheiro, Patrimonio, LinhaPatrimonio, SelectSentido, OferecerRegra (corrigiu a categoria -> cria regra com um clique), ComprasDoEstorno, Alarme (topo do Resumo PF), RitmoLateral (menu, sempre o mês atual), Grafico (moldura dos gráficos: legenda, tabela, dica e cores por assunto), Icone (SVG do menu, sem biblioteca)
   pages/                Resumo, Lancamentos, Orcamento, ContasDoMes (menu logo depois de Orçamento; abas Mês e Ano), Metas, Analises (Recharts 3, carregada sob demanda), Recorrentes, Contas (com patrimônio), Categorias, Conexoes
-  styles.css            tema escuro (variáveis CSS); sem framework de CSS
+  styles.css            tema escuro (variáveis CSS: cores, --raio-*, --fs-*, --esp-*); sem framework de CSS
+                        celular (até 768px): topo fino + menu numa barra embaixo com "Mais" (popover). Tabela larga ganha
+                        .cartoes + classes por coluna (c-*) e vira cartão abaixo de 640px; aviso de ação usa .aviso.flutuante
 ```
 
 ## Regras de segurança (não negociáveis)

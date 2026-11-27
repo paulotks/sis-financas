@@ -118,7 +118,7 @@ function RendaOrcadoGasto({ d }: { d: Dados }) {
     >
       <ComposedChart data={dados} responsive style={ALTURA} margin={margem} barGap={2}>
         <CartesianGrid vertical={false} stroke={COR.grade} />
-        <XAxis dataKey="mes" tickFormatter={mesCurto} {...eixo} />
+        <XAxis dataKey="mes" tickFormatter={mesCurto} interval="preserveStartEnd" minTickGap={8} {...eixo} />
         <YAxis {...eixoDinheiro} />
         <Tooltip
           cursor={{ fill: "#ffffff0a" }}
@@ -156,7 +156,7 @@ function Guardado({ d }: { d: Dados }) {
       >
         <ComposedChart data={fechados} responsive style={ALTURA} margin={margem}>
           <CartesianGrid vertical={false} stroke={COR.grade} />
-          <XAxis dataKey="mes" tickFormatter={mesCurto} {...eixo} />
+          <XAxis dataKey="mes" tickFormatter={mesCurto} interval="preserveStartEnd" minTickGap={8} {...eixo} />
           <YAxis {...eixoDinheiro} />
           <Tooltip cursor={{ fill: "#ffffff0a" }} content={(p) => <Dica p={p} titulo={nomeMes} />} />
           <ReferenceLine y={0} stroke={COR.apoio} />

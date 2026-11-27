@@ -461,6 +461,9 @@ input.dia { width: 52px; }
 @media (max-width: 640px) {
   .so-celular { display: revert; }
   .sub { font-size: var(--fs-2); } /* 11px é pouco no celular */
+  .grafico-painel .recharts-label-list { display: none; } /* rótulo em cima da barra se sobrepõe; a frase já diz o número */
+  .compras li { grid-template-columns: 52px minmax(0, 1fr) auto; }
+  .compras li > :last-child { grid-column: 2 / -1; justify-self: start; }
   /* tabela.cartoes: cada linha vira um cartão; a página diz a grade de cada uma */
   .tabela.cartoes { min-width: 0; }
   .tabela.cartoes thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
