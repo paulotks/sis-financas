@@ -12,7 +12,7 @@
   /* superfícies, do fundo para cima */
   --lateral: #0e0e11;
   --cabeca: #111114;      /* cabeçalho de tabela, linha de detalhe */
-  --linha-hover: #17171c;
+  --linha-hover: #1a1a20;
   --linha: #1c1c22;       /* divisória entre linhas */
   --texto-2: #b9b9c6;
   --neutro: #a1a1ad;      /* barras e linhas de gráfico sem cor de assunto */
@@ -35,7 +35,7 @@
   /* espaço: use estes em código novo */
   --esp-1: 4px; --esp-2: 8px; --esp-3: 12px; --esp-4: 16px; --esp-5: 24px; --esp-6: 32px;
   color-scheme: dark;
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   font-size: 14px;
   color: var(--texto);
   background: var(--fundo);
@@ -50,14 +50,15 @@ button, a, input, select, summary, label { touch-action: manipulation; } /* sem 
 .pular { position: absolute; left: 8px; top: -60px; z-index: 10; padding: 8px 12px; border-radius: var(--raio-m); background: var(--painel-2); }
 .pular:focus { top: 8px; }
 .conteudo:focus { outline: none; } /* alvo do "pular": recebe o foco só para o Tab seguir dali */
-h1 { font-size: 24px; margin: 0; }
-h2 { font-size: 15px; margin: 28px 0 12px; color: var(--mudo); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+h1 { font-size: 24px; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 16px; margin: 28px 0 12px; color: var(--texto-2); font-weight: 600; text-wrap: balance; }
+p { text-wrap: pretty; }
 h3 { font-size: var(--fs-3); margin: 16px 0 8px; color: var(--mudo); font-weight: 500; }
 .painel h2:first-child { margin-top: 0; }
 code { font-size: var(--fs-2); color: var(--texto-2); }
 
 /* layout */
-.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
 .lateral { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 8px; padding: 20px 14px; border-right: 1px solid var(--borda); background: var(--lateral); }
 .marca { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; padding: 0 8px 18px; }
 .logo { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--raio-m); background: var(--destaque); font-size: var(--fs-2); }
@@ -65,7 +66,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .lateral nav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--raio-m); text-decoration: none; color: var(--mudo); }
 .lateral nav a:hover { background: var(--painel); color: var(--texto); }
 .lateral nav a.ativo { background: var(--painel-2); color: var(--texto); }
-.lateral .icone { width: 18px; text-align: center; }
+.icone { flex: none; }
 .sync { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 8px 0; border-top: 1px solid var(--borda); }
 .situacao { display: flex; flex-direction: column; gap: 6px; }
 .situacao small { color: var(--mudo); }
@@ -76,14 +77,13 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 .menu-mais:popover-open { display: flex; flex-direction: column; gap: 2px; }
 .menu-mais a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: var(--raio-m); text-decoration: none; color: var(--mudo); }
 .menu-mais a.ativo { background: var(--painel); color: var(--texto); }
-.menu-mais .icone { width: 18px; text-align: center; }
 .menu-mais .situacao { padding: 10px 12px 6px; margin-top: 4px; border-top: 1px solid var(--borda); }
 .conteudo { padding: 28px 36px 60px; max-width: 1280px; width: 100%; }
 .topo { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .topo h1 { margin-right: auto; }
 
 /* controles */
-.botao { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; background: var(--destaque); color: #fff; border: 0; border-radius: var(--raio-m); padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.botao { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; background: var(--destaque); color: #fff; border: 0; border-radius: var(--raio-m); padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
 .botao:disabled { opacity: .5; cursor: default; }
 .botao.secundario { background: var(--painel-2); color: var(--texto); border: 1px solid var(--borda); font-weight: 500; padding: 6px 10px; }
 .icone-botao { background: transparent; border: 0; color: var(--mudo); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: var(--raio-p); }
@@ -434,6 +434,7 @@ input.dia { width: 52px; }
   .ritmo-lateral > small:first-child { display: none; }
   .ritmo-lateral > :nth-child(n+4) { display: none; }
   [data-rota="resumo"] .ritmo-lateral { display: none; } /* o Resumo já abre com o alarme grande */
+  [data-rota="resumo"] .sync { margin-left: auto; }
   .sync { flex-wrap: nowrap; margin-left: auto; }
   .ritmo-lateral + .sync { margin: 0; }
   .sync .situacao, .rotulo-sync { display: none; }
@@ -450,7 +451,7 @@ input.dia { width: 52px; }
     font-size: var(--fs-1); line-height: 1.2; text-align: center; white-space: normal; color: var(--mudo);
   }
   .lateral nav a.extra { display: none; }
-  .lateral nav .icone { width: auto; font-size: 18px; }
+  .lateral nav .icone { width: 22px; height: 22px; }
   .lateral nav a.ativo, .botao-mais.ativo { background: none; color: var(--texto); }
   .lateral nav a.ativo .icone, .botao-mais.ativo .icone { color: var(--destaque); }
   .aviso.flutuante { top: 72px; } /* abaixo do topo fixo */
@@ -459,6 +460,7 @@ input.dia { width: 52px; }
 }
 @media (max-width: 640px) {
   .so-celular { display: revert; }
+  .sub { font-size: var(--fs-2); } /* 11px é pouco no celular */
   /* tabela.cartoes: cada linha vira um cartão; a página diz a grade de cada uma */
   .tabela.cartoes { min-width: 0; }
   .tabela.cartoes thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -563,4 +565,9 @@ input.dia { width: 52px; }
   /* sem mouse não há hover: o tracejado avisa que o texto se edita ali mesmo */
   .editavel:not(:focus) { border-bottom: 1px dashed var(--borda); }
   .conta .acoes .link, .conta .acoes a { min-height: 40px; display: inline-flex; align-items: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .botao:active, .icone-botao:active, .segmentado button:active { transform: none; }
 }

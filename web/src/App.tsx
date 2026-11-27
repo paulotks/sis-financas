@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, dadosVelhos, quando } from "./lib/api";
 import RitmoLateral from "./components/RitmoLateral";
+import Icone, { type NomeIcone } from "./components/Icone";
 import Resumo from "./pages/Resumo";
 import Lancamentos from "./pages/Lancamentos";
 import Orcamento from "./pages/Orcamento";
@@ -16,17 +17,17 @@ import Categorias from "./pages/Categorias";
 const Analises = lazy(() => import("./pages/Analises")); // a biblioteca de gráficos só carrega nesta página
 
 // fixo: fica na barra de baixo do celular; o resto vai para o "Mais"
-const MENU = [
-  { to: "/resumo", rotulo: "Resumo", icone: "◎", fixo: true },
-  { to: "/lancamentos", rotulo: "Lançamentos", icone: "≡", fixo: true },
-  { to: "/orcamento", rotulo: "Orçamento", icone: "◔", fixo: true },
-  { to: "/contas-do-mes", rotulo: "Contas do mês", icone: "▤", fixo: true },
-  { to: "/metas", rotulo: "Metas", icone: "⚑" },
-  { to: "/analises", rotulo: "Análises", icone: "▥" },
-  { to: "/recorrentes", rotulo: "Recorrentes", icone: "∞" },
-  { to: "/contas", rotulo: "Contas e cartões", icone: "▣" },
-  { to: "/categorias", rotulo: "Categorias e regras", icone: "◇" },
-  { to: "/conexoes", rotulo: "Conexões", icone: "⇄" },
+const MENU: { to: string; rotulo: string; icone: NomeIcone; fixo?: true }[] = [
+  { to: "/resumo", rotulo: "Resumo", icone: "resumo", fixo: true },
+  { to: "/lancamentos", rotulo: "Lançamentos", icone: "lancamentos", fixo: true },
+  { to: "/orcamento", rotulo: "Orçamento", icone: "orcamento", fixo: true },
+  { to: "/contas-do-mes", rotulo: "Contas do mês", icone: "mes", fixo: true },
+  { to: "/metas", rotulo: "Metas", icone: "metas" },
+  { to: "/analises", rotulo: "Análises", icone: "analises" },
+  { to: "/recorrentes", rotulo: "Recorrentes", icone: "recorrentes" },
+  { to: "/contas", rotulo: "Contas e cartões", icone: "contas" },
+  { to: "/categorias", rotulo: "Categorias e regras", icone: "categorias" },
+  { to: "/conexoes", rotulo: "Conexões", icone: "conexoes" },
 ];
 
 export default function App() {
@@ -69,22 +70,22 @@ export default function App() {
         </div>
         <nav aria-label="Menu">
           {MENU.map((m) => (
-            <NavLink key={m.to} to={m.to} className={({ isActive }) => `${isActive ? "ativo" : ""} ${"fixo" in m ? "" : "extra"}`}>
-              <span className="icone" aria-hidden="true">{m.icone}</span>
+            <NavLink key={m.to} to={m.to} className={({ isActive }) => `${isActive ? "ativo" : ""} ${m.fixo ? "" : "extra"}`}>
+              <Icone nome={m.icone} />
               {m.rotulo}
             </NavLink>
           ))}
           {/* só no celular: o que não cabe na barra de baixo */}
-          <button className={`botao-mais ${MENU.some((m) => !("fixo" in m) && pathname === m.to) ? "ativo" : ""}`} popoverTarget="menu-mais">
-            <span className="icone" aria-hidden="true">⋯</span>
+          <button className={`botao-mais ${MENU.some((m) => !m.fixo && pathname === m.to) ? "ativo" : ""}`} popoverTarget="menu-mais">
+            <Icone nome="mais" />
             Mais
           </button>
         </nav>
         <div id="menu-mais" popover="auto" className="menu-mais">
-          {MENU.filter((m) => !("fixo" in m)).map((m) => (
+          {MENU.filter((m) => !m.fixo).map((m) => (
             <NavLink key={m.to} to={m.to} className={({ isActive }) => (isActive ? "ativo" : "")}
               onClick={() => document.getElementById("menu-mais")?.hidePopover()}>
-              <span className="icone" aria-hidden="true">{m.icone}</span>
+              <Icone nome={m.icone} />
               {m.rotulo}
             </NavLink>
           ))}
@@ -94,7 +95,7 @@ export default function App() {
         <div className="sync">
           <button className="botao" disabled={sync.isPending || !conexoes.data?.length} onClick={() => sync.mutate()}
             aria-label={sync.isPending ? "Sincronizando…" : "Sincronizar"}>
-            <span aria-hidden="true">↻</span><span className="rotulo-sync">{sync.isPending ? " Sincronizando…" : " Sincronizar"}</span>
+            <Icone nome="sincronizar" /><span className="rotulo-sync">{sync.isPending ? " Sincronizando…" : " Sincronizar"}</span>
           </button>
           <div className="situacao" aria-live="polite">{situacao}</div>
         </div>
