@@ -39,10 +39,24 @@ async function req<T>(metodo: string, url: string, corpo?: unknown): Promise<T> 
     headers: corpo !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
   });
+  avisarCopia(r.headers.get("x-copia-de"));
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((d as { erro?: string }).erro ?? `HTTP ${r.status}`);
   return d as T;
 }
+
+/** Quando a última resposta veio da cópia guardada no aparelho (PC desligado; public/sw.js), a data dela; senão null. */
+let copiaDe: string | null = null;
+const ouvintes = new Set<() => void>();
+function avisarCopia(v: string | null) {
+  if (v === copiaDe) return;
+  copiaDe = v;
+  ouvintes.forEach((f) => f());
+}
+export const copia = {
+  ler: () => copiaDe,
+  ouvir: (f: () => void) => (ouvintes.add(f), () => void ouvintes.delete(f)),
+};
 
 const qs = (p: Record<string, string | number | undefined | false>) => {
   const s = new URLSearchParams();

@@ -113,6 +113,7 @@ code { font-size: var(--fs-2); color: var(--texto-2); }
 /* avisos */
 .aviso { background: var(--ok-fundo); border: 1px solid var(--ok-borda); color: var(--ok-texto); padding: 10px 14px; border-radius: var(--raio-m); margin-bottom: 14px; }
 .aviso.flutuante { position: sticky; top: 8px; z-index: 4; box-shadow: 0 8px 24px rgb(0 0 0 / .45); } /* resposta de uma ação: fica à vista ao rolar */
+.aviso.alerta { background: rgb(251 191 36 / .1); border-color: rgb(251 191 36 / .4); color: var(--alerta); }
 .aviso.erro { background: var(--erro-fundo); border-color: var(--erro-borda); color: var(--erro-texto); }
 .ok { color: var(--pos) !important; }
 .erro { color: var(--neg) !important; }

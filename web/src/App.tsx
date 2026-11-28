@@ -1,7 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useSyncExternalStore } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, dadosVelhos, quando } from "./lib/api";
+import { api, copia, dadosVelhos, quando } from "./lib/api";
 import RitmoLateral from "./components/RitmoLateral";
 import Icone, { type NomeIcone } from "./components/Icone";
 import Resumo from "./pages/Resumo";
@@ -34,6 +34,7 @@ export default function App() {
   const qc = useQueryClient();
   const { pathname } = useLocation();
   const conexoes = useQuery({ queryKey: ["conexoes"], queryFn: api.conexoes });
+  const copiaDe = useSyncExternalStore(copia.ouvir, copia.ler);
   const sync = useMutation({
     mutationFn: () => api.sincronizar(),
     onSuccess: () => qc.invalidateQueries(),
@@ -101,6 +102,11 @@ export default function App() {
         </div>
       </aside>
       <main className="conteudo" id="conteudo" tabIndex={-1}>
+        {copiaDe !== null && (
+          <div className="aviso alerta" role="status">
+            PC desligado: mostrando o que este aparelho guardou em {quando(copiaDe || null)}. Nada pode ser gravado até ele ligar.
+          </div>
+        )}
         {conexoes.error && <div className="aviso erro">A API local não respondeu: {conexoes.error.message}</div>}
         <Routes>
           {/* espera as conexões chegarem: sem nenhuma, a primeira tela é a de conectar banco */}
