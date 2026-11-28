@@ -38,6 +38,7 @@ api/src/
   categorizar.ts  regras do Paulo > mapa de categorias Pluggy > sem categoria
   recorrentes.ts  detecta cobranças mensais e aplica as decisões (função pura)
   grupos.ts       os grupos de categoria (puro: o MCP também usa)
+  mcc.ts          tipo de loja pelo MCC do cartão (tabela fixa, ISO 18245; puro): só para lembrar a compra, nunca categoriza
   totais.ts       os totais do mês (BASE_RESUMO, GASTO, SOMA), a régua da renda, o normal das categorias e a lista de recorrentes: consultas, sem rota
   ritmo.ts        o alarme: projeção do mês, renda esperada, nível (funções puras; as consultas ficam em totais.ts)
   patrimonio.ts   soma das posições e foto diária dos saldos
@@ -116,6 +117,9 @@ web/src/
   **Aba Ano:** cada coluna é a aba Mês daquele mês, pela mesma função (nunca refaça a regra na grade). Rodapé: o mês que passou pelo pago e pela
   renda que entrou, do atual em diante pelo esperado; a fatura que foi para a seguinte conta só o que foi pago dela (o resto está na seguinte).
   Antes do início da análise, o mês que passou fica sem livre (renda incompleta). Ano até 2100.
+- **Tipo de loja** (item 82): `lancamentos.mcc` vem de `creditCardMetadata.payeeMCC` (só cartão); o nome sai de `mcc.ts` na API (`tipo_de_loja`).
+  Final do cartão e hora da compra (`cartao_final`, `compra_em` em Brasília, "AAAA-MM-DD HH:MM" ou só a data) são lidos do `bruto` no `SELECT_LANC`, sem coluna.
+  Nada disso entra em categoria nem em total.
 - Contas têm `pessoa` PF/PJ. Conta PJ não entra no orçamento da casa. O resumo filtra por pessoa.
 
 ## Pluggy — o que já se sabe

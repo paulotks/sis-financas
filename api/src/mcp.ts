@@ -85,6 +85,9 @@ export const CONVENCOES = `Assistente financeiro do Paulo, sobre os dados dele n
 - Conta oculta aparece em contas, mas não entra em resumo, orçamento, lançamentos nem patrimônio: não some o saldo dela.
 - Categorizar: prefira regra (texto contido na descrição original; vale para o passado e para o futuro) a editar um a um,
   porque a edição manual nunca mais é alterada por regra. Comece por pendentes_agrupados e use previa_regra antes de criar_regra.
+- Lançamento de cartão traz tipo_de_loja (o nome do mcc, código de ramo da loja; sem nome, só o mcc), cartao_final e compra_em (data e hora
+  da compra em Brasília; na parcela, a da compra original). Ao revisar ou propor categoria, mostre-os ao Paulo: ajudam a lembrar o que foi a
+  compra (marketplace com mcc de joalheria não é mercado). O mcc é do lojista e pode enganar: é pista, não decide a categoria.
   Nome genérico pega gasto que não devia. Não crie regra com "Pagamento de conta".
 - Regra pode valer só para saída ou só para entrada (sentido) e só para uma conta (conta_id). Use o sentido do grupo que você está
   categorizando: o mesmo nome costuma aparecer pagando e recebendo. Entre regras que pegam o mesmo lançamento, vence a de texto mais longo.
@@ -114,6 +117,9 @@ const enxugar = (l: Lancamento) => ({
   categoria: l.categoria,
   ...(l.categoria_manual && { editado_a_mao: true }),
   ...((l.total_parcelas ?? 0) > 1 && { parcela: `${l.parcela}/${l.total_parcelas}` }),
+  ...(l.mcc != null && { mcc: l.mcc, tipo_de_loja: l.tipo_de_loja }),
+  ...(l.cartao_final && { cartao_final: l.cartao_final }),
+  ...(l.compra_em && { compra_em: l.compra_em }),
   ...(l.status !== "POSTED" && { status: l.status }),
   ...(l.ignorado && { ignorado: true }),
   ...(l.notas && { notas: l.notas }),
@@ -128,7 +134,7 @@ function agrupar(itens: Lancamento[]) {
     const chave = `${chaveDe(original) || original}|${l.valor_centavos < 0 ? "saida" : "entrada"}`;
     grupos.set(chave, [...(grupos.get(chave) ?? []), l]);
   }
-  const unicos = (ls: Lancamento[], campo: "descricao_original" | "categoria_pluggy" | "conta") => [...new Set(ls.map((l) => l[campo]).filter(Boolean))];
+  const unicos = (ls: Lancamento[], campo: "descricao_original" | "categoria_pluggy" | "conta" | "tipo_de_loja") => [...new Set(ls.map((l) => l[campo]).filter(Boolean))];
   return [...grupos.values()].map((ls) => ({
     tipo: ls[0].valor_centavos < 0 ? "saida" : "entrada",
     qtd: ls.length,
@@ -136,6 +142,7 @@ function agrupar(itens: Lancamento[]) {
     descricoes_originais: unicos(ls, "descricao_original").slice(0, 3),
     categoria_do_banco: unicos(ls, "categoria_pluggy").slice(0, 3),
     contas: unicos(ls, "conta"),
+    ...(ls.some((l) => l.tipo_de_loja) && { tipos_de_loja: unicos(ls, "tipo_de_loja").slice(0, 3) }),
     de: ls.at(-1)!.data, // a API devolve do mais novo ao mais antigo
     ate: ls[0].data,
     ids: ls.slice(0, 3).map((l) => l.id),

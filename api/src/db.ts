@@ -280,6 +280,12 @@ export const MIGRACOES: string[] = [
   `
   INSERT OR IGNORE INTO categorias (nome, grupo, cor) VALUES ('Carro','essencial','#e58e26');
   `,
+  // tipo de loja do cartão (MCC, ISO 18245): só para lembrar o que foi a compra; não entra em categoria nem total
+  `
+  ALTER TABLE lancamentos ADD COLUMN mcc INTEGER;
+  UPDATE lancamentos SET mcc = json_extract(bruto, '$.creditCardMetadata.payeeMCC')
+   WHERE typeof(json_extract(bruto, '$.creditCardMetadata.payeeMCC')) = 'integer';
+  `,
 ];
 
 const COPIAS = 14; // de cada tipo

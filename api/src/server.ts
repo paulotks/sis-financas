@@ -9,6 +9,7 @@ import { copiaDoDia, db, migrar, simplificar, transacao } from "./db.js";
 import { env } from "./env.js";
 import { faltasDosCartoes } from "./faltas.js";
 import { GRUPOS } from "./grupos.js";
+import { tipoDeLoja } from "./mcc.js";
 import { lerMetas, listarMetas, mesmaPosicao, metasDoMes } from "./metas.js";
 import { INVESTIMENTOS, patrimonio, posicoes, registrarSaldos } from "./patrimonio.js";
 import { ErroPluggy, pluggy } from "./pluggy.js";
@@ -149,14 +150,26 @@ app.patch("/api/contas/:id", async (req): Promise<ContaLinha> => {
 const SELECT_LANC = `
   SELECT l.id, l.conta_id, l.data, l.descricao, l.descricao_original, l.valor_centavos, l.tipo, l.status,
          l.categoria_id, l.categoria_manual, l.categoria_pluggy, l.comerciante, l.parcela, l.total_parcelas,
-         l.notas, l.tags, l.ignorado,
+         l.notas, l.tags, l.ignorado, l.mcc,
+         json_extract(l.bruto, '$.creditCardMetadata.cardNumber') AS cartao_final,
+         COALESCE(json_extract(l.bruto, '$.creditCardMetadata.transactionDateTime'), json_extract(l.bruto, '$.creditCardMetadata.purchaseDate')) AS compra_utc,
          COALESCE(ct.apelido, ct.nome) AS conta, ct.tipo AS conta_tipo, ct.pessoa,
          cat.nome AS categoria, cat.cor AS categoria_cor, cat.grupo AS categoria_grupo,
          ${SOMA} AS soma, ${ESTORNO} AS estorno
   ${LANCAMENTOS}`;
 
-const formatarLanc = (r: Record<string, unknown>): Lancamento => ({
+/** Data e hora da compra em Brasília (UTC−3, sem horário de verão desde 2019). Meia-noite em UTC ou em Brasília é só a data: o banco não mandou a hora. */
+function compraEm(utc: unknown): string | null {
+  if (typeof utc !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(utc)) return null;
+  if (/T0[03]:00:00(\.0+)?Z$/.test(utc)) return utc.slice(0, 10);
+  const ms = Date.parse(utc);
+  return Number.isNaN(ms) ? null : new Date(ms - 3 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+}
+
+const formatarLanc = ({ compra_utc, ...r }: Record<string, unknown>): Lancamento => ({
   ...r,
+  tipo_de_loja: tipoDeLoja(r.mcc as number | null),
+  compra_em: compraEm(compra_utc),
   tags: JSON.parse(String(r.tags ?? "[]")),
   ignorado: !!r.ignorado,
   soma: !!r.soma,

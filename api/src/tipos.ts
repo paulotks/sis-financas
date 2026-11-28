@@ -44,6 +44,10 @@ export interface Lancamento {
   comerciante: string | null;
   parcela: number | null;
   total_parcelas: number | null;
+  mcc: number | null; // tipo de loja do cartão (ISO 18245); conta nunca tem
+  tipo_de_loja: string | null; // o nome do mcc; null = sem mcc ou código fora da tabela (mostrar o número)
+  cartao_final: string | null; // final do cartão que fez a compra (adicional ou virtual pode diferir da conta)
+  compra_em: string | null; // data e hora da compra em Brasília, "AAAA-MM-DD HH:MM" (ou só a data, se o banco não mandou a hora)
   notas: string | null;
   tags: string[];
   ignorado: boolean;

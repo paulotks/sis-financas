@@ -114,14 +114,14 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
   const existe = db.prepare("SELECT bruto FROM lancamentos WHERE id = ?");
   const inserir = db.prepare(
     `INSERT INTO lancamentos (id, conta_id, data, descricao_original, descricao, valor_centavos, tipo, status,
-       categoria_pluggy, categoria_id, regra_id, comerciante, parcela, total_parcelas, fatura_id, bruto, atualizado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))`,
+       categoria_pluggy, categoria_id, regra_id, comerciante, parcela, total_parcelas, fatura_id, mcc, bruto, atualizado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))`,
   );
   // atualização preserva o que é do usuário: descricao, categoria manual, notas, tags, ignorado
   // e a última categoria da Pluggy: fora do trial ela vem null, e reaplicarRegras descategorizaria tudo
   const atualizar = db.prepare(
     `UPDATE lancamentos SET data=?, descricao_original=?, valor_centavos=?, tipo=?, status=?,
-       categoria_pluggy=COALESCE(?, categoria_pluggy), comerciante=?, parcela=?, total_parcelas=?, fatura_id=?, bruto=?, atualizado_em=datetime('now','localtime')
+       categoria_pluggy=COALESCE(?, categoria_pluggy), comerciante=?, parcela=?, total_parcelas=?, fatura_id=?, mcc=?, bruto=?, atualizado_em=datetime('now','localtime')
      WHERE id=?`,
   );
   for (const t of lista) {
@@ -139,18 +139,19 @@ function salvarTransacoes(lista: PTransacao[], regras: ReturnType<typeof carrega
       parcela: cc.installmentNumber ?? null,
       total: cc.totalInstallments ?? null,
       fatura: cc.billId ?? null,
+      mcc: Number.isInteger(cc.payeeMCC) ? cc.payeeMCC! : null,
     };
     const bruto = JSON.stringify(t);
     const antes = existe.get(t.id) as { bruto: string } | undefined;
     if (antes) {
       atualizar.run(comum.data, original, comum.valor, t.type, t.status ?? null, t.category ?? null, comerciante,
-        comum.parcela, comum.total, comum.fatura, bruto, t.id);
+        comum.parcela, comum.total, comum.fatura, comum.mcc, bruto, t.id);
       if (antes.bruto !== bruto) atualizados++; // relido sem mudança não conta
     } else {
       const s = sugerirCategoria({ descricao_original: original, categoria_pluggy: t.category, valor_centavos: comum.valor, conta_id: t.accountId }, regras, banco);
       inserir.run(t.id, t.accountId, comum.data, original, s.descricao || t.description || original, comum.valor,
         t.type, t.status ?? null, t.category ?? null, s.categoria_id, s.regra_id, comerciante, comum.parcela,
-        comum.total, comum.fatura, bruto);
+        comum.total, comum.fatura, comum.mcc, bruto);
       novos.push(t.id);
     }
   }

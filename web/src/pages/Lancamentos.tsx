@@ -222,6 +222,13 @@ export default function Lancamentos() {
   );
 }
 
+/** Final do cartão e hora da compra; a data só quando difere da linha (parcela). */
+function daCompra(l: Lancamento) {
+  const [dia, hora] = (l.compra_em ?? "").split(" ");
+  const quando = !dia ? null : dia === l.data ? (hora ? `às ${hora}` : null) : `compra ${dataCurta(dia)}${hora ? ` ${hora}` : ""}`;
+  return [l.cartao_final && `final ${l.cartao_final}`, quando].filter(Boolean).join(" · ");
+}
+
 function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
   l: Lancamento;
   aberto: boolean;
@@ -257,6 +264,8 @@ function Linha({ l, categorias, onSalvar, aberto, onEstorno }: {
           {/* tela estreita: data e conta saem das colunas e vêm para cá */}
           <span className="so-estreito"><span className="so-celular">{dataCurta(l.data)} · </span>{l.conta}</span>
           {l.descricao_original !== l.descricao && <span title="Descrição original do banco">{l.descricao_original}</span>}
+          {l.mcc != null && <span title={`Tipo de loja (MCC ${l.mcc})`}>{l.tipo_de_loja ?? `MCC ${l.mcc}`}</span>}
+          {daCompra(l) && <span title="Cartão e horário da compra (Brasília)">{daCompra(l)}</span>}
           {l.total_parcelas && l.total_parcelas > 1 && <span className="selo">{l.parcela}/{l.total_parcelas}</span>}
           {l.status === "PENDING" && <span className="selo">pendente no banco</span>}
           {l.status === "REMOVIDO" && <span className="selo" title="O banco não devolve mais este lançamento; não entra no resumo">removido pelo banco</span>}

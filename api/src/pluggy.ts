@@ -87,7 +87,15 @@ export interface PTransacao {
   status?: string;
   category?: string | null;
   merchant?: { name?: string | null; businessName?: string | null } | null;
-  creditCardMetadata?: { installmentNumber?: number | null; totalInstallments?: number | null; billId?: string | null } | null;
+  creditCardMetadata?: {
+    installmentNumber?: number | null;
+    totalInstallments?: number | null;
+    billId?: string | null;
+    payeeMCC?: number | null; // tipo de loja (ISO 18245)
+    cardNumber?: string | null; // final do cartão (pode ser adicional ou virtual)
+    transactionDateTime?: string | null; // data e hora da compra, UTC
+    purchaseDate?: string | null; // idem, só nas parceladas
+  } | null;
 }
 export interface PFatura {
   id: string;

@@ -473,6 +473,31 @@ test("categoria da Pluggy que passa a vir null (fim do trial) não descategoriza
   await sync();
 });
 
+test("tipo de loja (MCC), final do cartão e hora da compra: o sync grava, a API traduz e o MCP mostra sem o bruto", async () => {
+  const base = paginas[0];
+  const cc = (payeeMCC: unknown, transactionDateTime: string) => ({ creditCardMetadata: { payeeMCC, cardNumber: "0000", transactionDateTime } });
+  paginas = [[...base,
+    tx("mcc-a", -4, cc(5411, `${dia(-4)}T01:30:00.000Z`)), // 22:30 da véspera em Brasília
+    tx("mcc-b", -4, cc(1, `${dia(-4)}T03:00:00.000Z`)), // código sem nome; meia-noite = o banco não mandou a hora
+    tx("mcc-c", -4, cc("5411", `${dia(-4)}T15:00:00.000Z`)), // MCC que não é número não vale
+  ]];
+  await sync();
+  assert.deepEqual(["mcc-a", "mcc-b", "mcc-c"].map((id) => lanc(id).mcc), [5411, 1, null]);
+  const { d } = await chamar("GET", `/api/lancamentos?busca=mcc-&mes=${dia(-4).slice(0, 7)}`);
+  const porId = Object.fromEntries(d.itens.map((l: any) => [l.id, [l.tipo_de_loja, l.cartao_final, l.compra_em]]));
+  assert.deepEqual(porId["mcc-a"], ["Supermercado", "0000", `${dia(-5)} 22:30`]);
+  assert.deepEqual(porId["mcc-b"], [null, "0000", dia(-4)]);
+  assert.ok(!("compra_utc" in d.itens[0]) && !("bruto" in d.itens[0]));
+
+  const { cliente, usar } = await ligarMcp();
+  const { itens } = await usar("lancamentos", { mes: dia(-4).slice(0, 7), busca: "mcc-a" });
+  assert.deepEqual([itens[0].mcc, itens[0].tipo_de_loja, itens[0].cartao_final], [5411, "Supermercado", "0000"]);
+  assert.ok(!JSON.stringify(itens).includes("bruto") && !JSON.stringify(itens).includes("creditCardMetadata"));
+  await cliente.close();
+  paginas = [base];
+  await sync();
+});
+
 test("regra aprende: a prévia bate com o aplicado, repetir o texto troca a categoria e o editado à mão não muda", async () => {
   const base = paginas[0];
   const uber = (id: string, extra = "") => tx(id, -6, { description: `UBER *TRIP ${id}${extra}` });

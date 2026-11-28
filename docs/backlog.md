@@ -29,6 +29,7 @@ Uma fatia só começa com as de que depende já no `main`. O detalhe de cada ite
 | **12. Contas do mês: aba Mês** (feita em 2026-11-26) | 79 | Spec: [specs/lote-7.md](specs/lote-7.md). Junta recorrentes, faturas, renda esperada e metas numa página nova. Muda só a `situacao` das recorrentes (atrasada pelo último dia com dado) | não | 11 |
 | **13. Contas do mês: conta à mão** (feita em 2026-11-26) | 80 | Entra na mesma regra de quem paga qual linha, que nasce no 79 | migração: worktree | 12 |
 | **14. Contas do mês: aba Ano** (feita em 2026-11-26) | 81 | Reaproveita o cálculo das fatias 12 e 13 | não | 13 |
+| **15. Tipo de loja** (feita em 2026-11-27) | 82 | Um item só: migração, sync, Lançamentos e MCP | migração: worktree | 14 |
 
 - **Por que esta ordem:** primeiro não perder dado (1), depois ler certo (3 a 5), depois avisar o que falta (6). Refinar conta (9) só vale com o dado completo.
 - **Esperam um fato:** V3 e V4 (virada da fatura).
@@ -115,6 +116,19 @@ Spec: [specs/lote-7.md](specs/lote-7.md). Página nova, só leitura: o mês pelo
 | 79 | Aba Mês: recorrentes + faturas, pago automático, fatura parcial e estimada, atrasada pelo último dia com dado (também em Recorrentes), topo com renda e metas, MCP lê. Como ficou: a fatura vale pelo total do banco (decidido com o Paulo: o traduzido não bate quando a anterior não foi paga), e a não paga com a seguinte fechada "foi para a fatura seguinte"; peça nova `fechamentoAbreOSeguinte` no adaptador. Na cópia, Resumo, Orçamento, alarme, Análises e metas iguais ao `main` em todos os meses | M | não | feito (2026-11-26) |
 | 80 | Conta cadastrada à mão: texto para achar o pagamento, vincular, marcar como paga, prioridade sobre a recorrente, MCP cria e edita. Como ficou: o texto passa pela mesma normalização do nome do lançamento; disputa pelo valor mais próximo, um lançamento por conta, empate sempre com o mesmo dono (decidido com o Paulo: duas contas com o mesmo texto podem trocar qual aparece paga no mês de um pagamento só); a recorrente que perdeu a última cobrança não se projeta mais, e o passado dela fica. Migração 14 (tabelas `compromissos` e `compromissos_pagos`). Na cópia, sem conta à mão, todas as respostas iguais ao `main`; com elas, só a aba Mês muda | M | migração | feito (2026-11-26) |
 | 81 | Aba Ano: grade linhas × 12 meses, passado real e futuro previsto, MCP lê. Como ficou: cada coluna é a aba Mês daquele mês, pela mesma função (as recorrentes e o histórico são lidos uma vez para o ano). Rodapé: o mês que passou pelo que saiu e pela renda que entrou, do atual em diante pelo esperado; a fatura que foi para a seguinte só pelo que foi pago dela. Na cópia, a aba Mês e as outras respostas iguais ao `main` e as 12 colunas iguais à aba Mês | M | não | feito (2026-11-26) |
+
+## Item 82: tipo de loja (MCC): FEITO (2026-11-27)
+
+O cartão manda em `creditCardMetadata` o MCC (`payeeMCC`, ramo da loja pela ISO 18245), o final do cartão (`cardNumber`) e a data e hora
+da compra (`transactionDateTime`; na parcela, a da compra original, igual a `purchaseDate`). Conta nunca tem. O MCC traduzido ajuda a
+lembrar o que foi uma compra de nome genérico (marketplace, intermediador de pagamento) e a acertar a categoria.
+
+- `lancamentos.mcc` (migração 16, preenchida do `bruto`; o sync grava). Nome em português em `api/src/mcc.ts` (tabela fixa; fora dela, só o número).
+- Final do cartão e hora da compra são lidos do `bruto` na consulta, sem coluna. A hora sai em Brasília (UTC−3); meia-noite em UTC ou em
+  Brasília = o banco não mandou a hora, e sai só a data.
+- Lançamentos: na linha de baixo da descrição (tipo de loja, final do cartão, hora; a data só quando difere, como na parcela). MCP:
+  `mcc`, `tipo_de_loja`, `cartao_final` e `compra_em` em todo lançamento; `tipos_de_loja` em `pendentes_agrupados`.
+- Não entra em categoria nem em total (conferido: as respostas da API iguais antes e depois, todos os meses, PF e PJ).
 
 ## Antes do lote 6: base segura (revisão de arquitetura e banco)
 
@@ -208,6 +222,7 @@ No sentido contrário, a validação **reduz a pressa do 48** (sinal igual ao `b
 | 19 | Resumo: % categorizada do mês | P | não | O "gasto real" já existe: `saidas` exclui transferências. Falta só a % |
 | 34 | Análises D, F e J: cada R$ 100 da renda, mapa de calor categoria × mês, patrimônio e dívida no tempo | M | não | O J precisa de mais dias em `saldos_diarios` |
 | 35 | Notificação do Windows quando o mês virar vermelho | P | não | Só se o alarme na tela não bastar |
+| 83 | MCC sugere categoria (pendente sem regra nem categoria da Pluggy) | M | não | O 82 já grava o `mcc`. O MCC é do lojista: marketplace e intermediador de pagamento enganam; seria sugestão, nunca acima de regra |
 
 ## Fechados ou só acompanhar
 
