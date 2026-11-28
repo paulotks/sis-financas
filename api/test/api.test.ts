@@ -572,6 +572,16 @@ test("API: host e origem de fora são recusados; erro de dados não vira 500", a
   assert.equal((await chamar("GET", "/api/lancamentos")).d.total, ids().length);
 });
 
+test("a versão dos dados só muda quando algo é gravado", async () => {
+  const versao = async () => (await chamar("GET", "/api/versao")).d.versao as string;
+  const v1 = await versao();
+  await chamar("GET", "/api/lancamentos");
+  assert.equal((await chamar("PATCH", "/api/lancamentos/a2", { categoria_id: 9999 })).status, 400);
+  assert.equal(await versao(), v1); // leitura e gravação recusada não mudam
+  assert.equal((await chamar("PATCH", "/api/lancamentos/a2", { notas: null })).status, 200);
+  assert.notEqual(await versao(), v1);
+});
+
 // daqui em diante: contas e lançamentos inseridos direto, em meses que nenhum teste acima usa
 let nConta = 0;
 const novaConta = (tipo: "BANK" | "CREDIT", extra: { pessoa?: string; oculta?: number; saldo?: number; item?: string } = {}) => {

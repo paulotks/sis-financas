@@ -52,6 +52,15 @@ app.addHook("onRequest", async (req, reply) => {
   }
 });
 
+// Versão dos dados: muda a cada gravação e a cada sincronização. O aparelho só baixa a cópia de novo (web: guardarTudo,
+// para ver com o PC desligado) quando ela muda. Reiniciar a API = versão nova (pode ter build novo).
+const inicio = Date.now().toString(36);
+let gravacoes = 0;
+app.addHook("onResponse", async (req, reply) => {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.url.startsWith("/api/") && reply.statusCode < 400) gravacoes++;
+});
+app.get("/api/versao", async () => ({ versao: `${inicio}-${gravacoes}` }));
+
 app.setErrorHandler((err: Error, _req, reply) => {
   if (err instanceof ZodError) return reply.code(400).send({ erro: "dados inválidos", detalhes: err.issues });
   if (err instanceof ErroPluggy) return reply.code(502).send({ erro: err.message });
@@ -817,7 +826,7 @@ await app.listen({ host: "127.0.0.1", port: env.porta });
 if (env.syncAutoHoras > 0) {
   const automatica = () =>
     sincronizarAtualizados().then(
-      (r) => r.length && app.log.info({ itens: r.map((x) => x.item_id), erros: r.filter((x) => x.erro).length }, "sincronização automática"),
+      (r) => r.length && (gravacoes++, app.log.info({ itens: r.map((x) => x.item_id), erros: r.filter((x) => x.erro).length }, "sincronização automática")),
       (e) => app.log.error(e, "sincronização automática falhou"), // rede fora ou Pluggy fora: tenta na próxima volta
     );
   void automatica(); // cobre o PC que ficou desligado

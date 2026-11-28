@@ -206,3 +206,55 @@ export const GRUPOS: Record<Grupo, string> = {
   renda: "Renda",
   transferencia: "Transferência (fora do resumo)",
 };
+
+/**
+ * Abre por baixo todas as telas (todos os meses, PF e PJ), pelas mesmas chamadas das páginas: a cópia do
+ * service worker (public/sw.js) fica com o app inteiro para ver com o PC desligado. Só quando a versão dos dados
+ * (GET /api/versao) mudou desde a última cópia deste aparelho.
+ * Fica de fora o que depende de filtro digitado (busca, conta, categoria em Lançamentos).
+ */
+let guardando = false;
+export async function guardarTudo() {
+  if (guardando || !navigator.serviceWorker?.controller) return; // sem service worker no ar (dev, 1ª visita), nada seria guardado
+  guardando = true;
+  try {
+    const { versao } = await req<{ versao: string }>("GET", "/api/versao");
+    if (copiaDe !== null) return; // a resposta veio da cópia: PC fora do ar
+    let guardada: string | null = null;
+    try { guardada = localStorage.getItem("versao_guardada"); } catch { /* sem localStorage: guarda sempre */ }
+    if (guardada === versao) return;
+    if (!(await baixarTudo())) return; // caiu no meio: a cópia ficou incompleta, tenta de novo na próxima
+    try { localStorage.setItem("versao_guardada", versao); } catch { /* idem */ }
+  } catch {
+    // PC fora do ar: tenta na próxima
+  } finally {
+    guardando = false;
+  }
+}
+
+/** true se tudo veio do PC (nada falhou, nada da cópia). */
+async function baixarTudo() {
+  const meses = [...new Set([mesAtual(), ...(await api.meses().catch(() => []))])];
+  const anos = [...new Set(meses.map((m) => m.slice(0, 4)))];
+  const pedidos: (() => Promise<unknown>)[] = [
+    () => import("../pages/Analises"), // o código da página de gráficos, que só carrega quando abre
+    api.contas, api.categorias, api.regras, api.conexoes,
+    ...["PF", "PJ"].flatMap((p) => [() => api.patrimonio(p), () => api.recorrentes(p)]),
+    ...anos.map((a) => () => api.compromissosDoAno(a)),
+    ...meses.flatMap((mes) => [
+      () => api.ritmo(mes), () => api.orcamento(mes), () => api.metas(mes), () => api.compromissos(mes), () => api.analises(mes),
+      ...["PF", "PJ"].flatMap((pessoa) => [
+        () => api.resumo(mes, pessoa),
+        () => api.lancamentos({ mes, pessoa }), // mesmo endereço da tela, sem filtro
+        () => api.totaisLancamentos({ mes, pessoa }),
+      ]),
+    ]),
+  ];
+  // 3 de cada vez, para não pesar no PC
+  const fila = pedidos.values();
+  let falhas = 0;
+  await Promise.all([0, 1, 2].map(async () => {
+    for (const p of fila) await p().catch(() => falhas++);
+  }));
+  return falhas === 0 && copiaDe === null;
+}

@@ -1,7 +1,7 @@
-import { lazy, Suspense, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useSyncExternalStore } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, copia, dadosVelhos, quando } from "./lib/api";
+import { api, copia, dadosVelhos, guardarTudo, quando } from "./lib/api";
 import RitmoLateral from "./components/RitmoLateral";
 import Icone, { type NomeIcone } from "./components/Icone";
 import Resumo from "./pages/Resumo";
@@ -35,6 +35,15 @@ export default function App() {
   const { pathname } = useLocation();
   const conexoes = useQuery({ queryKey: ["conexoes"], queryFn: api.conexoes });
   const copiaDe = useSyncExternalStore(copia.ouvir, copia.ler);
+  const noAr = conexoes.isSuccess && copiaDe === null;
+  // o app inteiro para ver com o PC desligado: ao abrir e ao voltar para a tela (no celular o app fica aberto dias)
+  useEffect(() => {
+    if (!noAr) return;
+    void guardarTudo();
+    const voltou = () => document.visibilityState === "visible" && void guardarTudo();
+    document.addEventListener("visibilitychange", voltou);
+    return () => document.removeEventListener("visibilitychange", voltou);
+  }, [noAr]);
   const sync = useMutation({
     mutationFn: () => api.sincronizar(),
     onSuccess: () => qc.invalidateQueries(),

@@ -48,6 +48,9 @@ api/src/
   server.ts       rotas Fastify + zod; serve web/dist se existir
   mcp.ts          MCP: ferramentas sobre a API (servido em POST /mcp pelo server.ts)
   tipos.ts        o formato das respostas, só tipos: as rotas declaram, tela e MCP leem (nada que abra a base: a tela confere com o tsc dela)
+web/public/sw.js  cópia no aparelho para ver com o PC desligado (só leitura, faixa "PC desligado"): rede primeiro, cópia se cair.
+                  `guardarTudo` (api.ts) baixa todas as telas quando muda `GET /api/versao` (conta gravações e sincronizações).
+                  Tela ou consulta nova: entra em `baixarTudo`, com o mesmo endereço que a página pede.
 web/src/
   lib/api.ts            chamadas + formatação (BRL, datas, meses); os tipos das respostas vêm de api/src/tipos.ts
   lib/pluggyConnect.ts  carrega o widget Pluggy Connect sob demanda
